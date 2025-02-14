@@ -1,4 +1,4 @@
-name: C/C++ Debug macos
+name: C/C++ debug macos
 
 on:
   push:
@@ -6,67 +6,34 @@ on:
       - debug_macos
 
 jobs:
-  build_dep:
-    runs-on: macos-12
-
-    steps:
-    - uses: actions/checkout@v3
-    - name: mkdir in deps
-      run: mkdir deps/build
-    - name: update automake for mpfr
-      run: |
-        curl -O -L http://ftpmirror.gnu.org/automake/automake-1.16.5.tar.gz
-        tar -xzf automake-1.16.5.tar.gz
-        cd automake-*
-        ./configure
-        make
-        sudo make install
-        automake --version
-    - name: dep cache
-      id: cache-action
-      uses: actions/cache@v3
-      with:
-        key: macos_intel_debug_2.7
-        path: deps/build/destdir
-    - if: steps.cache-action.outputs.cache-hit != 'true'
-      name: build deps if new cache
-      run: ./BuildMacOS.sh -bd
-
   build:
+
     runs-on: macos-12
-    needs: build_dep
 
     steps:
-    - uses: actions/checkout@v3
-    - name: update submodule profiles
-      working-directory: ./resources/profiles
-      run: git submodule update --init
-    - name: check autoconf version
-      run: autoconf --version
-    - name: update automake for mpfr
+    - uses: actions/checkout@v2
+      with:
+        ref: 'debug_macos'
+    - name: build deps & slicer
+      run: ./BuildMacOS.sh -b
+    - name: copy zstd
+      run: cp /usr/local/opt/zstd/lib/libzstd.1.dylib ./build/pack/${{ github.event.repository.name }}/${{ github.event.repository.name }}.app/Contents/MacOS/libzstd.1.dylib
+    - name: relink zstd
+      run: install_name_tool -change /usr/local/opt/zstd/lib/libzstd.1.dylib  @executable_path/libzstd.1.dylib ./build/pack/${{ github.event.repository.name }}/${{ github.event.repository.name }}.app/Contents/MacOS/${{ github.event.repository.name }}
+    - name: create the dmg
       run: |
-        curl -O -L http://ftpmirror.gnu.org/automake/automake-1.16.5.tar.gz
-        tar -xzf automake-1.16.5.tar.gz
-        cd automake-*
-        ./configure
-        make
-        sudo make install
-        automake --version
-    - name: dep cache
-      id: cache-action
-      uses: actions/cache@v3
-      with:
-        key: macos_intel_debug_2.7
-        path: deps/build/destdir
-    - name: build slicer
-      run: ./BuildMacOS.sh -bsi
+        hdiutil create -ov -fs HFS+ -volname ${{ github.event.repository.name }} -srcfolder build/pack/${{ github.event.repository.name }} temp.dmg
+        hdiutil convert temp.dmg -format UDZO -o ${{ github.event.repository.name }}.dmg
+    - name: tar the pack
+      working-directory: ./build
+      run: ls
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v1.0.0
       with:
-        name: debug_${{ github.event.repository.name }}-macOS-intel.tgz
-        path: build/${{ github.event.repository.name }}-macOS-intel.tgz
+        name: nightly_macos_debug.dmg
+        path: build/${{ github.event.repository.name }}.dmg
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v1.0.0
       with:
-        name: debug_${{ github.event.repository.name }}-macOS-intel.dmg
-        path: build/${{ github.event.repository.name }}-macOS-intel.dmg
+        name: nightly_macos.tar
+        path: ${{ github.event.repository.name }}.tar

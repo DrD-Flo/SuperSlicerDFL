@@ -7,13 +7,6 @@
 #include "Plater.hpp"
 #include "Tab.hpp"
 
-#include <boost/log/trivial.hpp>
-#include <boost/lexical_cast.hpp>
-#include <boost/algorithm/string/trim_all.hpp>
-#include <boost/algorithm/string/erase.hpp>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/filesystem.hpp>
-
 #include <string>
 
 #include <angelscript/source/as_config.h>
@@ -70,28 +63,27 @@ void as_print_float(float f)
 std::pair<const PresetCollection*, const ConfigOption*> get_coll(const std::string& str) {
     const PresetCollection* coll = nullptr;
     const ConfigOption* opt = nullptr;
-    const bool is_reset = current_script && (current_script->is_reset(str));
-    if (opt == nullptr && (current_script->tab()->get_printer_technology() & PrinterTechnology::ptFFF) != 0) {
+    if(opt == nullptr && (current_script->tab()->get_printer_technology() & PrinterTechnology::ptFFF) != 0) {
         coll = &current_script->tab()->m_preset_bundle->fff_prints;
-        opt = is_reset ? coll->get_selected_preset().config.option(str) : coll->get_edited_preset().config.option(str);
+        opt = coll->get_edited_preset().config.option(str);
         if (opt == nullptr) {
             coll = &current_script->tab()->m_preset_bundle->filaments;
-            opt = is_reset ? coll->get_selected_preset().config.option(str) : coll->get_edited_preset().config.option(str);
+            opt = coll->get_edited_preset().config.option(str);
         }
     }
     if (opt == nullptr && (current_script->tab()->get_printer_technology() & PrinterTechnology::ptSLA) != 0) {
         coll = &current_script->tab()->m_preset_bundle->sla_prints;
-        opt = is_reset ? coll->get_selected_preset().config.option(str) : coll->get_edited_preset().config.option(str);
+        opt = coll->get_edited_preset().config.option(str);
         if (opt == nullptr) {
             coll = &current_script->tab()->m_preset_bundle->sla_materials;
-            opt = is_reset ? coll->get_selected_preset().config.option(str) : coll->get_edited_preset().config.option(str);
+            opt = coll->get_edited_preset().config.option(str);
         }
     }
     if (opt == nullptr) {
         coll = &current_script->tab()->m_preset_bundle->printers;
-        opt = is_reset ? coll->get_selected_preset().config.option(str) : coll->get_edited_preset().config.option(str);
+        opt = coll->get_edited_preset().config.option(str);
     }
-    return std::pair<const PresetCollection *, const ConfigOption *>{coll, opt};
+    return std::pair<const PresetCollection*, const ConfigOption*>{ coll,  opt };
 }
 //PresetCollection* get_coll(int preset_type) {
 //    if (preset_type <= 0)
@@ -116,11 +108,9 @@ bool as_get_bool(std::string &key) { return as_get_bool_idx(key, 0); }
 void _set_bool(DynamicPrintConfig& conf, const ConfigOption* opt, std::string& key, int idx, bool b_val)
 {
     if (opt->type() == ConfigOptionType::coBool) {
-        ConfigOptionBool *copy = static_cast<ConfigOptionBool *>(opt->clone());
-        copy->value = b_val;
-        conf.set_key_value(key, copy);
+        conf.set_key_value(key, new ConfigOptionBool(b_val));
     } else if (opt->type() == ConfigOptionType::coBools) {
-        ConfigOptionBools *new_val = static_cast<ConfigOptionBools *>(opt->clone());
+        ConfigOptionBools* new_val = static_cast<ConfigOptionBools*>(opt->clone());
         if(idx < 0)
             // replace all values
             for(size_t i=0; i<new_val->size(); ++i)
@@ -135,7 +125,6 @@ void _set_bool(DynamicPrintConfig& conf, const ConfigOption* opt, std::string& k
 
 void as_set_bool(std::string& key, bool b)
 {
-    assert(current_script);
     if (!current_script->can_set()) return;
     std::pair<const PresetCollection*, const ConfigOption*> result = get_coll(key);
     if (result.second == nullptr)
@@ -146,7 +135,6 @@ void as_set_bool(std::string& key, bool b)
     } else {
         _set_bool(conf, result.second, key, -1, b);
     }
-    current_script->remove_from_reset(key);
 }
 
 int32_t as_get_int_idx(std::string& key, int idx)
@@ -165,9 +153,7 @@ int32_t as_get_int(std::string &key) { return as_get_int_idx(key, 0); }
 void    _set_int(DynamicPrintConfig &conf, const ConfigOption *opt, std::string &key, int idx, int i_val)
 {
     if (opt->type() == ConfigOptionType::coInt) {
-        ConfigOptionInt *copy = static_cast<ConfigOptionInt *>(opt->clone());
-        copy->value = i_val;
-        conf.set_key_value(key, copy);
+        conf.set_key_value(key, new ConfigOptionInt(i_val));
     } else if (opt->type() == ConfigOptionType::coInts) {
         ConfigOptionInts *new_val = static_cast<ConfigOptionInts *>(opt->clone());
         if(idx < 0)
@@ -185,7 +171,6 @@ void    _set_int(DynamicPrintConfig &conf, const ConfigOption *opt, std::string 
 }
 void as_set_int(std::string& key, int val)
 {
-    assert(current_script);
     if (!current_script->can_set()) return;
     std::pair<const PresetCollection*, const ConfigOption*> result = get_coll(key);
     if (result.second == nullptr)
@@ -196,7 +181,6 @@ void as_set_int(std::string& key, int val)
     } else {
         _set_int(conf, result.second, key, -1, val);
     }
-    current_script->remove_from_reset(key);
 }
 float as_get_float_idx(std::string& key, int idx)
 {
@@ -221,9 +205,22 @@ float as_get_float_idx(std::string& key, int idx)
     return val;
 }
 float  as_get_float(std::string &key) { return as_get_float_idx(key, 0); }
-
 double round(float value) {
-    return floor(value * 100000. + 0.5) / 100000.;
+    double intpart;
+    if (modf(value, &intpart) == 0.0) {
+        // shortcut for int
+        return value;
+    }
+    std::stringstream ss;
+    //first, get the int part, to see how many digit it takes
+    int long10 = 0;
+    if (intpart > 9)
+        long10 = (int)std::floor(std::log10(std::abs(intpart)));
+        //set the usable precision: there is only ~7 decimal digit in a float (15-16 decimal digit in a double)
+        ss << std::fixed << std::setprecision(7 - long10) << value;
+    double dbl_val;
+    ss >> dbl_val;
+    return dbl_val;
 }
 
 void _set_float(DynamicPrintConfig& conf, const ConfigOption* opt, std::string& key, int idx, float f_val)
@@ -234,13 +231,11 @@ void _set_float(DynamicPrintConfig& conf, const ConfigOption* opt, std::string& 
         // only update if difference is significant
         if (std::abs(old_value - new_val) / std::abs(old_value) < 0.0000001)
             new_val = old_value; // don't return int these check, as it can escpae a refresh of the scripted widget
-        ConfigOptionFloat *copy = static_cast<ConfigOptionFloat *>(opt->clone());
-        copy->value = new_val;
-        conf.set_key_value(key, copy);
+        conf.set_key_value(key, new ConfigOptionFloat(new_val));
     } else if (opt->type() == ConfigOptionType::coFloats) {
-        ConfigOptionFloats *new_opt = static_cast<ConfigOptionFloats *>(opt->clone());
+        ConfigOptionFloats* new_opt = static_cast<ConfigOptionFloats*>(opt->clone());
         double new_val = round(f_val);
-        if (!new_opt->empty()) {
+        if (!new_opt->values.empty()) {
             // only update if difference is significant
             double old_value = idx < 0 ? new_opt->get_float(0) : new_opt->get_float(idx);
             if (std::abs(old_value - new_val) / std::abs(old_value) < 0.0000001)
@@ -259,13 +254,11 @@ void _set_float(DynamicPrintConfig& conf, const ConfigOption* opt, std::string& 
         double old_value = opt->get_float();
         if (std::abs(old_value - percent_f) / std::abs(old_value) < 0.0000001)
             percent_f = old_value;
-        ConfigOptionPercent *copy = static_cast<ConfigOptionPercent *>(opt->clone());
-        copy->value = percent_f;
-        conf.set_key_value(key, copy);
+        conf.set_key_value(key, new ConfigOptionPercent(percent_f));
     } else if (opt->type() == ConfigOptionType::coPercents) {
-        ConfigOptionPercents *new_opt = static_cast<ConfigOptionPercents *>(opt->clone());
+        ConfigOptionPercents* new_opt = static_cast<ConfigOptionPercents*>(opt->clone());
         double percent_f = floor(f_val * 100000. + 0.5) / 1000.;
-        if (!new_opt->empty()) {
+        if (!new_opt->values.empty()) {
             // only update if difference is significant
             double old_value = idx < 0 ? new_opt->get_float(0) : new_opt->get_float(idx);
             if (std::abs(old_value - percent_f) / std::abs(old_value) < 0.0000001)
@@ -285,14 +278,11 @@ void _set_float(DynamicPrintConfig& conf, const ConfigOption* opt, std::string& 
             if (std::abs(old_value - new_val) / std::abs(old_value) < 0.0000001)
                 new_val = old_value;
         }
-        ConfigOptionFloatOrPercent *copy = static_cast<ConfigOptionFloatOrPercent *>(opt->clone());
-        copy->value = new_val;
-        copy->percent = false;
-        conf.set_key_value(key, copy);
+        conf.set_key_value(key, new ConfigOptionFloatOrPercent(new_val, false));
     } else if (opt->type() == ConfigOptionType::coFloatsOrPercents) {
-        ConfigOptionFloatsOrPercents *new_opt = static_cast<ConfigOptionFloatsOrPercents *>(opt->clone());
+        ConfigOptionFloatsOrPercents* new_opt = static_cast<ConfigOptionFloatsOrPercents*>(opt->clone());
         double new_val = round(f_val);
-        if (!new_opt->empty() && !new_opt->get_at(0).percent) {
+        if (!new_opt->values.empty() && !new_opt->values.front().percent) {
             // only update if difference is significant
             double old_value = idx < 0 ? new_opt->get_float(0) : new_opt->get_float(idx);
             if (std::abs(old_value - new_val) / std::abs(old_value) < 0.0000001)
@@ -310,7 +300,6 @@ void _set_float(DynamicPrintConfig& conf, const ConfigOption* opt, std::string& 
 }
 void as_set_float(std::string& key, float f_val)
 {
-    assert(current_script);
     if (!current_script->can_set()) return;
     std::pair<const PresetCollection*, const ConfigOption*> result = get_coll(key);
     if (result.second == nullptr)
@@ -322,7 +311,6 @@ void as_set_float(std::string& key, float f_val)
     } else {
         _set_float(conf, result.second, key, -1, f_val);
     }
-    current_script->remove_from_reset(key);
 }
 bool as_is_percent_idx(std::string& key, int idx)
 {
@@ -343,14 +331,12 @@ void _set_percent(DynamicPrintConfig& conf, const ConfigOption* opt, std::string
         double old_value = opt->get_float() * 100;
         if (std::abs(old_value - percent_f) / std::abs(old_value) < 0.0000001)
             percent_f = old_value; // don't return int these check, as it can escpae a refresh of the scripted widget
-        ConfigOptionFloat *copy = static_cast<ConfigOptionFloat *>(opt->clone());
-        copy->value = percent_f / 100.;
-        conf.set_key_value(key, copy);
+        conf.set_key_value(key, new ConfigOptionFloat(percent_f / 100.));
     } else if (opt->type() == ConfigOptionType::coFloats) {
-        ConfigOptionFloats *new_opt = static_cast<ConfigOptionFloats *>(opt->clone());
-        if (!new_opt->empty()) {
+        ConfigOptionFloats* new_opt = static_cast<ConfigOptionFloats*>(opt->clone());
+        if (!new_opt->values.empty()) {
             // only update if difference is significant
-            double old_value = new_opt->get_at(0) * 100;
+            double old_value = new_opt->values.front() * 100;
             if (std::abs(old_value - percent_f) / std::abs(old_value) < 0.0000001)
                 percent_f = old_value;
         }
@@ -365,14 +351,12 @@ void _set_percent(DynamicPrintConfig& conf, const ConfigOption* opt, std::string
         double old_value = get_coll(key).second->get_float();
         if (std::abs(old_value - percent_f) / std::abs(old_value) < 0.0000001)
             percent_f = old_value;
-        ConfigOptionPercent *copy = static_cast<ConfigOptionPercent *>(opt->clone());
-        copy->value = percent_f;
-        conf.set_key_value(key, copy);
+        conf.set_key_value(key, new ConfigOptionPercent(percent_f));
     } else if (opt->type() == ConfigOptionType::coPercents) {
-        ConfigOptionPercents *new_opt = static_cast<ConfigOptionPercents *>(opt->clone());
-        if (!new_opt->empty()) {
+        ConfigOptionPercents* new_opt = static_cast<ConfigOptionPercents*>(opt->clone());
+        if (!new_opt->values.empty()) {
             // only update if difference is significant
-            double old_value = new_opt->get_at(0);
+            double old_value = new_opt->values.front();
             if (std::abs(old_value - percent_f) / std::abs(old_value) < 0.0000001)
                 percent_f = old_value;
         }
@@ -389,15 +373,12 @@ void _set_percent(DynamicPrintConfig& conf, const ConfigOption* opt, std::string
             if (std::abs(old_value - percent_f) / std::abs(old_value) < 0.0000001)
                 percent_f = old_value;
         }
-        ConfigOptionFloatOrPercent *copy = static_cast<ConfigOptionFloatOrPercent *>(opt->clone());
-        copy->value = percent_f;
-        copy->percent = true;
-        conf.set_key_value(key, copy);
+        conf.set_key_value(key, new ConfigOptionFloatOrPercent(percent_f, true));
     } else if (opt->type() == ConfigOptionType::coFloatsOrPercents) {
-        ConfigOptionFloatsOrPercents *new_opt = static_cast<ConfigOptionFloatsOrPercents *>(opt->clone());
-        if (!new_opt->empty() && new_opt->get_at(0).percent) {
+        ConfigOptionFloatsOrPercents* new_opt = static_cast<ConfigOptionFloatsOrPercents*>(opt->clone());
+        if (!new_opt->values.empty() && new_opt->values.front().percent) {
             // only update if difference is significant
-            double old_value = new_opt->get_at(0).value;
+            double old_value = new_opt->values.front().value;
             if (std::abs(old_value - percent_f) / std::abs(old_value) < 0.0000001)
                 percent_f = old_value;
         }
@@ -411,7 +392,6 @@ void _set_percent(DynamicPrintConfig& conf, const ConfigOption* opt, std::string
 }
 void as_set_percent(std::string &key, float p_val)
 {
-    assert(current_script);
     if (!current_script->can_set())
         return;
     std::pair<const PresetCollection *, const ConfigOption *> result = get_coll(key);
@@ -423,7 +403,6 @@ void as_set_percent(std::string &key, float p_val)
     } else {
         _set_percent(conf, result.second, key, -1, p_val);
     }
-    current_script->remove_from_reset(key);
 }
 
 void as_get_string_idx(std::string& key, int idx, std::string& val)
@@ -447,31 +426,26 @@ void as_get_string(std::string &key, std::string &val) { as_get_string_idx(key, 
 void _set_string(DynamicPrintConfig& conf, const PresetCollection* pcoll, const ConfigOption* opt, std::string& key, int idx, std::string& val)
 {
     if (opt->type() == ConfigOptionType::coString) {
-        ConfigOptionString *copy = static_cast<ConfigOptionString *>(opt->clone());
-        copy->value = val;
-        conf.set_key_value(key, copy);
+        conf.set_key_value(key, new ConfigOptionString(val));
     } else if (opt->type() == ConfigOptionType::coStrings) {
-        ConfigOptionStrings *new_val = static_cast<ConfigOptionStrings *>(opt->clone());
+        ConfigOptionStrings* new_val = (ConfigOptionStrings*)opt->clone();
         for(size_t i=0; i<new_val->size(); ++i)
             new_val->set_at(val, i);
         conf.set_key_value(key, new_val);
     } else if (opt->type() == ConfigOptionType::coEnum) {
         const ConfigOptionDef* def = pcoll->get_edited_preset().config.get_option_def(key);
-        std::optional<int> it_idx = def->enum_def->value_to_index(val);
-        if (!it_idx) {
-            it_idx = def->enum_def->label_to_index(val);
-            if (!it_idx)
-                throw NoDefinitionExceptionEmitLog("set_string(): error, can't find enum option '" + val + "' in " + key);
-        }
+        auto it_idx = def->enum_keys_map->find(val);
+        if(it_idx == def->enum_keys_map->end())
+            throw NoDefinitionExceptionEmitLog("set_string(): error, can't find enum option '" +val+ "' in "+ key);
+        int idx = it_idx->second;
         ConfigOption* copy = opt->clone();
-        copy->set_enum_int(*it_idx);
+        copy->set_enum_int(idx);
         conf.set_key_value(key, copy);
     } else {
         throw NoDefinitionExceptionEmitLog("set_string(): error, can't find string option (wrong type?) " + key);
     }
 }
 void as_set_string(std::string &key, std::string &val) {
-    assert(current_script);
     if (!current_script->can_set()) return;
     std::pair<const PresetCollection*, const ConfigOption*> result = get_coll(key);
     if (result.second == nullptr)
@@ -482,7 +456,6 @@ void as_set_string(std::string &key, std::string &val) {
     } else {
         _set_string(conf, result.first, result.second, key, -1, val);
     }
-    current_script->remove_from_reset(key);
 }
 
 //// vector vars ////
@@ -502,7 +475,7 @@ void as_clear(std::string &key) {
     const ConfigOption* opt = result.second;
     DynamicPrintConfig& conf = current_script->to_update()[result.first->type()];
     if (opt->is_vector()) {
-        ConfigOptionVectorBase *copy = static_cast<ConfigOptionVectorBase *>(opt->clone());
+        ConfigOptionVectorBase* copy = static_cast<ConfigOptionVectorBase*>(opt->clone());
         copy->clear();
         conf.set_key_value(key, copy);
     } else {
@@ -586,47 +559,6 @@ void as_set_string_idx(std::string& key, int idx, std::string& str_val)
     }
 }
 
-bool as_is_enabled_idx(std::string &key, int idx)
-{
-    std::pair<const PresetCollection*, const ConfigOption*> result = get_coll(key);
-    const ConfigOption* opt = result.second;
-    if (opt == nullptr) //TODO check if  float, etc..
-        throw NoDefinitionExceptionEmitLog("is_enabled[_idx](): error, can't find string option " + key);
-    if (!opt->can_be_disabled()) {
-        throw NoDefinitionExceptionEmitLog(std::string("is_enabled[_idx](): error, option ") + key + " can't be disabled/enabled.");
-    }
-    return opt->is_enabled(idx);
-}
-
-bool as_is_enabled(std::string &key, int idx)
-{
-    return as_is_enabled_idx(key, -1);
-}
-
-void as_set_enabled_idx(std::string &key, bool enabled, int idx)
-{
-    if (!current_script->can_set()) return;
-    std::pair<const PresetCollection*, const ConfigOption*> result = get_coll(key);
-    if (result.second == nullptr)
-        throw NoDefinitionExceptionEmitLog(std::string("set_enabled[_idx](): error, can't find option ") + key);
-    if (!result.second->can_be_disabled()) {
-        throw NoDefinitionExceptionEmitLog(std::string("set_enabled[_idx](): error, option ") + key + " can't be disabled/enabled.");
-    }
-
-    DynamicPrintConfig& conf = current_script->to_update()[result.first->type()];
-    if (ConfigOption *newer_opt = conf.optptr(key)) {
-        newer_opt->set_enabled(enabled, idx);
-    } else {
-        ConfigOption* copy = result.second->clone();
-        copy->set_enabled(enabled, idx);
-        conf.set_key_value(key, copy);
-    }
-}
-
-void as_set_enabled(std::string &key, bool enabled)
-{
-    as_set_enabled_idx(key, enabled, -1);
-}
 
 /////// custom vars ////////
 
@@ -637,8 +569,8 @@ std::string get_custom_var_option(int preset_type) {
         : current_script->tab()->m_preset_bundle->sla_prints.get_edited_preset().config.opt_string("print_custom_variables");
     else if (preset_type == 1) {
         return (current_script->tab()->get_printer_technology() & PrinterTechnology::ptFFF) != 0
-            ? current_script->tab()->m_preset_bundle->filaments.get_edited_preset().config.opt_string("filament_custom_variables", size_t(0))
-            : current_script->tab()->m_preset_bundle->sla_materials.get_edited_preset().config.opt_string("filament_custom_variables", size_t(0));
+            ? current_script->tab()->m_preset_bundle->filaments.get_edited_preset().config.opt_string("filament_custom_variables", (unsigned int)(0))
+            : current_script->tab()->m_preset_bundle->sla_materials.get_edited_preset().config.opt_string("filament_custom_variables", (unsigned int)(0));
     } else return current_script->tab()->m_preset_bundle->printers.get_edited_preset().config.opt_string("printer_custom_variables");
 }
 std::string get_custom_value(std::string custom_var_field, const std::string& opt_key) {
@@ -862,13 +794,13 @@ void as_ask_for_refresh()
     current_script->request_refresh();
 }
 
-bool as_is_widget_enabled(std::string &key)
+bool as_is_enabled(std::string &key)
 {
     Page *selected_page;
     Field *f = current_script->tab()->get_field(selected_page, key, -1);
     if (!f)
         return true;
-    return f->is_widget_enabled();
+    return f->is_enabled();
 }
 
 //function to reset a field
@@ -884,8 +816,8 @@ void as_back_custom_initial_value(int preset_type, std::string& key) {
         : current_script->tab()->m_preset_bundle->sla_prints.get_selected_preset().config.opt_string("print_custom_variables");
     else if (preset_type == 1) {
         initial_serialized_vars = (current_script->tab()->get_printer_technology() & PrinterTechnology::ptFFF) != 0
-            ? current_script->tab()->m_preset_bundle->filaments.get_selected_preset().config.opt_string("filament_custom_variables", size_t(0))
-            : current_script->tab()->m_preset_bundle->sla_materials.get_selected_preset().config.opt_string("filament_custom_variables", size_t(0));
+            ? current_script->tab()->m_preset_bundle->filaments.get_selected_preset().config.opt_string("filament_custom_variables", (unsigned int)(0))
+            : current_script->tab()->m_preset_bundle->sla_materials.get_selected_preset().config.opt_string("filament_custom_variables", (unsigned int)(0));
     } else initial_serialized_vars = current_script->tab()->m_preset_bundle->printers.get_selected_preset().config.opt_string("printer_custom_variables");
     std::string serialized_value = get_custom_value(initial_serialized_vars, key);
     std::string serialized_vars = get_custom_var_option(preset_type);
@@ -894,13 +826,6 @@ void as_back_custom_initial_value(int preset_type, std::string& key) {
 }
 
 /////// main script fucntions //////
-
-void ScriptContainer::remove_from_reset(const std::string &key) {
-    auto it = std::find(m_to_reset_initial.begin(), m_to_reset_initial.end(), key);
-    if (it != m_to_reset_initial.end()) {
-        m_to_reset_initial.erase(it);
-    }
-}
 
 //TODO: add "unset" function, that revert to last value (befoer a scripted set) if a set has been made since last not-scripted change.
 void ScriptContainer::init(const std::string& tab_key, Tab* tab)
@@ -977,13 +902,8 @@ void ScriptContainer::init(const std::string& tab_key, Tab* tab)
             m_script_engine.get()->RegisterGlobalFunction("float get_computed_float(string &in)", WRAP_FN(as_get_computed_float), AngelScript::asCALL_GENERIC);
             m_script_engine.get()->RegisterGlobalFunction("void back_initial_value(string &in)", WRAP_FN(as_back_initial_value), AngelScript::asCALL_GENERIC);
             m_script_engine.get()->RegisterGlobalFunction("void back_custom_initial_value(int, string &in)", WRAP_FN(as_back_custom_initial_value), AngelScript::asCALL_GENERIC);
-
             m_script_engine.get()->RegisterGlobalFunction("void ask_for_refresh()", WRAP_FN(as_ask_for_refresh), AngelScript::asCALL_GENERIC);
             m_script_engine.get()->RegisterGlobalFunction("bool is_enabled(string &in)", WRAP_FN(as_is_enabled), AngelScript::asCALL_GENERIC);
-            m_script_engine.get()->RegisterGlobalFunction("bool is_enabled_idx(string &in, int)", WRAP_FN(as_is_enabled_idx), AngelScript::asCALL_GENERIC);
-            m_script_engine.get()->RegisterGlobalFunction("void set_enabled(string &in, bool)", WRAP_FN(as_set_enabled), AngelScript::asCALL_GENERIC);
-            m_script_engine.get()->RegisterGlobalFunction("void set_enabled_idx(string &in, bool, int)", WRAP_FN(as_set_enabled_idx), AngelScript::asCALL_GENERIC);
-            m_script_engine.get()->RegisterGlobalFunction("bool is_widget_enabled(string &in)", WRAP_FN(as_is_widget_enabled), AngelScript::asCALL_GENERIC);
 
 #else
             m_script_engine.get()->RegisterGlobalFunction("void print(string &in)",     AngelScript::asFUNCTION(as_print),          AngelScript::asCALL_CDECL);
@@ -1000,8 +920,6 @@ void ScriptContainer::init(const std::string& tab_key, Tab* tab)
             m_script_engine.get()->RegisterGlobalFunction("void set_percent(string &in, float new_val)",        AngelScript::asFUNCTION(as_set_percent),AngelScript::asCALL_CDECL);
             m_script_engine.get()->RegisterGlobalFunction("void get_string(string &in, string &out get_val)",   AngelScript::asFUNCTION(as_get_string), AngelScript::asCALL_CDECL);
             m_script_engine.get()->RegisterGlobalFunction("void set_string(string &in, string &in new_val)",    AngelScript::asFUNCTION(as_set_string), AngelScript::asCALL_CDECL);
-            m_script_engine.get()->RegisterGlobalFunction("bool is_enabled(string &in)",                            AngelScript::asFUNCTION(as_is_enabled), AngelScript::asCALL_CDECL);
-            m_script_engine.get()->RegisterGlobalFunction("void set_enabled(string &in, bool)",                     AngelScript::asFUNCTION(as_set_enabled), AngelScript::asCALL_CDECL);
 
             // for vector fields
             m_script_engine.get()->RegisterGlobalFunction("int size(string &in)",                           AngelScript::asFUNCTION(as_size), AngelScript::asCALL_CDECL);
@@ -1016,8 +934,6 @@ void ScriptContainer::init(const std::string& tab_key, Tab* tab)
             m_script_engine.get()->RegisterGlobalFunction("void set_percent_idx(string &in, int idx, float new_val)",        AngelScript::asFUNCTION(as_set_percent_idx),AngelScript::asCALL_CDECL);
             m_script_engine.get()->RegisterGlobalFunction("void get_string_idx(string &in, int idx, string &out get_val)",   AngelScript::asFUNCTION(as_get_string_idx), AngelScript::asCALL_CDECL);
             m_script_engine.get()->RegisterGlobalFunction("void set_string_idx(string &in, int idx, string &in new_val)",    AngelScript::asFUNCTION(as_set_string_idx), AngelScript::asCALL_CDECL);
-            m_script_engine.get()->RegisterGlobalFunction("bool is_enabled_idx(string &in, int)",                   AngelScript::asFUNCTION(as_is_enabled_idx), AngelScript::asCALL_CDECL);
-            m_script_engine.get()->RegisterGlobalFunction("void set_enabled_idx(string &in, bool, int)",            AngelScript::asFUNCTION(as_set_enabled_idx), AngelScript::asCALL_CDECL);
 
             m_script_engine.get()->RegisterGlobalFunction("bool get_custom_bool(int, string &in, bool &out)",       AngelScript::asFUNCTION(as_get_custom_bool),    AngelScript::asCALL_CDECL);
             m_script_engine.get()->RegisterGlobalFunction("void set_custom_bool(int, string &in, bool)",            AngelScript::asFUNCTION(as_set_custom_bool),    AngelScript::asCALL_CDECL);
@@ -1031,9 +947,8 @@ void ScriptContainer::init(const std::string& tab_key, Tab* tab)
             m_script_engine.get()->RegisterGlobalFunction("float get_computed_float(string &in)",   AngelScript::asFUNCTION(as_get_computed_float), AngelScript::asCALL_CDECL);
             m_script_engine.get()->RegisterGlobalFunction("void back_initial_value(string &in)",    AngelScript::asFUNCTION(as_back_initial_value), AngelScript::asCALL_CDECL);
             m_script_engine.get()->RegisterGlobalFunction("void back_custom_initial_value(int, string &in)",    AngelScript::asFUNCTION(as_back_custom_initial_value), AngelScript::asCALL_CDECL);
-
             m_script_engine.get()->RegisterGlobalFunction("void ask_for_refresh()",                 AngelScript::asFUNCTION(as_ask_for_refresh),    AngelScript::asCALL_CDECL);
-            m_script_engine.get()->RegisterGlobalFunction("bool is_widget_enabled(string &in)",                     AngelScript::asFUNCTION(as_is_widget_enabled), AngelScript::asCALL_CDECL);
+            m_script_engine.get()->RegisterGlobalFunction("bool is_enabled(string &in)",                        AngelScript::asFUNCTION(as_is_enabled), AngelScript::asCALL_CDECL);
 #endif
         }
 
@@ -1044,10 +959,8 @@ void ScriptContainer::init(const std::string& tab_key, Tab* tab)
         // Let the builder load the script, and do the necessary pre-processing (include files, etc)
         //res = builder.AddSectionFromFile(ui_script_file.string().c_str()); //seems to be problematic on cyrillic locale
         {
-            //std::string all_file;
-            //boost::filesystem::load_string_file(ui_script_file, all_file);
-	        boost::nowide::ifstream file(ui_script_file.string());
-	        std::string all_file { std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>() };
+            std::string all_file;
+            boost::filesystem::load_string_file(ui_script_file, all_file);
             res = builder.AddSectionFromMemory(ui_script_file.string().c_str(), all_file.c_str(), (unsigned int)(all_file.length()), 0);
         }
         if (res < 0) throw CompileErrorException("Error, can't build the script for tab " + tab_key);
@@ -1148,10 +1061,8 @@ void ScriptContainer::call_script_function_set(const ConfigOptionDef& def, const
     }
     case coEnum: {
         int32_t enum_idx = boost::any_cast<std::int32_t>(value);
-        assert(def.enum_def);
-        assert(enum_idx < def.enum_def->values().size());
-        if (enum_idx >= 0 && def.enum_def && enum_idx < def.enum_def->values().size()) {
-            str_arg = def.enum_def->label(enum_idx);
+        if (enum_idx >= 0 && enum_idx < def.enum_values.size()) {
+            str_arg = def.enum_values[enum_idx];
             ctx->SetArgAddress(0, &str_arg);
             ctx->SetArgDWord(1, enum_idx);
         }
@@ -1186,9 +1097,7 @@ void ScriptContainer::call_script_function_set(const ConfigOptionDef& def, const
     for (auto& data : to_update) {
         Tab* tab = wxGetApp().get_tab(data.first);
         //also reset
-        assert(tab);
-        assert(this->m_tab);
-        if (!to_reset.empty() && tab->get_printer_technology() == this->m_tab->get_printer_technology()) {
+        if (!to_reset.empty()) {
             const DynamicPrintConfig& initial_conf = tab->m_presets->get_selected_preset().config;
             for (size_t key_idx = 0; key_idx != to_reset.size(); ++key_idx) {
                 const std::string& key = to_reset[key_idx];
@@ -1348,6 +1257,7 @@ boost::any ScriptContainer::call_script_function_get_value(const ConfigOptionDef
         current_script = nullptr;
     }
     int32_t ret_int;
+    float ret_float;
     boost::any opt_val;
     switch (def.type) {
     case coBool:
@@ -1371,42 +1281,37 @@ boost::any ScriptContainer::call_script_function_get_value(const ConfigOptionDef
     case coPercents:
     case coFloat:
     case coFloats: {
-        opt_val = round(ctx->GetReturnFloat());
+        opt_val = double(ctx->GetReturnFloat());
         break;
     }
     case coFloatOrPercent:
     case coFloatsOrPercents:
     {
-        opt_val   = FloatOrPercent{ round(ctx->GetReturnFloat()), ret_percent};
+        ret_float = ctx->GetReturnFloat();
+        opt_val   = FloatOrPercent{ret_float, ret_percent};
         break;
     }
     case coPoint:
     case coPoints: {
-        double pt_x = round(ctx->GetReturnFloat());
+        double pt_x = ctx->GetReturnFloat();
         opt_val     = Vec2d{pt_x, pt_x}; // FIXME
         break;
     } // FIXME PointCtrl
     case coPoint3: {
-        double pt_x = round(ctx->GetReturnFloat());
+        double pt_x = ctx->GetReturnFloat();
         opt_val     = Vec3d{pt_x, pt_x, pt_x};
         break;
     }
     case coEnum: { 
         ret_int = ctx->GetReturnDWord();
-        assert(def.enum_def && ret_int < def.enum_def->values().size());
-        if (ret_int >= 0 && def.enum_def && ret_int < def.enum_def->values().size()) {
+        if (ret_int >= 0 && ret_int < def.enum_values.size()) {
             opt_val = int32_t(ret_int);
         } else {
             opt_val = int32_t(0);
-            std::optional<int> idx;
-            if (def.enum_def->is_valid_closed_enum()) {
-                idx = def.enum_def->value_to_index(ret_str);
-            } else {
-                idx = def.enum_def->label_to_index(ret_str);
+            for (size_t i = 0; i < def.enum_values.size(); i++) {
+                if (ret_str == def.enum_values[i])
+                    opt_val = int32_t(i);
             }
-            assert(idx);
-            if(idx)
-                opt_val = int32_t(*idx);
         }
         break; //Choice
     }
