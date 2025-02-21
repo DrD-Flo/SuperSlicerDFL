@@ -38,4 +38,4 @@ jobs:
       uses: actions/upload-artifact@v4.0.0
       with:
         name: DFL_macos.dmg
-        path: ${{ github.event.repository.name }}.dmg
+        path: SuperSlicer.dmg
