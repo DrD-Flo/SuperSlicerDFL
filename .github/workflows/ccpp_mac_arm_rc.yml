@@ -1,11 +1,9 @@
 name: C/C++ Release candidate arm macos
 
 on:
-  release:
-    types: [published]
-#  push:
-#    branches:
-#      - rc
+  push:
+    branches:
+      - macos-image-build-test
 
 jobs:
   build:
@@ -13,18 +11,29 @@ jobs:
     runs-on: macos-14
 
     steps:
-    - uses: actions/checkout@v2
-      with:
-        ref: 'rc'
+    - uses: actions/checkout@v3
+    - name: install autoconf
+      run: brew install autoconf
+    - name: check autoconf version
+      run: autoconf --version
+    - name: update automake for mpfr
+      run: |
+        curl -O -L http://ftpmirror.gnu.org/automake/automake-1.16.5.tar.gz
+        tar -xzf automake-1.16.5.tar.gz
+        cd automake-*
+        ./configure
+        make
+        sudo make install
+        automake --version
     - name: build deps & slicer
-      run: ./BuildMacOS.sh -ia
+      run: ./BuildMacOS.sh -adsi
     - name: Upload artifact
-      uses: actions/upload-artifact@v1.0.0
+      uses: actions/upload-artifact@v4.0.0
       with:
-        name: rc_arm_macos.dmg
+        name: DFL_arm_macos.dmg
         path: build/${{ github.event.repository.name }}.dmg
     - name: Upload artifact
-      uses: actions/upload-artifact@v1.0.0
+      uses: actions/upload-artifact@v4.0.0
       with:
-        name: rc_arm_macos.tar
+        name: DFL_arm_macos.tar
         path: build/${{ github.event.repository.name }}.tar
