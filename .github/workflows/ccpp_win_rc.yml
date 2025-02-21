@@ -99,7 +99,9 @@ jobs:
     - name: create configuration folder
       working-directory: ./build
       shell: cmd
-      run: mkdir package\configuration
+      run: |
+        mkdir package\Configuration
+        echo. > package\Configuration\.gitkeep
 #    - name: create zip
 #      working-directory: ./build
 #      shell: cmd
