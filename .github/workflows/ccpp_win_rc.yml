@@ -1,9 +1,11 @@
 name: C/C++ Release candidate windows x64
 
 on:
-  push:
-    branches:
-      - rc
+  release:
+    types: [published]
+#  push:
+#    branches:
+#      - rc
 
 jobs:
 
