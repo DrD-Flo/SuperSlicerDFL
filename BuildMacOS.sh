@@ -309,14 +309,4 @@ then
     pushd build  > /dev/null
     $ROOT/build/src/BuildMacOSImage.sh -i $BUILD_IMG
     popd  > /dev/null
-    echo "> ls ROOT"
-    ls -al $ROOT
-    echo "> ls ROOT/build"
-    ls -al $ROOT/build
-    echo "> ls -al ROOT/build/bin"
-    ls -al $ROOT/build/bin
-    echo "> ls -al ROOT/build/bin"
-    ls -al $ROOT/build/bin
-    echo "> ls -al ROOT/build/src"
-    ls -al $ROOT/build/src
 fi
