@@ -12,6 +12,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+      with:
+        ref: 'macos-image-build-test'
     - name: install autoconf
       run: brew install autoconf
     - name: check autoconf version
