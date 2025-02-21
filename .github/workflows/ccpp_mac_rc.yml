@@ -1,11 +1,11 @@
 name: C/C++ Release candidate macos
 
 on:
-
   release:
     types: [published]
-#  push:
-#    branches:
+  push:
+    branches:
+       - macos-image-build-test
 #      - rc
 #      - debug_macos
 
