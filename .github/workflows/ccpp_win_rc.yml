@@ -99,13 +99,13 @@ jobs:
     - name: create configuration folder
       working-directory: ./build
       shell: cmd
-      run: xcopy /RCYIE package\resources\profiles package\Configuration
-#    - name: create zip
-#      working-directory: ./build
-#      shell: cmd
-#      run: '"C:/Program Files/7-Zip/7z.exe" a -tzip nightly.zip *'
+      run: mkdir package\Configuration #xcopy /RCYIE package\resources\profiles package\Configuration
+    - name: create zip
+      working-directory: ./build
+      shell: cmd
+      run: '"C:/Program Files/7-Zip/7z.exe" a -tzip rc_win64.zip package'
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: DFL_win64
-        path: build/package/
+        path: build/rc_win64.zip
