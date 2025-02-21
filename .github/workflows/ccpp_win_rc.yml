@@ -3,9 +3,9 @@ name: C/C++ Release candidate windows x64
 on:
   release:
     types: [published]
-#  push:
-#    branches:
-#      - rc
+  push:
+    branches:
+      - master
 
 jobs:
 
