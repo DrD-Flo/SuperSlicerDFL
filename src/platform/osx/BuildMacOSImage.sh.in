@@ -47,6 +47,20 @@ echo -n "[9/9] Generating MacOS app..."
     # copy bin and do not let it lower case
     cp -f src/@SLIC3R_APP_CMD@ pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/MacOS/@SLIC3R_APP_KEY@
     chmod u+x pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/MacOS/@SLIC3R_APP_KEY@
+
+    # --- Ensure Configuration/vendor exists at the same level as Resources ---
+
+    # Ensure Configuration/vendor directory exists inside Contents
+    mkdir -p pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/Configuration/vendor
+
+    # Copy the configuration file from resources to Configuration/vendor
+    if [ -f pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/Resources/profiles/DFL-Printers-V3.ini ]; then
+        cp -f pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/Resources/profiles/DFL-Printers-V3.ini \
+              pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/Configuration/vendor/
+    else
+        echo "Warning: DFL-Printers-V3.ini not found in Contents/Resources/profiles/"
+    fi
+    
 } &> $ROOT/Build.log # Capture all command output
 echo "done"
 
