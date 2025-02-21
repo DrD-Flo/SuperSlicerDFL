@@ -31,9 +31,9 @@ jobs:
       uses: actions/upload-artifact@v4.0.0
       with:
         name: DFL_arm_macos.dmg
-        path: build/${{ github.event.repository.name }}.dmg
+        path: build/SuperSlicer.dmg
     - name: Upload artifact
       uses: actions/upload-artifact@v4.0.0
       with:
         name: DFL_arm_macos.tar
-        path: build/${{ github.event.repository.name }}.tar
+        path: build/SuperSlicer.tar
