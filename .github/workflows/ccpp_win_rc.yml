@@ -99,9 +99,7 @@ jobs:
     - name: create configuration folder
       working-directory: ./build
       shell: cmd
-      run: |
-        mkdir package\Configuration
-        echo. > package\Configuration\.gitkeep
+      run: xcopy /RCYIE package\resources\profiles package\Configuration
 #    - name: create zip
 #      working-directory: ./build
 #      shell: cmd
