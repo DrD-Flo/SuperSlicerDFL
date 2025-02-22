@@ -28,10 +28,10 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4.0.0
       with:
-        name: rc_macos.app
-        path: build/pack/${{ github.event.repository.name }}/${{ github.event.repository.name }}.app
+        name: DFL_macos.app
+        path: build/pack/SuperSlicer/SuperSlicer.app
     - name: Upload artifact
       uses: actions/upload-artifact@v4.0.0
       with:
-        name: rc_macos.dmg
-        path: ${{ github.event.repository.name }}.dmg
+        name: DFL_macos.dmg
+        path: build/SuperSlicer.dmg
