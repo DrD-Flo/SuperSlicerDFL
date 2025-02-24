@@ -1,16 +1,5 @@
 #!/bin/bash
 
-#
-# This script builds the SuperSlicer appimage.
-#
-# Original script from SuperSlicer by supermerill https://github.com/supermerill/SuperSlicer
-#
-# Change log:
-#
-# 20 Nov 2023, wschadow, branding and minor changes
-# 10 Mar 2024, wschadow, added options
-#
-
 export ROOT=`pwd`
 export NCORES=`sysctl -n hw.ncpu`
 
@@ -45,7 +34,6 @@ echo -n "[9/9] Generating MacOS app..."
     mkdir pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/_CodeSignature
     mkdir pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/Frameworks
     mkdir pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/MacOS
-    mkdir pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/Configuration
 
     # copy Resources
     cp -Rf ../resources pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/Resources
@@ -59,11 +47,6 @@ echo -n "[9/9] Generating MacOS app..."
     # copy bin and do not let it lower case
     cp -f src/@SLIC3R_APP_CMD@ pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/MacOS/@SLIC3R_APP_KEY@
     chmod u+x pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/MacOS/@SLIC3R_APP_KEY@
-
-    ls ROOT/build 
-    ls -al ROOT/build/bin
-    ls -al ROOT/build/src
-    ls -al pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/MacOS
 } &> $ROOT/Build.log # Capture all command output
 echo "done"
 
