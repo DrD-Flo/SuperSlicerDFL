@@ -53,11 +53,17 @@ public:
 
     void append(const Point& point) { this->points.push_back(point); }
     void append(const Points& src) { this->append(src.begin(), src.end()); }
-    void append(const Points::const_iterator& begin, const Points::const_iterator& end) { this->points.insert(this->points.end(), begin, end); }
+    void append(const Points::const_iterator &begin, const Points::const_iterator &end) {
+        assert(!begin->coincides_with_epsilon(this->back()));
+        this->points.insert(this->points.end(), begin, end);
+    }
     void append(Points &&src)
     {
         if (this->points.empty()) {
             this->points = std::move(src);
+        } else if (this->back().coincides_with_epsilon(src.front())) {
+            this->points.insert(this->points.end(), src.begin() + 1, src.end());
+            src.clear();
         } else {
             this->points.insert(this->points.end(), src.begin(), src.end());
             src.clear();
@@ -65,7 +71,8 @@ public:
     }
     void append(const Polyline& src)
     {
-        points.insert(points.end(), src.points.begin(), src.points.end());
+        assert(this->empty() || this->back().coincides_with_epsilon(src.front()));
+        points.insert(points.end(), src.points.begin() + 1, src.points.end());
     }
 
     void append(Polyline&& src)
@@ -73,7 +80,8 @@ public:
         if (this->points.empty()) {
             this->points = std::move(src.points);
         } else {
-            this->points.insert(this->points.end(), src.points.begin(), src.points.end());
+            assert(this->back().coincides_with_epsilon(src.front()));
+            this->points.insert(this->points.end(), src.points.begin() + 1, src.points.end());
             src.points.clear();
         }
     }
@@ -94,6 +102,8 @@ public:
     void simplify(coordf_t tolerance);
 //    template <class T> void simplify_by_visibility(const T &area);
     void split_at(const Point &point, Polyline* p1, Polyline* p2) const;
+    // reduce the length of this polyline at dist. return the rest after the distance.
+    Polyline split_at(distf_t dist);
     bool is_straight() const;
     bool is_closed() const { return this->points.front() == this->points.back(); }
 
@@ -106,6 +116,8 @@ public:
 
 extern BoundingBox get_extents(const Polyline& polyline);
 extern BoundingBox get_extents(const Polylines& polylines);
+
+Polyline reverse_polyline(const Polyline &polyline);
 
 // Return True when erase some otherwise False.
 bool remove_same_neighbor(Polyline &polyline);

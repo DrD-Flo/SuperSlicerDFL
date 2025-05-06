@@ -422,9 +422,9 @@ bool PerimeterGenerator::_enforce_speed_overhangs(ExtrusionPaths &paths, int cou
         int overhangs_speed_enforce = params.region_setting.get_solo_config(&params.config.overhangs_speed_enforce).get_int();
         if (overhangs_speed_enforce > 0)
             for (const ExtrusionPath &path : paths) {
-                assert(!path.role().is_overhang() || path.attributes().overhang_attributes);
-                if (path.role().is_overhang() &&
-                    path.attributes().overhang_attributes->start_distance_from_prev_layer >= 1) {
+                assert(!path.role().is_overhang() || path.overhang_attributes());
+                if (path.overhang_attributes() &&
+                    path.overhang_attributes()->start_distance_from_prev_layer >= 1) {
                     has_overhang = true;
                     break;
                 }
@@ -436,7 +436,7 @@ bool PerimeterGenerator::_enforce_speed_overhangs(ExtrusionPaths &paths, int cou
                 assert(path.role().is_perimeter());
                 if (!path.role().has(ExtrusionRoleModifier::ERM_Bridge)) {
                     path.set_role(path.role() | ExtrusionRoleModifier::ERM_Bridge);
-                    path.overhang_attributes_mutable() = OverhangAttributes{1, 2, 0};
+                    path.overhang_attributes_mutable() = ExtrusionPropertyOverhang{1, 2, 0};
                 }
             }
         }
@@ -448,9 +448,9 @@ bool PerimeterGenerator::_enforce_speed_overhangs(ExtrusionPaths &paths, int cou
                     has_overhangs.push_back(false);
                 }
                 for (const ExtrusionPath &path : paths) {
-                    assert(!path.role().is_overhang() || path.attributes().overhang_attributes);
-                    if (path.role().is_overhang() &&
-                        path.attributes().overhang_attributes->start_distance_from_prev_layer >= 1) {
+                    assert(!path.role().is_overhang() || path.overhang_attributes());
+                    if (path.overhang_attributes() &&
+                        path.overhang_attributes()->start_distance_from_prev_layer >= 1) {
                         for (size_t i = 0; i < areas.expolys.size(); i++) {
                             if (!has_overhangs[i]) {
                                 if (!intersection_pl(path.polyline.to_polyline(), areas.bboxes[i].polygon()).empty() &&
@@ -471,9 +471,9 @@ bool PerimeterGenerator::_enforce_speed_overhangs(ExtrusionPaths &paths, int cou
                             if (!path.role().has(ExtrusionRoleModifier::ERM_Bridge)) {
                                 if (!intersection_pl(path.polyline.to_polyline(), areas.bboxes[i].polygon()).empty() &&
                                     !intersection_pl(path.polyline.to_polyline(), areas.expolys[i]).empty()) {
-                                    assert(!path.overhang_attributes_mutable());
+                                    assert(!path.overhang_attributes());
                                     path.set_role(path.role() | ExtrusionRoleModifier::ERM_Bridge);
-                                    path.overhang_attributes_mutable() = OverhangAttributes{1, 2, 0};
+                                    path.overhang_attributes_mutable() = ExtrusionPropertyOverhang{1, 2, 0};
                                     has_overhang = true;
                                 }
                             }
@@ -810,6 +810,10 @@ ExtrusionPaths PerimeterGenerator::create_overhangs_classic(const Parameters &pa
             assert(!paths.front().polyline.get_point(idx - 1).coincides_with_epsilon(
                 paths.front().polyline.get_point(idx)));
 #endif
+        //assert all overhang path have overhang attributes
+        for (const ExtrusionPath &path : paths) {
+            assert (!path.role().is_overhang() || path.overhang_attributes());
+        }
         return paths;
     }
     // set the fan & speed before the flow
@@ -1001,6 +1005,10 @@ ExtrusionPaths PerimeterGenerator::create_overhangs_classic(const Parameters &pa
             poly.douglas_peucker(SCALED_EPSILON);
         }
     }
+    //assert all overhang path have overhang attributes
+    for (const ExtrusionPath &path : paths) {
+        assert (!path.role().is_overhang() || path.overhang_attributes());
+    }
 
     // note: layer height is used to identify the path type
     int idx_lh_size = 0;
@@ -1026,6 +1034,10 @@ ExtrusionPaths PerimeterGenerator::create_overhangs_classic(const Parameters &pa
                                                                  idx_lh_size // layer height is used as id, temporarly
                                                                  )});
     }
+    //assert all overhang path have overhang attributes
+    for (const ExtrusionPath &path : paths) {
+        assert (!path.role().is_overhang() || path.overhang_attributes());
+    }
     idx_lh_size++;
     if (!dynamic_speed.empty()) {
         extrusion_paths_append(paths, dynamic_speed,
@@ -1035,9 +1047,13 @@ ExtrusionPaths PerimeterGenerator::create_overhangs_classic(const Parameters &pa
                                                                  is_external ? params.ext_perimeter_flow.width() :
                                                                                params.perimeter_flow.width(),
                                                                  idx_lh_size // layer height is used as id, temporarly
-                                                                 ),
-                                                   OverhangAttributes{0, 1, 0}});
+                                                                 )},
+                               ExtrusionPropertyOverhang(0, 1, 0));
         idx_lh_size++;
+    }
+    //assert all overhang path have overhang attributes
+    for (const ExtrusionPath &path : paths) {
+        assert (!path.role().is_overhang() || path.overhang_attributes());
     }
     if (!small_speed.empty()) {
         assert(!no_small_speed);
@@ -1048,8 +1064,12 @@ ExtrusionPaths PerimeterGenerator::create_overhangs_classic(const Parameters &pa
                                                                  is_external ? params.ext_perimeter_flow.width() :
                                                                                params.perimeter_flow.width(),
                                                                  idx_lh_size // layer height is used as id, temporarly
-                                                                 ),
-                                                   OverhangAttributes{1, 1, 0}});
+                                                                 )},
+                               ExtrusionPropertyOverhang(1, 1, 0));
+    }
+    //assert all overhang path have overhang attributes
+    for (const ExtrusionPath &path : paths) {
+        assert (!path.role().is_overhang() || path.overhang_attributes());
     }
     // if (!no_small_speed)
     idx_lh_size++;
@@ -1063,8 +1083,12 @@ ExtrusionPaths PerimeterGenerator::create_overhangs_classic(const Parameters &pa
                                                                  is_external ? params.ext_perimeter_flow.width() :
                                                                                params.perimeter_flow.width(),
                                                                  idx_lh_size // layer height is used as id, temporarly
-                                                                 ),
-                                                   OverhangAttributes{1, 1, 0}});
+                                                                 )},
+                               ExtrusionPropertyOverhang(1, 1, 0));
+    }
+    //assert all overhang path have overhang attributes
+    for (const ExtrusionPath &path : paths) {
+        assert (!path.role().is_overhang() || path.overhang_attributes());
     }
     idx_lh_size++;
     if (!small_flow.empty()) {
@@ -1074,8 +1098,12 @@ ExtrusionPaths PerimeterGenerator::create_overhangs_classic(const Parameters &pa
                                                    ExtrusionFlow(params.m_mm3_per_mm_overhang,
                                                                  params.overhang_flow.width(),
                                                                  idx_lh_size // layer height is used as id, temporarly
-                                                                 ),
-                                                   OverhangAttributes{1, 2, 0}});
+                                                                 )},
+                               ExtrusionPropertyOverhang(1, 2, 0));
+    }
+    //assert all overhang path have overhang attributes
+    for (const ExtrusionPath &path : paths) {
+        assert (!path.role().is_overhang() || path.overhang_attributes());
     }
     if (!no_small_flow)
         idx_lh_size++;
@@ -1087,8 +1115,12 @@ ExtrusionPaths PerimeterGenerator::create_overhangs_classic(const Parameters &pa
                                                    ExtrusionFlow(params.m_mm3_per_mm_overhang,
                                                                  params.overhang_flow.width(),
                                                                  idx_lh_size // layer height is used as id, temporarly
-                                                                 ),
-                                                   OverhangAttributes{1, 2, 0}});
+                                                                 )},
+                               ExtrusionPropertyOverhang(1, 2, 0));
+    }
+    //assert all overhang path have overhang attributes
+    for (const ExtrusionPath &path : paths) {
+        assert (!path.role().is_overhang() || path.overhang_attributes());
     }
     idx_lh_size++;
     assert(idx_lh_size > 3 && idx_lh_size < 7);
@@ -1119,7 +1151,7 @@ ExtrusionPaths PerimeterGenerator::create_overhangs_classic(const Parameters &pa
 
     //assert all overhang path have overhang attributes
     for (const ExtrusionPath &path : paths) {
-        assert (!path.role().is_overhang() || path.attributes().overhang_attributes);
+        assert (!path.role().is_overhang() || path.overhang_attributes());
     }
     assert(paths.size() == 1 || paths.front().first_point() == paths.back().last_point());
     return paths;
@@ -1299,14 +1331,16 @@ void PerimeterGenerator::_sort_overhangs(const Parameters &params,
                 ExtrusionFlow(overhang_params.is_external ? params.ext_mm3_per_mm() : params.mm3_per_mm(),
                     overhang_params.is_external ? params.ext_perimeter_flow.width() : params.perimeter_flow.width(),
                     2 // layer height is used as id, temporarly
-            ), OverhangAttributes{1, 1, 0}};
+            )};
+            paths.front().overhang_attributes_mutable() = ExtrusionPropertyOverhang{1, 1, 0};
         } else {
             paths.front().attributes_mutable() = ExtrusionAttributes{
                 role | ExtrusionRoleModifier::ERM_Bridge,
                 ExtrusionFlow(params.m_mm3_per_mm_overhang,
                     params.overhang_flow.width(),
                     4 // layer height is used as id, temporarly
-            ), OverhangAttributes{1, 2, 0}};
+            )};
+            paths.front().overhang_attributes_mutable() = ExtrusionPropertyOverhang{1, 2, 0};
         }
     }
     for (int i = 1; i < paths.size(); i++) {
@@ -2395,7 +2429,7 @@ ExtrusionPaths PerimeterGenerator::create_overhangs_arachne(const Parameters &  
             for (ExtrusionPath& path : thickpaths) {
                 path.set_can_reverse(!is_loop);
                 path.attributes_mutable().height = idx_lh_size;
-                path.overhang_attributes_mutable() = OverhangAttributes{0, 1, 0};
+                path.overhang_attributes_mutable() = ExtrusionPropertyOverhang{0, 1, 0};
                 paths.push_back(std::move(path));
             }
         }
@@ -2423,7 +2457,7 @@ ExtrusionPaths PerimeterGenerator::create_overhangs_arachne(const Parameters &  
             for (ExtrusionPath& path : thickpaths) {
                 path.set_can_reverse(!is_loop);
                 path.attributes_mutable().height = idx_lh_size;
-                path.overhang_attributes_mutable() = OverhangAttributes{1, 1, 0};
+                path.overhang_attributes_mutable() = ExtrusionPropertyOverhang{1, 1, 0};
                 paths.push_back(std::move(path));
             }
         }
@@ -2451,7 +2485,7 @@ ExtrusionPaths PerimeterGenerator::create_overhangs_arachne(const Parameters &  
             for (ExtrusionPath& path : thickpaths) {
                 path.set_can_reverse(!is_loop);
                 path.attributes_mutable().height = idx_lh_size;
-                path.overhang_attributes_mutable() = OverhangAttributes{1, 1, 0};
+                path.overhang_attributes_mutable() = ExtrusionPropertyOverhang{1, 1, 0};
                 paths.push_back(std::move(path));
             }
         }
@@ -2486,7 +2520,7 @@ ExtrusionPaths PerimeterGenerator::create_overhangs_arachne(const Parameters &  
                 //}
                 path.set_can_reverse(!is_loop);
                 path.attributes_mutable().height = idx_lh_size;
-                path.overhang_attributes_mutable() = OverhangAttributes{1, 2, 0};
+                path.overhang_attributes_mutable() = ExtrusionPropertyOverhang{1, 2, 0};
                 paths.push_back(std::move(path));
             }
         }
@@ -2530,7 +2564,7 @@ ExtrusionPaths PerimeterGenerator::create_overhangs_arachne(const Parameters &  
                 //}
                 path.set_can_reverse(!is_loop);
                 path.attributes_mutable().height = idx_lh_size;
-                path.overhang_attributes_mutable() = OverhangAttributes{1, 2, 0};
+                path.overhang_attributes_mutable() = ExtrusionPropertyOverhang{1, 2, 0};
                 paths.push_back(std::move(path));
             }
         }
@@ -2609,7 +2643,7 @@ ExtrusionPaths PerimeterGenerator::create_overhangs_arachne(const Parameters &  
         paths.back().polyline.set_back(mean);
     }
     for (const ExtrusionPath &path : paths) {
-        assert (!path.role().is_overhang() || path.attributes().overhang_attributes);
+        assert (!path.role().is_overhang() || path.overhang_attributes());
     }
     return paths;
 }
@@ -2837,7 +2871,7 @@ ExtrusionPaths sort_extra_perimeters(const ExtrusionPaths& extra_perims, int ind
 
     //assert all overhang path have overhang attributes
     for (const ExtrusionPath &path : filtered) {
-        assert (!path.role().is_overhang() || path.attributes().overhang_attributes);
+        assert (!path.role().is_overhang() || path.overhang_attributes());
     }
 
     return filtered;
@@ -3007,7 +3041,8 @@ std::tuple<std::vector<ExtrusionPaths>, ExPolygons, ExPolygons> generate_extra_p
                                                reconnect_polylines(perimeter, overhang_scaled_spacing,
                                                                    scaled_resolution),
                                                ExtrusionAttributes{ExtrusionRole::OverhangPerimeter,
-                                                                   params.overhang_flow, OverhangAttributes{1, 2, 0}},
+                                                                   params.overhang_flow},
+                                               ExtrusionPropertyOverhang(1, 2, 0),
                                                false);
 
                     Polylines  fills;
@@ -3021,15 +3056,16 @@ std::tuple<std::vector<ExtrusionPaths>, ExPolygons, ExPolygons> generate_extra_p
                         extrusion_paths_append(overhang_region,
                                                reconnect_polylines(fills, overhang_scaled_spacing, scaled_resolution),
                                                ExtrusionAttributes{ExtrusionRole::OverhangPerimeter,
-                                                                   params.overhang_flow, OverhangAttributes{1, 2, 0}},
+                                                                   params.overhang_flow},
+                                               ExtrusionPropertyOverhang(1, 2, 0),
                                                false);
                     }
                     break;
                 } else {
                     extrusion_paths_append(overhang_region,
                                            reconnect_polylines(perimeter, overhang_scaled_spacing, scaled_resolution),
-                                           ExtrusionAttributes{ExtrusionRole::OverhangPerimeter, params.overhang_flow,
-                                                               OverhangAttributes{1, 2, 0}},
+                                           ExtrusionAttributes{ExtrusionRole::OverhangPerimeter, params.overhang_flow},
+                                           ExtrusionPropertyOverhang(1, 2, 0),
                                            false);
                 }
 

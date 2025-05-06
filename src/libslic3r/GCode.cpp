@@ -5960,7 +5960,7 @@ void GCodeGenerator::extrude_perimeters(const ExtrudeArgs &print_args, const Lay
 //        virtual void default_use(const ExtrusionEntity& entity) override {};
 //        virtual void use(const ExtrusionPath &path) override {
 //            if (path.role().has(ExtrusionRole::OverhangPerimeter))
-//                assert(path.attributes().overhang_attributes.has_value());
+//                assert(path.overhang_attributes());
 //        }
 //    };
 //    OverhangAssertVisitor visitor;
@@ -6682,11 +6682,11 @@ double_t GCodeGenerator::_compute_speed_mm_per_sec(const ExtrusionPath& path, co
     // compute overhangs dynamic if needed
     // OverhangPerimeter or OverhangExternalPerimeter
     // don't need to do anything on first layer, as there is no overhangs? (at least, the data to compute them is not generated)
-    if (/*path.role().is_overhang() && */path.attributes().overhang_attributes.has_value()) {
+    if (/*path.role().is_overhang() && */path.overhang_attributes()) {
         assert(this->layer()->id() > 0);
         double my_speed = speed;
         if(comment) *comment = "overhangs_speed";
-        auto [speed_ratio, over_fan_speed] = ExtrusionProcessor::calculate_overhang_speed(path.attributes(), this->m_config, m_writer.tool()->id());
+        auto [speed_ratio, over_fan_speed] = ExtrusionProcessor::calculate_overhang_speed(path, this->m_config, m_writer.tool()->id());
         assert(speed_ratio == -1 || (speed_ratio >= 0 && speed_ratio <= 1));
         assert(over_fan_speed == -1 || (over_fan_speed >= 0 && over_fan_speed <= 100));
         if (speed_ratio >= 0) {

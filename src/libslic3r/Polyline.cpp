@@ -189,6 +189,49 @@ void Polyline::split_at(const Point &point, Polyline* p1, Polyline* p2) const
     p2->points.insert(p2->points.end(), min_point_it, this->points.cend());
 }
 
+Polyline Polyline::split_at(distf_t dist) {
+    if (dist <= SCALED_EPSILON) {
+        Polyline me = *this;
+        clear();
+        return me;
+    }
+
+    Point pt_split = points.front();
+    size_t next_point_idx = 1;
+    while (dist > SCALED_EPSILON && next_point_idx < size()) {
+        distsqrf_t dist_sqr = points[next_point_idx - 1].distance_to_square(points[next_point_idx]);
+        if (dist_sqr < Slic3r::sqr(SCALED_EPSILON + dist)) {
+            dist -= std::sqrt(dist_sqr);
+            ++next_point_idx;
+        } else {
+            pt_split = Line(points[next_point_idx - 1], points[next_point_idx]).point_at(dist);;
+            dist = 0;
+            break;
+        }
+    }
+
+    if (pt_split == points.front()) {
+        if (next_point_idx < size()) {
+            // just over an existing point
+            Polyline second_part;
+            second_part.points.insert(second_part.points.end(), points.begin() + next_point_idx, points.end());
+            points.resize(next_point_idx + 1);
+            return second_part;
+        } else {
+            // too long
+            return Polyline();
+        }
+    } else {
+        // mid point
+        Polyline second_part;
+        second_part.points.push_back(pt_split);
+        second_part.points.insert(second_part.points.end(), points.begin() + next_point_idx, points.end());
+        points.resize(next_point_idx + 1);
+        points.back() = pt_split;
+        return second_part;
+    }
+}
+
 bool Polyline::is_straight() const
 {
     // Check that each segment's direction is equal to the line connecting
@@ -216,6 +259,12 @@ BoundingBox get_extents(const Polylines &polylines)
     }
     return bb;
 }
+
+Polyline reverse_polyline(const Polyline &polyline) {
+    Polyline p2 = polyline;
+    p2.reverse();
+    return p2;
+};
 
 // Return True when erase some otherwise False.
 bool remove_same_neighbor(Polyline &polyline) {

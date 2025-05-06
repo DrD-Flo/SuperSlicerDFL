@@ -97,7 +97,7 @@ static constexpr coord_t SCALED_EPSILON = 100; // coord_t(EPSILON/ SCALING_FACTO
 static constexpr double INSET_OVERLAP_TOLERANCE = 0.4;
 //FIXME Better to use an inline function with an explicit return type.
 //inline coord_t scale_(coordf_t v) { return coord_t(floor(v / SCALING_FACTOR + 0.5f)); }
-#define scale_(val) (coord_t)((val) / SCALING_FACTOR)
+#define scale_(val) (coord_t)((val) / SCALING_FACTOR + 0.5f)
 
 
 #ifndef UNUSED
@@ -126,7 +126,7 @@ inline T unscale(Q v) { return T(v) * T(SCALING_FACTOR); }
 
 constexpr double   unscaled(coord_t v) { return double(v) * SCALING_FACTOR; }
 constexpr double   unscaled(coordf_t v) { return v * SCALING_FACTOR; }
-constexpr coord_t  scale_t(double v) { return coord_t(v * UNSCALING_FACTOR); }
+constexpr coord_t  scale_t(double v) { return coord_t(v * UNSCALING_FACTOR + 0.5); }
 constexpr coordf_t scale_d(double v) { return coordf_t(v * UNSCALING_FACTOR); }
 
 inline distsqrf_t coord_sqr(coord_t length) { return distf_t(length) * distf_t(length); }
