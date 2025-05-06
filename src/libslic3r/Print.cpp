@@ -532,10 +532,10 @@ std::set<uint16_t> Print::extruders(float z /*= -1*/) const
     if (z < 0) {
         // The wipe tower extruder can also be set. When the wipe tower is enabled and it will be generated,
         // append its extruder into the list too.
-        if (has_wipe_tower() && config().wipe_tower_extruder != 0 && extruders.size() > 1) {
-            assert(config().wipe_tower_extruder > 0 &&
-                   config().wipe_tower_extruder < int(config().nozzle_diameter.size()));
-            extruders.insert(uint16_t(config().wipe_tower_extruder.value - 1)); // the config value is 1-based
+        if (has_wipe_tower() && m_default_object_config.wipe_tower_extruder != 0 && extruders.size() > 1) {
+            assert(m_default_object_config.wipe_tower_extruder > 0 &&
+                   m_default_object_config.wipe_tower_extruder < int(m_config.nozzle_diameter.size()));
+            extruders.insert(uint16_t(m_default_object_config.wipe_tower_extruder.value - 1)); // the config value is 1-based
         }
     }
 
@@ -1295,8 +1295,8 @@ void Print::process()
     if (this->has_wipe_tower()) {
         // These values have to be updated here, not during wipe tower generation.
         // When the wipe tower is moved/rotated, it is not regenerated.
-        m_wipe_tower_data.position = { m_config.wipe_tower_x, m_config.wipe_tower_y };
-        m_wipe_tower_data.rotation_angle = m_config.wipe_tower_rotation_angle;
+        m_wipe_tower_data.position = { m_default_object_config.wipe_tower_x, m_default_object_config.wipe_tower_y };
+        m_wipe_tower_data.rotation_angle = m_default_object_config.wipe_tower_rotation_angle;
     }
     auto conflictRes = ConflictChecker::find_inter_of_lines_in_diff_objs(objects(), m_wipe_tower_data);
 
@@ -1910,7 +1910,7 @@ Points Print::first_layer_wipe_tower_corners() const
     Points pts_scaled;
 
     if (has_wipe_tower() && ! m_wipe_tower_data.tool_changes.empty()) {
-        double width = m_config.wipe_tower_width + 2*m_wipe_tower_data.brim_width;
+        double width = m_default_object_config.wipe_tower_width + 2*m_wipe_tower_data.brim_width;
         double depth = m_wipe_tower_data.depth + 2*m_wipe_tower_data.brim_width;
         Vec2d pt0(-m_wipe_tower_data.brim_width, -m_wipe_tower_data.brim_width);
         
@@ -1923,14 +1923,17 @@ Points Print::first_layer_wipe_tower_corners() const
 
         // Now the stabilization cone.
         Vec2d center = (pts[0] + pts[2])/2.;
-        const auto [cone_R, cone_x_scale] = WipeTower::get_wipe_tower_cone_base(m_config.wipe_tower_width, m_wipe_tower_data.height, m_wipe_tower_data.depth, m_config.wipe_tower_cone_angle);
+        const auto [cone_R, cone_x_scale] = WipeTower::get_wipe_tower_cone_base(m_default_object_config.wipe_tower_width,
+                                                                                m_wipe_tower_data.height,
+                                                                                m_wipe_tower_data.depth,
+                                                                                m_default_object_config.wipe_tower_cone_angle);
         double r = cone_R + m_wipe_tower_data.brim_width;
         for (double alpha = 0.; alpha<2*M_PI; alpha += M_PI/20.)
             pts.emplace_back(center + r*Vec2d(std::cos(alpha)/cone_x_scale, std::sin(alpha)));
 
         for (Vec2d& pt : pts) {
-            pt = Eigen::Rotation2Dd(Geometry::deg2rad(m_config.wipe_tower_rotation_angle.value)) * pt;
-            pt += Vec2d(m_config.wipe_tower_x.value, m_config.wipe_tower_y.value);
+            pt = Eigen::Rotation2Dd(Geometry::deg2rad(m_default_object_config.wipe_tower_rotation_angle.value)) * pt;
+            pt += Vec2d(m_default_object_config.wipe_tower_x.value, m_default_object_config.wipe_tower_y.value);
             pts_scaled.emplace_back(Point(scale_(pt.x()), scale_(pt.y())));
         }
     }
@@ -2102,7 +2105,7 @@ void Print::alert_when_supports_needed()
 }
 
 bool Print::has_wipe_tower() const {
-    if (config().nozzle_diameter.size() <= 1 || !config().wipe_tower || config().complete_objects ||
+    if (config().nozzle_diameter.size() <= 1 || !m_default_object_config.wipe_tower || config().complete_objects ||
         config().spiral_vase.value) {
         return false;
     }
@@ -2365,7 +2368,7 @@ void Print::_make_wipe_tower()
     m_wipe_tower_data.number_of_toolchanges = wipe_tower.get_number_of_toolchanges();
     m_wipe_tower_data.width = wipe_tower.width();
     m_wipe_tower_data.first_layer_height = get_min_first_layer_height();
-    m_wipe_tower_data.cone_angle = config().wipe_tower_cone_angle;
+    m_wipe_tower_data.cone_angle = m_default_object_config.wipe_tower_cone_angle;
 }
 
 // Generate a recommended G-code output file name based on the format template, default extension, and template parameters

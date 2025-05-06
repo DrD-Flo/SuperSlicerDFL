@@ -7317,6 +7317,8 @@ void PrintConfigDef::init_fff_params()
                      "User is responsible for ensuring there is no collision with the print.");
     def->mode = comAdvancedE | comPrusa;
     def->set_default_value(new ConfigOptionBool(false));
+
+    //TODO: combuine x&y into a coPoint
     def = this->add("wipe_tower_x", coFloat);
     def->label = L("X");
     def->full_label = L("Wipe tower X");

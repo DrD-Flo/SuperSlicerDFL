@@ -3070,15 +3070,16 @@ void GCodeViewer::load_wipetower_shell(const Print& print)
     if (wxGetApp().preset_bundle->printers.get_edited_preset().printer_technology() == ptFFF && print.is_step_done(psWipeTower)) {
         // adds wipe tower's volume
         const double max_z = print.objects()[0]->model_object()->get_model()->max_z();
-        const PrintConfig& config = print.config();
+        const PrintConfig& print_config = print.config();
+        const PrintObjectConfig& object_config = print.default_object_config();
         if (print.has_wipe_tower()) {
             const WipeTowerData& wipe_tower_data = print.wipe_tower_data();
             const float depth = wipe_tower_data.depth;
             const std::vector<std::pair<float, float>> z_and_depth_pairs = wipe_tower_data.z_and_depth_pairs;
             const float brim_width = wipe_tower_data.brim_width;
             if (depth != 0.) {
-                m_shells.volumes.load_wipe_tower_preview(config.wipe_tower_x, config.wipe_tower_y, config.wipe_tower_width, depth, z_and_depth_pairs,
-                    max_z, config.wipe_tower_cone_angle, config.wipe_tower_rotation_angle, false, brim_width);
+                m_shells.volumes.load_wipe_tower_preview(object_config.wipe_tower_x, object_config.wipe_tower_y, object_config.wipe_tower_width, depth, z_and_depth_pairs,
+                    max_z, object_config.wipe_tower_cone_angle, object_config.wipe_tower_rotation_angle, false, brim_width);
                 const std::unique_ptr<GLVolume> &volume = m_shells.volumes.volumes.back();
                 volume->color.a(0.25f);
                 volume->force_native_color = true;

@@ -7883,8 +7883,8 @@ void GLCanvas3D::_load_wipe_tower_toolpaths(const BuildVolume& build_volume, con
     if (print->wipe_tower_data().final_purge)
         ctxt.final.emplace_back(*print->wipe_tower_data().final_purge.get());
 
-    ctxt.wipe_tower_angle = ctxt.print->config().wipe_tower_rotation_angle.value/180.f * PI;
-    ctxt.wipe_tower_pos = Vec2f(ctxt.print->config().wipe_tower_x.value, ctxt.print->config().wipe_tower_y.value);
+    ctxt.wipe_tower_angle = ctxt.print->default_object_config().wipe_tower_rotation_angle.value/180.f * PI;
+    ctxt.wipe_tower_pos = Vec2f(ctxt.print->default_object_config().wipe_tower_x.value, ctxt.print->default_object_config().wipe_tower_y.value);
 
     ctxt.color_support = m_gcode_viewer.get_extrusion_colors()[uint8_t(GCodeExtrusionRole::WipeTower)];
 

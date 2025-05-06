@@ -196,6 +196,7 @@ private:
     std::vector<uint16_t>       m_all_printing_extruders;
 
     const PrintConfig*          m_print_config_ptr = nullptr;
+    const PrintObjectConfig*    m_print_object_config_ptr = nullptr;
 };
 
 } // namespace SLic3r

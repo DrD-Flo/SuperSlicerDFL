@@ -181,6 +181,7 @@ ToolOrdering::ToolOrdering(const PrintObject &object, const GCode::ObjectsLayerT
 ToolOrdering::ToolOrdering(const Print &print, uint16_t first_extruder, bool prime_multi_material)
 {
     m_print_config_ptr = &print.config();
+    m_print_object_config_ptr = &print.default_object_config();
 
     // Initialize the print layers for all objects and all layers.
     coord_t object_bottom_z = 0;
@@ -473,7 +474,7 @@ void ToolOrdering::reorder_extruders(uint16_t last_extruder_id)
 
             // On first layer with wipe tower, prefer a soluble extruder
             // at the beginning, so it is not wiped on the first layer.
-            if (lt == m_layer_tools[0] && m_print_config_ptr && m_print_config_ptr->wipe_tower) {
+            if (lt == m_layer_tools[0] && m_print_config_ptr && m_print_object_config_ptr && m_print_object_config_ptr->wipe_tower) {
                 for (size_t i = 0; i<lt.extruders.size(); ++i)
                     if (m_print_config_ptr->filament_soluble.get_at(lt.extruders[i]-1)) { // 1-based...
                         std::swap(lt.extruders[i], lt.extruders.front());
@@ -593,15 +594,15 @@ void ToolOrdering::fill_wipe_tower_partitions(const PrintConfig &config, coordf_
 
 bool ToolOrdering::insert_wipe_tower_extruder()
 {
-    if (!m_print_config_ptr->wipe_tower)
+    if (!m_print_object_config_ptr->wipe_tower)
         return false;
 
     // In case that wipe_tower_extruder is set to non-zero, we must make sure that the extruder will be in the list.
     bool changed = false;
-    if (m_print_config_ptr->wipe_tower_extruder != 0) {
+    if (m_print_object_config_ptr->wipe_tower_extruder != 0) {
         for (LayerTools& lt : m_layer_tools) {
             if (lt.wipe_tower_partitions > 0) {
-                lt.extruders.emplace_back(m_print_config_ptr->wipe_tower_extruder - 1);
+                lt.extruders.emplace_back(m_print_object_config_ptr->wipe_tower_extruder - 1);
                 sort_remove_duplicates(lt.extruders);
                 changed = true;
             }
