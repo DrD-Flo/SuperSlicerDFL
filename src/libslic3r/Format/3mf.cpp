@@ -1703,7 +1703,7 @@ namespace Slic3r {
                     type  = static_cast<CustomGCode::Type>(tree.get<int>("<xmlattr>.type"));
                     extra = tree.get<std::string>("<xmlattr>.extra", "");
                 }
-                m_model->custom_gcode_per_print_z.gcodes.push_back(CustomGCode::Item{print_z, type, extruder, color, extra}) ;
+                m_model->custom_gcode_per_print_z.gcodes.push_back(CustomGCode::Item{Layer::scale_to_layer_coord(print_z), type, extruder, color, extra}) ;
             }
         }
     }
@@ -4011,7 +4011,7 @@ bool _3MF_Exporter::_add_custom_gcode_per_print_z_file_to_archive( mz_zip_archiv
             pt::ptree& code_tree = main_tree.add("code", "");
 
             // store data of custom_gcode_per_print_z
-            code_tree.put("<xmlattr>.print_z"   , code.print_z  );
+            code_tree.put("<xmlattr>.print_z"   , unscaled(code.print_z_)  );
             code_tree.put("<xmlattr>.type"      , static_cast<int>(code.type));
             code_tree.put("<xmlattr>.extruder"  , code.extruder );
             code_tree.put("<xmlattr>.color"     , code.color    );

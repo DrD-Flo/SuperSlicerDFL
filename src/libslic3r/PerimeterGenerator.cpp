@@ -551,7 +551,7 @@ ExtrusionEntityCollection PerimeterGenerator::_traverse_loops_classic(const Para
                     ExtrusionFlow{
                         is_external ? params.ext_mm3_per_mm() : params.mm3_per_mm(),
                         is_external ? params.ext_perimeter_flow.width() : params.perimeter_flow.width(),
-                        float(params.layer->height)
+                        float(params.layer->unscaled_height())
                     }
                 },
                 false
@@ -799,7 +799,7 @@ ExtrusionPaths PerimeterGenerator::create_overhangs_classic(const Parameters &pa
                                                                            params.mm3_per_mm(),
                                                              is_external ? params.ext_perimeter_flow.width() :
                                                                            params.perimeter_flow.width(),
-                                                             float(params.layer->height)}},
+                                                             float(params.layer->unscaled_height())}},
                            false);
         assert(paths.back().mm3_per_mm() == paths.back().mm3_per_mm());
         assert(paths.back().width() == paths.back().width());
@@ -1022,7 +1022,7 @@ ExtrusionPaths PerimeterGenerator::create_overhangs_classic(const Parameters &pa
                                                                                   params.mm3_per_mm(),
                                                                     is_external ? params.ext_perimeter_flow.width() :
                                                                                   params.perimeter_flow.width(),
-                                                                    float(params.layer->height)}},
+                                                                    float(params.layer->unscaled_height())}},
                                   false}};
         }
         extrusion_paths_append(paths, ok_polylines,
@@ -1629,7 +1629,7 @@ void PerimeterGenerator::_sort_overhangs(const Parameters &params,
         }
         if (!need_erase) {
             last_type_fh = int(path.attributes().height);
-            path.attributes_mutable().height = path.height() < overhang_params.layer_height_count - 2 ? (float) params.layer->height :
+            path.attributes_mutable().height = path.height() < overhang_params.layer_height_count - 2 ? (float) params.layer->unscaled_height() :
                                                                                  params.overhang_flow.height();
 #ifdef _DEBUG
             //assert(last_pt == path.first_point());
@@ -3280,7 +3280,7 @@ ProcessSurfaceResult PerimeterGenerator::process_arachne(const Parameters &param
             Arachne::WallToolPaths wallToolPaths(last_p, params.get_ext_perimeter_spacing(),
                                                     params.get_ext_perimeter_width(), params.get_perimeter_spacing(),
                                                     params.get_perimeter_width(), 1, coord_t(0),
-                                                 params.layer->height, params.config, params.print_config);
+                                                 params.layer->unscaled_height(), params.config, params.print_config);
             out_shell = wallToolPaths.getToolPaths();
             // Make sure infill not overlap with wall
             // offset the InnerContour as arachne use bounds and not centerline
@@ -3306,7 +3306,7 @@ ProcessSurfaceResult PerimeterGenerator::process_arachne(const Parameters &param
     Polygons   last_p = to_polygons(last);
     Arachne::WallToolPaths wallToolPaths(last_p, params.get_ext_perimeter_spacing(), params.get_ext_perimeter_width(),
         params.get_perimeter_spacing(), params.get_perimeter_width(), loop_number, coord_t(0),
-        params.layer->height, params.config, params.print_config);
+        params.layer->unscaled_height(), params.config, params.print_config);
     std::vector<Arachne::VariableWidthLines> perimeters = wallToolPaths.getToolPaths();
     ExPolygons infill_contour = union_ex(wallToolPaths.getInnerContour());
 
@@ -3358,7 +3358,7 @@ ProcessSurfaceResult PerimeterGenerator::process_arachne(const Parameters &param
                                                            params.get_perimeter_spacing(),
                                                            params.get_perimeter_width(),
                                                            ordered_settings[idx_peri].first - current_perimeter_count,
-                                                           coord_t(0), params.layer->height, params.config,
+                                                           coord_t(0), params.layer->unscaled_height(), params.config,
                                                            params.print_config);
                 std::vector<Arachne::VariableWidthLines> perimeters_extra = wallToolPaths_extra.getToolPaths();
                 ExPolygons new_infil_areas = union_ex(wallToolPaths_extra.getInnerContour());
@@ -3415,7 +3415,7 @@ ProcessSurfaceResult PerimeterGenerator::process_arachne(const Parameters &param
             Polygons small_polygons_p = to_polygons(small_polygons);
             Arachne::WallToolPaths wallToolPaths_extra(small_polygons_p, params.get_ext_perimeter_spacing(),
                                                  params.get_ext_perimeter_width(), params.get_perimeter_spacing(),
-                                                 params.get_perimeter_width(), 9999, coord_t(0), params.layer->height,
+                                                 params.get_perimeter_width(), 9999, coord_t(0), params.layer->unscaled_height(),
                                                  params.config, params.print_config);
             std::vector<Arachne::VariableWidthLines> perimeters_extra = wallToolPaths_extra.getToolPaths();
             append(infill_contour, union_ex(wallToolPaths_extra.getInnerContour()));
@@ -3455,7 +3455,7 @@ ProcessSurfaceResult PerimeterGenerator::process_arachne(const Parameters &param
             Polygons extra_perimeter_areas_p = to_polygons(extra_perimeter_areas);
             Arachne::WallToolPaths wallToolPaths_extra(extra_perimeter_areas_p, params.get_ext_perimeter_spacing(),
                                                  params.get_ext_perimeter_width(), params.get_perimeter_spacing(),
-                                                 params.get_perimeter_width(), 1, coord_t(0), params.layer->height,
+                                                 params.get_perimeter_width(), 1, coord_t(0), params.layer->unscaled_height(),
                                                  params.config, params.print_config);
             std::vector<Arachne::VariableWidthLines> perimeters_extra = wallToolPaths_extra.getToolPaths();
             append(infill_contour, union_ex(wallToolPaths_extra.getInnerContour()));
@@ -4930,7 +4930,7 @@ ProcessSurfaceResult PerimeterGenerator::process_classic(const Parameters &     
             ) {
             ExPolygons overhangs = diff_ex(last, *lower_slices);
             coord_t offset = scale_t(params.config.overhangs_reverse_threshold.get_abs_value(unscaled(params.get_perimeter_width())));
-            //version with: scale_(std::tan(PI * (0.5f / 90) * params.config.overhangs_reverse_threshold.value ) * params.layer->height)
+            //version with: scale_(std::tan(PI * (0.5f / 90) * params.config.overhangs_reverse_threshold.value ) * params.layer->unscaled_height())
 
             if (offset_ex(overhangs, -offset / 2.).size() > 0) {
                 //allow this loop to be printed in reverse
@@ -5242,7 +5242,7 @@ ProcessSurfaceResult PerimeterGenerator::process_classic(const Parameters &     
                                 Slic3r::Geometry::MedialAxis ma{thin[0],
                                                                 (coord_t) ((params.get_ext_perimeter_width() + params.get_ext_perimeter_spacing()) * 1.2),
                                                                 min_width,
-                                                                scale_t(params.layer->height)};
+                                                                scale_t(params.layer->unscaled_height())};
                                 ma.use_bounds(bound)
                                     .use_min_real_width(scale_t(params.ext_perimeter_flow.nozzle_diameter()))
                                     .use_tapers(thin_walls_overlap)
@@ -5814,7 +5814,7 @@ ProcessSurfaceResult PerimeterGenerator::process_classic(const Parameters &     
         // collapse 
         coordf_t min = 0.2 * params.get_perimeter_width() * (1 - INSET_OVERLAP_TOLERANCE);
         //be sure we don't gapfill where the perimeters are already touching each other (negative spacing).
-        min = std::max(min, double(Flow::new_from_spacing((float)EPSILON, (float)params.perimeter_flow.nozzle_diameter(), (float)params.layer->height, (float)params.perimeter_flow.spacing_ratio(), false).scaled_width()));
+        min = std::max(min, double(Flow::new_from_spacing((float)EPSILON, (float)params.perimeter_flow.nozzle_diameter(), (float)params.layer->unscaled_height(), (float)params.perimeter_flow.spacing_ratio(), false).scaled_width()));
         coordf_t real_max = 2.5 * params.get_perimeter_spacing();
         const coordf_t minwidth = scale_d(params.config.gap_fill_min_width.get_abs_value(unscaled((double)params.get_perimeter_width())));
         const coordf_t maxwidth = scale_d(params.config.gap_fill_max_width.get_abs_value(unscaled((double)params.get_perimeter_width())));
@@ -5888,7 +5888,7 @@ ProcessSurfaceResult PerimeterGenerator::process_classic(const Parameters &     
         // create lines from the area
         ThickPolylines polylines;
         for (const ExPolygon& ex : gaps_ex) {
-            Geometry::MedialAxis md{ ex, coord_t(real_max), coord_t(min), coord_t(params.layer->height) };
+            Geometry::MedialAxis md{ ex, coord_t(real_max), coord_t(min), coord_t(params.layer->unscaled_height()) };
             if (minlength > 0) {
                 md.set_min_length(minlength);
             }
@@ -6462,7 +6462,7 @@ ExtrusionLoop PerimeterGenerator::_extrude_and_cut_loop(const Parameters &params
                                                                               (float) (loop.is_external() ?
                                                                                            params.ext_perimeter_flow.width() :
                                                                                            params.perimeter_flow.width()),
-                                                                              (float) (params.layer->height))),
+                                                                              (float) (params.layer->unscaled_height()))),
                                             false /*can't reverse*/);
             single_point.paths.back().polyline = poly_point;
             return single_point;
@@ -6577,7 +6577,7 @@ ExtrusionLoop PerimeterGenerator::_extrude_and_cut_loop(const Parameters &params
             if (need_to_reverse) path.polyline.reverse();
             path.attributes_mutable().mm3_per_mm = is_external ? params.ext_mm3_per_mm() : params.mm3_per_mm();
             path.attributes_mutable().width = is_external ? params.ext_perimeter_flow.width() : params.perimeter_flow.width();
-            path.attributes_mutable().height = (float)(params.layer->height);
+            path.attributes_mutable().height = (float)(params.layer->unscaled_height());
             assert(!path.empty());
             my_loop.paths.push_back(path);
         }

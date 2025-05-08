@@ -247,7 +247,7 @@ SliceConnection estimate_slice_connection(size_t slice_idx, const Layer *layer)
 
     const Integrals integrals{overlap};
     connection.area += integrals.area;
-    connection.centroid_accumulator += Vec3f(integrals.x_i.x(), integrals.x_i.y(), layer->print_z * integrals.area);
+    connection.centroid_accumulator += Vec3f(integrals.x_i.x(), integrals.x_i.y(), layer->unscaled_print_z() * integrals.area);
     connection.second_moment_of_area_accumulator += integrals.x_i_squared;
     connection.second_moment_of_area_covariance_accumulator += integrals.xy;
 
@@ -451,7 +451,7 @@ std::vector<ExtrusionLine> check_extrusion_entity_stability(const ExtrusionEntit
             }
 
             line_out.curled_up_height = estimate_curled_up_height(middle_distance, 0.5 * (prev_point.curvature + curr_point.curvature),
-                                                                  layer_region->layer()->height, flow_width, bottom_line.curled_up_height,
+                                                                  layer_region->layer()->unscaled_height(), flow_width, bottom_line.curled_up_height,
                                                                   params);
 
             lines_out.push_back(line_out);
@@ -1075,8 +1075,8 @@ SliceMappings update_active_object_parts(const Layer                        *lay
         ObjectPart new_part{
             extrusion_collections,
             connected_to_bed,
-            layer->print_z,
-            layer->height,
+            layer->unscaled_print_z(),
+            layer->unscaled_height(),
             brim
         };
 
@@ -1117,7 +1117,7 @@ SliceMappings update_active_object_parts(const Layer                        *lay
                     }
                 }
             }
-            const float bottom_z = layer->bottom_z();
+            const float bottom_z = (float)unscaled(layer->scaled_bottom_z());
             auto estimate_conn_strength = [bottom_z](const SliceConnection &conn) {
                 if (conn.area < EPSILON) { // connection is empty, does not exists. Return max strength so that it is not picked as the
                                            // weakest connection.
@@ -1195,7 +1195,7 @@ std::tuple<SupportPoints, PartialObjects> check_stability(const PrintObject     
     for (size_t layer_idx = 0; layer_idx < po->layer_count(); ++layer_idx) {
         cancel_func();
         const Layer *layer                 = po->get_layer(layer_idx);
-        float        bottom_z              = layer->bottom_z();
+        float        bottom_z              = (float)unscaled(layer->scaled_bottom_z());
 
         slice_mappings = update_active_object_parts(layer, params, precomputed_slices_connections[layer_idx], slice_mappings, active_object_parts, partial_objects);
 
@@ -1332,7 +1332,7 @@ void estimate_supports_malformations(SupportLayerPtrs &layers, float flow_width,
                 auto  d    = (v1.x() * v2.y()) - (v1.y() * v2.x());
                 float sign = (d > 0) ? -1.0f : 1.0f;
 
-                line_out.curled_up_height = estimate_curled_up_height(middle_distance * sign, 0.5 * (a.curvature + b.curvature), l->height,
+                line_out.curled_up_height = estimate_curled_up_height(middle_distance * sign, 0.5 * (a.curvature + b.curvature), l->unscaled_height(),
                                                                       flow_width, bottom_line.curled_up_height, params);
 
                 current_layer_lines.push_back(line_out);
@@ -1410,7 +1410,7 @@ void estimate_malformations(LayerPtrs &layers, const Params &params)
                                                                                                                                      1.0f;
 
                     line_out.curled_up_height = estimate_curled_up_height(middle_distance * sign, 0.5 * (a.curvature + b.curvature),
-                                                                          l->height, flow_width, bottom_line.curled_up_height, params);
+                                                                          l->unscaled_height(), flow_width, bottom_line.curled_up_height, params);
 
                     current_layer_lines.push_back(line_out);
                 }

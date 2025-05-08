@@ -35,7 +35,8 @@ std::string WipeTowerIntegration::toolchange_gcode_from_wipe_tower_generator(GCo
     if (tcr.priming || (new_extruder_id >= 0)) {
         if (is_ramming)
             gcodegen.m_wipe.reset_path(); // We don't want wiping on the ramming lines.
-        toolchange_gcode_str = gcodegen.set_extruder(new_extruder_id, tcr.print_z); // TODO: toolchange_z vs print_z
+        toolchange_gcode_str = gcodegen.set_extruder(new_extruder_id,
+                                                     scale_t(tcr.print_z + EPSILON)); // TODO: toolchange_z vs print_z
     }
     assert(toolchange_gcode_str.empty() || toolchange_gcode_str.back() == '\n');
     return toolchange_gcode_str;

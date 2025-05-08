@@ -156,7 +156,7 @@ public:
 
     Flow     flow(FlowRole role) const;
     Flow     flow(FlowRole role, double layer_height) const;
-    coordf_t bridging_height_avg() const;
+    double   bridging_height_avg_mm() const;
     Flow     bridging_flow(FlowRole role, BridgeType force_type = BridgeType::btNone) const;
 
     void    slices_to_fill_surfaces_clipped(coord_t opening_offset);
@@ -366,6 +366,8 @@ using LayerSlices = std::vector<LayerSlice>;
 
 class Layer 
 {
+    coord_t             m_height;        // layer height
+    coord_t             m_print_z;       // Z used for printing
 public:
     // Sequential index of this layer in PrintObject::m_layers, offsetted by the number of raft layers.
     size_t              id() const          { return m_id; }
@@ -376,10 +378,15 @@ public:
     Layer              *upper_layer;
     Layer              *lower_layer;
 //    bool                slicing_errors;
-    double              slice_z;       // Z used for slicing in unscaled coordinates
-    double              print_z;       // Z used for printing in unscaled coordinates
-    double              height;        // layer height in unscaled coordinates
-    double              bottom_z() const { return this->print_z - this->height; }
+    // heights
+    static coord_t      scale_to_layer_coord(double z);
+    double              slice_z;       // Z used for slicing, in unscaled coordinates
+    coord_t             scaled_print_z() const { return m_print_z; }
+    double              unscaled_print_z() const { return unscaled(m_print_z); }
+    coord_t             scaled_height() const { return m_height; }
+    double              unscaled_height() const { return unscaled(m_height); }
+    coord_t             scaled_bottom_z() const { return this->m_print_z - this->m_height; }
+
 
     //Extrusions estimated to be seriously malformed, estimated during "Estimating curled extrusions" step. These lines should be avoided during fast travels.
     CurledLines         curled_lines;
@@ -444,11 +451,14 @@ protected:
     friend std::vector<Layer*> new_layers(PrintObject*, const std::vector<coordf_t>&);
     friend std::string fix_slicing_errors(LayerPtrs&, const std::function<void()>&);
 
-    Layer(size_t id, PrintObject *object, coordf_t height, coordf_t print_z, coordf_t slice_z) :
+    Layer(size_t id, PrintObject *object, coord_t height, coord_t print_z, double slice_z, bool scaledok) :
         upper_layer(nullptr), lower_layer(nullptr), 
         //slicing_errors(false),
-        slice_z(slice_z), print_z(print_z), height(height),
-        m_id(id), m_object(object) {}
+        slice_z(slice_z), m_print_z(print_z), m_height(height),
+        m_id(id), m_object(object) {
+        assert(print_z > 100);
+        assert(height > 100);
+    }
     virtual ~Layer();
     // Clear fill extrusions, remove them from layer islands.
     void clear_fills();
@@ -500,15 +510,15 @@ protected:
 
     // The constructor has been made public to be able to insert additional support layers for the skirt or a wipe tower
     // between the raft and the object first layer.
-    SupportLayer(size_t id, size_t interface_id, PrintObject *object, coordf_t height, coordf_t print_z, coordf_t slice_z) :
-        Layer(id, object, height, print_z, slice_z), m_interface_id(interface_id) {}
+    SupportLayer(size_t id, size_t interface_id, PrintObject *object, coord_t height, coord_t print_z, double slice_z, bool scaledok) :
+        Layer(id, object, height, print_z, slice_z, scaledok), m_interface_id(interface_id) {}
     virtual ~SupportLayer() = default;
 
     size_t m_interface_id;
 };
 
 template<typename LayerContainer>
-inline std::vector<float> zs_from_layers(const LayerContainer &layers)
+inline std::vector<float> slice_z_from_layers(const LayerContainer &layers)
 {
     std::vector<float> zs;
     zs.reserve(layers.size());

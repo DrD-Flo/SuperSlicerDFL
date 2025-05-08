@@ -101,11 +101,15 @@ namespace GCode {
 struct ObjectLayerToPrint
 {
     ObjectLayerToPrint() : object_layer(nullptr), support_layer(nullptr) {}
-    const Layer* 		object_layer;
-    const SupportLayer* support_layer;
-    const Layer* 		layer()   const { return (object_layer != nullptr) ? object_layer : support_layer; }
-    const PrintObject* 	object()  const { return (this->layer() != nullptr) ? this->layer()->object() : nullptr; }
-    coordf_t            print_z() const { return (object_layer != nullptr && support_layer != nullptr) ? 0.5 * (object_layer->print_z + support_layer->print_z) : this->layer()->print_z; }
+    const Layer        *object_layer;
+    const SupportLayer *support_layer;
+    const Layer        *layer() const { return (object_layer != nullptr) ? object_layer : support_layer; }
+    const PrintObject  *object() const { return (this->layer() != nullptr) ? this->layer()->object() : nullptr; }
+    coord_t _print_z() const {
+        assert(object_layer == nullptr || support_layer == nullptr ||
+               object_layer->scaled_print_z() == support_layer->scaled_print_z());
+        return this->layer()->scaled_print_z();
+    }
 };
 
 struct PrintObjectInstance
@@ -242,8 +246,8 @@ private:
     void            _move_to_print_object(std::string& gcode_out, const Print& print, size_t finished_objects, uint16_t initial_extruder_id);
     void            _init_multiextruders(const Print& print, std::string& gcode_out, GCodeWriter& writer, const ToolOrdering& tool_ordering, const std::string& custom_gcode);
 
-    static ObjectsLayerToPrint         		                     collect_layers_to_print(const PrintObject &object, Print::StatusMonitor &status_monitor);
-    static std::vector<std::pair<coordf_t, ObjectsLayerToPrint>> collect_layers_to_print(const Print &print, Print::StatusMonitor &status_monitor);
+    static ObjectsLayerToPrint                                  collect_layers_to_print(const PrintObject &object, Print::StatusMonitor &status_monitor);
+    static std::vector<std::pair<coord_t, ObjectsLayerToPrint>> collect_layers_to_print(const Print &print, Print::StatusMonitor &status_monitor);
 
 
     LayerResult process_layer(
@@ -267,7 +271,7 @@ private:
         Print::StatusMonitor                                          &status_monitor,
         const ToolOrdering                                            &tool_ordering,
         const std::vector<const PrintInstance*>                       &print_object_instances_ordering,
-        const std::vector<std::pair<coordf_t, ObjectsLayerToPrint>>   &layers_to_print,
+        const std::vector<std::pair<coord_t, ObjectsLayerToPrint>>    &layers_to_print,
         std::string                                                   &preamble,
         GCodeOutputStream                                             &output_stream);
     // Process all layers of a single object instance (sequential mode) with a parallel pipeline:
@@ -284,7 +288,7 @@ private:
     
     void            set_extruders(const std::vector<uint16_t> &extruder_ids);
     std::string     preamble();
-    std::string change_layer(double print_z);
+    std::string change_layer(coord_t print_z);
 
     std::string      visitor_gcode;
     bool             visitor_flipped; //TODO use instead of reverse() at extrude_entity
@@ -380,7 +384,7 @@ private:
      );
     Polyline        travel_to(std::string& gcode, const Point &end_point, ExtrusionRole role);
     void            write_travel_to(std::string& gcode, Polyline& travel, std::string comment);
-    std::vector<coord_t> get_travel_elevation(Polyline& travel, double z_change);
+    std::vector<coord_t> get_travel_elevation(Polyline& travel, coord_t z_change);
     //std::string     travel_to_first_position(const Vec3crd& point);
     bool            can_cross_perimeter(const Polyline& travel, bool offset);
     bool            needs_retraction(const Polyline &travel, ExtrusionRole role = ExtrusionRole::None, coordf_t max_min_dist = 0);
@@ -388,9 +392,9 @@ private:
     std::string     retract_and_wipe(bool toolchange = false, bool inhibit_lift = false);
     std::string     unretract() { return m_writer.unlift() + m_writer.unretract(); }
     // enforce lift_min
-    void            set_extra_lift(const float previous_print_z, const int layer_id, const PrintConfig& print_config, GCodeWriter & writer, int extruder_id);
-    std::string     set_extruder(uint16_t extruder_id, double print_z, bool no_toolchange = false);
-    std::string     toolchange(uint16_t extruder_id, double print_z);
+    void            set_extra_lift(const coord_t previous_print_z, const int layer_id, const PrintConfig& print_config, GCodeWriter & writer, int extruder_id);
+    std::string     set_extruder(uint16_t extruder_id, coord_t print_z, bool no_toolchange = false);
+    std::string     toolchange(uint16_t extruder_id, coord_t print_z);
     bool line_distancer_is_required(const std::vector<uint16_t>& extruder_ids);
 
     // Cache for custom seam enforcers/blockers for each layer.
@@ -477,7 +481,7 @@ private:
     const Layer*                        m_layer;
     // last layers printed at our current Z, to 
     std::vector<const Layer*>           m_last_object_layers;
-    coordf_t                            m_last_layers_z{ 0.0 };
+    coord_t                             m_last_layers_z{ 0 };
     const PrintRegion*                  m_region = nullptr;
     // m_layer is an object layer and it is being printed over raft surface.
     bool                                m_object_layer_over_raft;    // idx of the current instance printed. (or the last one)
@@ -508,10 +512,10 @@ private:
     // Not know the gapfill role for retract_lift_top
     GCodeExtrusionRole                  m_last_not_gapfill_extrusion_role;
     // Support for G-Code Processor
-    double                              m_last_height{ 0.0 };
-    double                              m_last_layer_z{ 0.0 };
-    double                              m_max_layer_z{ 0.0 };
-    double                              m_last_width{ 0.0 };
+    coord_t                             m_last_height_{ 0 };
+    coord_t                             m_last_layer_z_{ 0 };
+    coord_t                             m_max_layer_z_{ 0 };
+    float                               m_last_path_flow_width{ 0 };
     // filament used since the beginning for each extruder, updated after the before_layer_gcode. in mm
     std::vector<double>                 m_last_layer_used_filament;
     // to pass between before_xtrude and after_extrude.
@@ -526,8 +530,8 @@ private:
     // for ramping lift: if enabled, and this is set, then you will need to move Z at the next travel.
     // note: rampng lift and these kind of trick should eb reworked & improve when the gcode creation will be split in multiplt subsystem, these working on a chain of "command" objects. That way it should be easier to move the Z / travel accrodingly.
     // the dangerous thing with it is when you cancel an object, then the Z move and the travel need to be dealt with correctly. currently, it's a pain to to do that.
-    std::optional<double>               m_new_z_target = {};
-    double                              m_next_lift_min{0};
+    std::optional<coord_t>              _m_new_z_target = {};
+    coord_t                             _m_next_lift_min{0};
 
     double                              m_current_perimeter_extrusion_width = 0.4;
     std::optional<unsigned>             m_layer_change_extruder_id;
@@ -549,7 +553,7 @@ private:
     const WipeTowerData                *m_wipe_tower_data;
 
     // Heights (print_z) at which the skirt has already been extruded.
-    std::vector<coordf_t>               m_skirt_done;
+    std::vector<coord_t>                m_skirt_done;
     // Has the brim been extruded already? Brim is being extruded only for the first object of a multi-object print.
     bool                                m_brim_done;
     // Flag indicating whether the nozzle temperature changes from 1st to 2nd layer were performed.

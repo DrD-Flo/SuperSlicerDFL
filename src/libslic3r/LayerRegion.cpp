@@ -42,7 +42,7 @@ void LayerRegion::clear() {
 
 Flow LayerRegion::flow(FlowRole role) const
 {
-    return this->flow(role, m_layer->height);
+    return this->flow(role, (float)m_layer->unscaled_height());
 }
 
 Flow LayerRegion::flow(FlowRole role, double layer_height) const
@@ -51,14 +51,14 @@ Flow LayerRegion::flow(FlowRole role, double layer_height) const
 }
 
 // Average diameter of nozzles participating on extruding this region.
-coordf_t LayerRegion::bridging_height_avg() const
+double LayerRegion::bridging_height_avg_mm() const
 {
     const PrintRegionConfig& region_config = this->region().config();
     if (region_config.bridge_type == BridgeType::btFromNozzle) {
         const PrintConfig& print_config = this->layer()->object()->print()->config();
         return region().nozzle_dmr_avg(print_config) * sqrt(region_config.bridge_flow_ratio.get_abs_value(1));
     } else if (region_config.bridge_type == BridgeType::btFromHeight) {
-        return this->layer()->height;
+        return this->layer()->unscaled_height();
     } else if (region_config.bridge_type == BridgeType::btFromFlow) {
         return this->bridging_flow(FlowRole::frInfill).height();
     }
@@ -78,7 +78,7 @@ Flow LayerRegion::bridging_flow(FlowRole role, BridgeType force_type) const
         Flow reference_flow = flow(role);
         diameter = sqrt(4 * reference_flow.mm3_per_mm() / PI);
     } else if (bridge_type == BridgeType::btFromHeight) {
-        diameter = m_layer->height;
+        diameter = m_layer->unscaled_height();
     } else /*if (bridge_type == BridgeType::btFromNozzle)*/ {
         // The good Slic3r way: Use rounded extrusions.
         // Get the configured nozzle_diameter for the extruder associated to the flow role requested.
@@ -142,7 +142,7 @@ void LayerRegion::make_perimeters(
     bool spiral_vase = print_config.spiral_vase &&
         //FIXME account for raft layers.
         (this->layer()->id() >= size_t(region_config.bottom_solid_layers.value) &&
-         this->layer()->print_z >= region_config.bottom_solid_min_thickness - EPSILON);
+         this->layer()->scaled_print_z() >= Layer::scale_to_layer_coord(region_config.bottom_solid_min_thickness.value));
 
     //this is a factory, the content will be copied into the PerimeterGenerator
     PerimeterGenerator::Parameters params(
@@ -246,13 +246,13 @@ void LayerRegion::make_milling_post_process(const SurfaceCollection& slices) {
 #if 1
 
 // Extract surfaces of given type from surfaces, extract fill (layer) thickness of one of the surfaces.
-static ExPolygons fill_surfaces_extract_expolygons(Surfaces &surfaces, std::initializer_list<SurfaceType> surface_types, double &thickness)
+static ExPolygons fill_surfaces_extract_expolygons(Surfaces &surfaces, std::initializer_list<SurfaceType> surface_types, coord_t &thickness)
 {
     size_t cnt = 0;
     for (const Surface &surface : surfaces)
         if (std::find(surface_types.begin(), surface_types.end(), surface.surface_type) != surface_types.end()) {
             ++cnt;
-            thickness = surface.thickness;
+            thickness = surface.scaled_thickness();
         }
     if (cnt == 0)
         return {};
@@ -280,7 +280,7 @@ Surfaces expand_bridges_detect_orientations(
 {
     using namespace Slic3r::Algorithm;
 
-    double thickness;
+    coord_t thickness;
     ExPolygons bridges_ex = fill_surfaces_extract_expolygons(surfaces, {stPosBottom | stDensSolid | stModBridge}, thickness);
     if (bridges_ex.empty())
         return {};
@@ -471,7 +471,7 @@ static Surfaces expand_merge_surfaces(
 {
     using namespace Slic3r::Algorithm;
 
-    double thickness;
+    coord_t thickness;
     ExPolygons src = fill_surfaces_extract_expolygons(surfaces, {surface_type}, thickness);
     if (src.empty())
         return {};
@@ -589,9 +589,10 @@ void LayerRegion::process_external_surfaces(const Layer *lower_layer, const Poly
     const coord_t scaled_resolution = std::max(SCALED_EPSILON, scale_t(this->layer()->object()->print()->config().resolution.value));
 
     // Expand the top / bottom / bridge surfaces into the shell thickness solid infills.
-    double     layer_thickness;
-    ExPolygons shells = union_ex(fill_surfaces_extract_expolygons(m_fill_surfaces.surfaces, { stPosInternal | stDensSolid }, layer_thickness));
-    ExPolygons sparse = union_ex(fill_surfaces_extract_expolygons(m_fill_surfaces.surfaces, { stPosInternal | stDensSparse }, layer_thickness));
+    coord_t     layer_solid_thickness  = 0;
+    coord_t     layer_sparse_thickness = 0;
+    ExPolygons shells = union_ex(fill_surfaces_extract_expolygons(m_fill_surfaces.surfaces, { stPosInternal | stDensSolid }, layer_solid_thickness));
+    ExPolygons sparse = union_ex(fill_surfaces_extract_expolygons(m_fill_surfaces.surfaces, { stPosInternal | stDensSparse }, layer_sparse_thickness));
     ExPolygons init_shells = shells;
     ExPolygons init_sparse = sparse;
 #ifdef _DEBUG
@@ -610,7 +611,7 @@ void LayerRegion::process_external_surfaces(const Layer *lower_layer, const Poly
     SurfaceCollection bridges;
     const auto expansion_params_into_sparse_infill = RegionExpansionParameters::build(expansion_min, expansion_step, max_nr_expansion_steps);
     {
-        BOOST_LOG_TRIVIAL(trace) << "Processing external surface, detecting bridges. layer" << this->layer()->print_z;
+        BOOST_LOG_TRIVIAL(trace) << "Processing external surface, detecting bridges. layer" << this->layer()->unscaled_print_z();
         const double custom_angle = this->region().config().bridge_angle.value;
         const auto   expansion_params_into_solid_infill  = RegionExpansionParameters::build(expansion_bottom_bridge, expansion_step, max_nr_expansion_steps);
         if (this->region().config().bridge_angle.is_enabled()) {
@@ -663,13 +664,15 @@ void LayerRegion::process_external_surfaces(const Layer *lower_layer, const Poly
     reserve_more(m_fill_surfaces.surfaces, shells.size() + sparse.size() + bridges.size() + bottoms.size() + tops.size());
     {
         Surface solid_templ(stPosInternal | stDensSolid, {});
-        solid_templ.thickness = layer_thickness;
+        assert(layer_solid_thickness > 0);
+        solid_templ.set_scaled_thickness(layer_solid_thickness);
         ensure_valid(shells/*, scaled_resolution*/);
         m_fill_surfaces.append(std::move(shells), solid_templ);
     }
     {
         Surface sparse_templ(stPosInternal | stDensSparse, {});
-        sparse_templ.thickness = layer_thickness;
+        assert(layer_sparse_thickness > 0);
+        sparse_templ.set_scaled_thickness(layer_sparse_thickness);
         ensure_valid(sparse/*, scaled_resolution*/);
         m_fill_surfaces.append(std::move(sparse), sparse_templ);
     }
@@ -1055,7 +1058,7 @@ void LayerRegion::process_external_surfaces_old(const Layer *lower_layer, const 
 
             // 3) Merge the groups with the same group id, detect bridges.
             {
-                BOOST_LOG_TRIVIAL(trace) << "Processing external surface, detecting bridges. layer" << this->layer()->print_z << ", bridge groups: " << n_groups;
+                BOOST_LOG_TRIVIAL(trace) << "Processing external surface, detecting bridges. layer" << this->layer()->unscaled_print_z() << ", bridge groups: " << n_groups;
                 for (size_t group_id = 0; group_id < n_groups; ++ group_id) {
                     size_t n_bridges_merged = 0;
                     size_t idx_last = (size_t)-1;

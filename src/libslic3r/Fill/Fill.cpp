@@ -438,7 +438,7 @@ std::vector<SurfaceFill> group_fills(const Layer &layer)
                         Flow reference_flow = layerm.flow(FlowRole::frSolidInfill);
                         diameter = sqrt(4 * reference_flow.mm3_per_mm() / PI);
                     } else if (region_config.bridge_type == BridgeType::btFromHeight) {
-                        diameter = layerm.layer()->height;
+                        diameter = layerm.layer()->unscaled_height();
                     } else /*if (region_config.bridge_type == BridgeType::btFromNozzle)*/ {
                         diameter = nozzle_diameter;
                     }
@@ -447,7 +447,7 @@ std::vector<SurfaceFill> group_fills(const Layer &layer)
                     params.flow = layerm.region().flow(
                         *layer.object(),
                         extrusion_role,
-                        (surface.thickness == -1) ? layer.height : surface.thickness,   // extrusion height
+                        (float)(surface.scaled_thickness() == -1) ? layer.unscaled_height() : surface.unscaled_thickness(),   // extrusion height
                         layer.id()
                     );
                 }
@@ -471,7 +471,7 @@ std::vector<SurfaceFill> group_fills(const Layer &layer)
                     Flow infill_flow = layerm.region().flow(
                             *layer.object(),
                             frInfill,
-                            layer.height,  // TODO: handle infill_every_layers?
+                            (float)layer.unscaled_height(),  // TODO: handle infill_every_layers?
                             layer.id()
                         );
                     params.spacing = infill_flow.spacing();
@@ -639,7 +639,7 @@ std::vector<SurfaceFill> group_fills(const Layer &layer)
             const LayerRegion& layerm = *layer.regions()[region_id];
             for (SurfaceFill &surface_fill : surface_fills) {
                 if (surface_fill.surface.surface_type == (stPosInternal | stDensVoid) &&
-                    std::abs(layer.height - surface_fill.params.flow.height()) < EPSILON) {
+                    std::abs(layer.unscaled_height() - surface_fill.params.flow.height()) < EPSILON) {
                     internal_solid_fill = &surface_fill;
                     break;
                 }
@@ -658,13 +658,13 @@ std::vector<SurfaceFill> group_fills(const Layer &layer)
                 params.flow = layerm.region().flow(
                     *layer.object(),
                     frSolidInfill,
-                    layer.height,         // extrusion height
+                    (float)layer.unscaled_height(),         // extrusion height
                     layer.id()
                 );
                 params.spacing = params.flow.spacing();            
                 surface_fills.emplace_back(params);
                 surface_fills.back().surface.surface_type = (stPosInternal | stDensSolid);
-                surface_fills.back().surface.thickness = layer.height;
+                surface_fills.back().surface.set_scaled_thickness(layer.scaled_height());
                 assert_valid(extensions);
                 surface_fills.back().expolygons = std::move(extensions);
             } else {
@@ -1010,7 +1010,7 @@ void Layer::make_fills(FillAdaptive::Octree* adaptive_fill_octree, FillAdaptive:
         // Layer::id() returns layer ID including raft layers, subtract them to make the infill direction independent
         // from raft.
         f->layer_id = this->id() - first_object_layer_id;
-        f->z        = this->print_z;
+        f->z        = this->unscaled_print_z();
         f->angle    = surface_fill.params.angle;
         f->can_angle_cross   = surface_fill.params.can_angle_cross;
         f->adapt_fill_octree = (surface_fill.params.pattern == ipSupportCubic) ? support_fill_octree : adaptive_fill_octree;
@@ -1101,7 +1101,7 @@ void Layer::make_fills(FillAdaptive::Octree* adaptive_fill_octree, FillAdaptive:
             surface_fill.params.dont_adjust = dont_adjust;
             surface_fill.params.bridge_offset = 0;
             surface_fill.params.density = density;
-            surface_fill.params.layer_height = m_regions[surface_fill.region_id]->layer()->height;
+            surface_fill.params.layer_height = float(m_regions[surface_fill.region_id]->layer()->unscaled_height());
             surface_fill.params.use_arachne   = (layerm->region().config().perimeter_generator == PerimeterGeneratorType::Arachne &&
                                                surface_fill.params.pattern == ipConcentric) ||
                                               surface_fill.params.pattern == ipEnsuring;
@@ -1334,7 +1334,7 @@ Polylines Layer::generate_sparse_infill_polylines_for_anchoring(FillAdaptive::Oc
         }
         f->set_bounding_box(bbox);
         f->layer_id = this->id() - this->object()->get_layer(0)->id(); // We need to subtract raft layers.
-        f->z        = this->print_z;
+        f->z        = this->unscaled_print_z();
         f->angle    = surface_fill.params.angle;
         f->adapt_fill_octree   = (surface_fill.params.pattern == ipSupportCubic) ? support_fill_octree : adaptive_fill_octree;
         f->set_config(&this->object()->print()->config(), &this->object()->config());
@@ -1370,7 +1370,7 @@ Polylines Layer::generate_sparse_infill_polylines_for_anchoring(FillAdaptive::Oc
         params.anchor_length_max = surface_fill.params.anchor_length_max;
         params.fill_resolution   = resolution;
         params.use_arachne       = false;
-        params.layer_height      = layerm.layer()->height;
+        params.layer_height      = (float)layerm.layer()->unscaled_height();
 
         for (ExPolygon &expoly : surface_fill.expolygons) {
             surface_fill.surface.expolygon = std::move(expoly);
@@ -1532,7 +1532,7 @@ void Layer::make_ironing()
 	// from raft.
 	//FIXME ironing does not take fill angle into account. Shall it? Does it matter?
 	fill.layer_id 			 = this->id() - this->object()->get_layer(0)->id();
-    fill.z                  = this->print_z;
+    fill.z                  = this->unscaled_print_z();
     fill.overlap            = 0;
     fill_params.density     = 1.;
     fill_params.connection  = InfillConnection::icConnected;

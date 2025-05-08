@@ -4270,7 +4270,7 @@ void GCodeViewer::render_legend(float& legend_height)
                 continue;
 
             const std::vector<double> zs = m_layers.get_zs();
-            auto lower_b = std::lower_bound(zs.begin(), zs.end(), item.print_z - Slic3r::DoubleSlider::epsilon());
+            auto lower_b = std::lower_bound(zs.begin(), zs.end(), unscaled(item.print_z_) - Slic3r::DoubleSlider::epsilon());
             if (lower_b == zs.end())
                 continue;
 

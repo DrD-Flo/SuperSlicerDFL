@@ -1255,7 +1255,7 @@ void SeamPlacer::gather_seam_candidates(const PrintObject *po, const SeamPlacerI
                 for (size_t layer_idx = next_layer_idx++; layer_idx < po->layers().size(); layer_idx = next_layer_idx++) {
                     PrintObjectSeamData::LayerSeams &layer_seams = seam_data.layers[layer_idx];
                     const Layer *layer = po->get_layer(layer_idx);
-                    auto unscaled_z = layer->slice_z;
+                    double unscaled_z = layer->slice_z;
                     std::vector<const LayerRegion*> regions;
                     //NOTE corresponding region ptr may be null, if the layer has zero perimeters
                     PolylineWithEnds polygons_and_lines = extract_perimeter_polylines(layer, configured_seam_preference, regions);
@@ -1877,7 +1877,7 @@ std::tuple<bool,std::optional<Vec3f>> get_seam_from_modifier(const Layer& layer,
                         // get zs
                         seam_mesh->zs.clear();
                         for (const Layer *layer : po->layers()) {
-                            seam_mesh->zs.push_back(float(layer->print_z));
+                            seam_mesh->zs.push_back(float(layer->unscaled_print_z()));
                         }
                         std::vector<Polygons> layers = slice_mesh(seam_mesh->mesh.its, seam_mesh->zs, slicing_params);
                         assert(seam_mesh->zs.size() == layers.size());
@@ -1908,19 +1908,19 @@ std::tuple<bool,std::optional<Vec3f>> get_seam_from_modifier(const Layer& layer,
                 Vec3d center_pos = (seam_mesh->bb_volume.min + seam_mesh->bb_volume.max) / 2;
                 double sphere_radius = std::min(seam_mesh->bb_volume.size().x() / 2, seam_mesh->bb_volume.size().y() / 2);
                 if (model_volume->type() == ModelVolumeType::SEAM_POSITION_CENTER) {
-                    test_lambda_z = std::abs(layer.print_z - center_pos.z());
+                    test_lambda_z = std::abs(layer.unscaled_print_z() - center_pos.z());
                 } else if (model_volume->type() == ModelVolumeType::SEAM_POSITION_CENTER_Z) {
                     double min_z = seam_mesh->bb_volume.min.z();
                     double max_z = seam_mesh->bb_volume.max.z();
                     assert(min_z < max_z);
-                    if (layer.print_z + EPSILON < min_z || layer.print_z > max_z + EPSILON || seam_mesh->layers_bb.empty()) {
+                    if (layer.unscaled_print_z() + EPSILON < min_z || layer.unscaled_print_z() > max_z + EPSILON || seam_mesh->layers_bb.empty()) {
                         // out of z, don't take it into account
                         continue;
                     }
                     // use slices to get the real center_pos
                     // find nearest z
                     size_t lidx = 0;
-                    for (; lidx < seam_mesh->layers_bb.size() && seam_mesh->zs[lidx] + EPSILON < layer.print_z ; ++lidx) {}
+                    for (; lidx < seam_mesh->layers_bb.size() && seam_mesh->zs[lidx] + EPSILON < layer.unscaled_print_z() ; ++lidx) {}
                     if (!seam_mesh->layers_bb[lidx].empty()) {
                         // set it
                         Point pt = (seam_mesh->layers_bb[lidx].min + seam_mesh->layers_bb[lidx].max) / 2;
@@ -1931,13 +1931,13 @@ std::tuple<bool,std::optional<Vec3f>> get_seam_from_modifier(const Layer& layer,
                 } else if(model_volume->type() == ModelVolumeType::SEAM_POSITION_INSIDE && !loop.paths.empty()) {
                     double min_z = seam_mesh->bb_volume.min.z();
                     double max_z = seam_mesh->bb_volume.max.z();
-                    if (layer.print_z + EPSILON < min_z || layer.print_z > max_z + EPSILON || seam_mesh->layers_contour.empty()) {
+                    if (layer.unscaled_print_z() + EPSILON < min_z || layer.unscaled_print_z() > max_z + EPSILON || seam_mesh->layers_contour.empty()) {
                         // out of z, don't take it into account
                         continue;
                     }
                     //get layer idx
                     size_t lidx = 0;
-                    for (; lidx < seam_mesh->layers_contour.size() && seam_mesh->zs[lidx] + EPSILON < layer.print_z ; ++lidx) {}
+                    for (; lidx < seam_mesh->layers_contour.size() && seam_mesh->zs[lidx] + EPSILON < layer.unscaled_print_z() ; ++lidx) {}
                     // TODO Grid optimisation
                     Polyline loop_polyline = loop.as_polyline().to_polyline(scale_t(loop.paths.front().width()));
                     //move the object's polyline to its plater position.
@@ -1979,7 +1979,7 @@ std::tuple<bool,std::optional<Vec3f>> get_seam_from_modifier(const Layer& layer,
 
                 Point xy_lambda = Point::new_scale(center_pos.x(), center_pos.y());
                 Point nearest = polygon.point_projection(xy_lambda).first;
-                Vec3d polygon_3dpoint{ unscaled(nearest.x()), unscaled(nearest.y()), (double)layer.print_z };
+                Vec3d polygon_3dpoint{ unscaled(nearest.x()), unscaled(nearest.y()), layer.unscaled_print_z() };
                 double test_lambda_dist = (polygon_3dpoint - center_pos).norm();
                 max_lambda_radius = std::max(max_lambda_radius, sphere_radius);
 

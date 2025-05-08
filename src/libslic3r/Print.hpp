@@ -227,10 +227,10 @@ public:
     // clipped by a layer range modifier.
     // Only Eigen types of Nx16 size are vectorized. This bounding box will not be vectorized.
     static_assert(sizeof(Eigen::AlignedBox<float, 3>) == 24, "Eigen::AlignedBox<float, 3> is not being vectorized, thus it does not need to be aligned");
-    using BoundingBox = Eigen::AlignedBox<float, 3>;
+    using BoundingAlignedBox3f = Eigen::AlignedBox<float, 3>;
     struct VolumeExtents {
         ObjectID             volume_id;
-        BoundingBox          bbox;
+        BoundingAlignedBox3f          bbox;
     };
 
     struct VolumeRegion
@@ -242,7 +242,7 @@ public:
         // Pointer to PrintObjectRegions::all_regions, null for a negative volume.
         PrintRegion         *region { nullptr };
         // Pointer to VolumeExtents::bbox.
-        const BoundingBox   *bbox { nullptr };
+        const BoundingAlignedBox3f   *bbox { nullptr };
         // To speed up merging of same regions.
         const VolumeRegion  *prev_same_region { nullptr };
     };
@@ -261,7 +261,7 @@ public:
     // possibly clipped by the layer_height_range.
     struct LayerRangeRegions
     {
-        t_layer_height_range        layer_height_range;
+        std::pair<coord_t, coord_t> layer_height_range_;
         // Config of the layer range, null if there is just a single range with no config override.
         // Config is owned by the associated ModelObject.
         const DynamicPrintConfig*   config { nullptr };
@@ -293,8 +293,6 @@ public:
 
     std::optional<GeneratedSupportPoints> generated_support_points;
 
-    void ref_cnt_inc() { ++ m_ref_cnt; }
-    void ref_cnt_dec() { if (-- m_ref_cnt == 0) delete this; }
     void clear() {
         all_regions.clear();
         layer_ranges.clear();
@@ -351,24 +349,26 @@ public:
     const Layer* 	get_layer(int idx) const { return m_layers[idx]; }
     Layer* 			get_layer(int idx) 		 { return m_layers[idx]; }
     // Get a layer exactly at print_z.
-    const Layer*	get_layer_at_printz(coordf_t print_z) const;
-    Layer*			get_layer_at_printz(coordf_t print_z);
+    const Layer*    get_layer_at_printz(coord_t print_z) const;
+    Layer*          get_layer_at_printz(coord_t print_z);
     // Get a layer approximately at print_z.
-    const Layer*	get_layer_at_printz(coordf_t print_z, coordf_t epsilon) const;
-    Layer*			get_layer_at_printz(coordf_t print_z, coordf_t epsilon);
+    const Layer*    get_layer_at_printz(double print_z, double epsilon) const;
+    Layer*          get_layer_at_printz(double print_z, double epsilon);
     // Get the first layer approximately bellow print_z.
-    const Layer*	get_first_layer_bellow_printz(coordf_t print_z, coordf_t epsilon) const;
+    const Layer*    get_first_layer_below_printz(coord_t print_z) const;
+    const Layer*    get_first_layer_below_printz(double print_z, double epsilon) const;
     // For sparse infill, get the max spasing avaialable in this object (avaialable after prepare_infill)
     coord_t         get_sparse_max_spacing() const { return m_max_sparse_spacing; }
 
     // print_z: top of the layer; slice_z: center of the layer.
-    Layer*          add_layer(int id, coordf_t height, coordf_t print_z, coordf_t slice_z);
+    // Deprecated: not used
+    //Layer*          add_layer(int id, coord_t height, coord_t print_z, double slice_z);
 
     size_t          support_layer_count() const { return m_support_layers.size(); }
     void            clear_support_layers();
     const SupportLayer*   get_support_layer(int idx) { return m_support_layers[idx]; }
-    void            add_support_layer(int id, int interface_id, coordf_t height, coordf_t print_z);
-    SupportLayerPtrs::iterator insert_support_layer(SupportLayerPtrs::const_iterator pos, size_t id, size_t interface_id, coordf_t height, coordf_t print_z, coordf_t slice_z);
+    void            add_support_layer(int id, int interface_id, coord_t height, coord_t print_z);
+    SupportLayerPtrs::iterator insert_support_layer(SupportLayerPtrs::const_iterator pos, size_t id, size_t interface_id, coord_t height, coord_t print_z, double slice_z);
     //void            delete_support_layer(int idx);
     
     // Initialize the layer_height_profile from the model_object's layer_height_profile, from model_object's layer height table, or from slicing parameters.
@@ -382,11 +382,11 @@ public:
     const SlicingParameters&                    slicing_parameters() const { return *m_slicing_params; }
     static std::shared_ptr<SlicingParameters>   slicing_parameters(const DynamicPrintConfig &full_config, const ModelObject &model_object, float object_max_z);
 
-    size_t                      num_printing_regions() const throw() { assert(m_shared_regions); return m_shared_regions->all_regions.size(); }
-    const PrintRegion&          printing_region(size_t idx) const throw() { assert(m_shared_regions); return *m_shared_regions->all_regions[idx].get(); }
+    size_t                      num_printing_regions()  const throw() { assert(m_shared_regions); return m_shared_regions->all_regions.size(); }
+    const PrintRegion&          printing_region(size_t idx) const throw() { assert(m_shared_regions); return *(m_shared_regions->all_regions[idx].get()); }
     //FIXME returing all possible regions before slicing, thus some of the regions may not be slicing at the end.
     std::vector<std::reference_wrapper<const PrintRegion>> all_regions() const;
-    const PrintObjectRegions*   shared_regions() const throw() { return m_shared_regions; }
+    const PrintObjectRegions*   shared_regions()        const throw() { assert(m_shared_regions); return m_shared_regions.get(); }
 
     bool                        has_support()           const { return m_config.support_material || m_config.support_material_enforce_layers > 0; }
     bool                        has_raft()              const { return m_config.raft_layers > 0; }
@@ -421,8 +421,6 @@ protected:
 
 	PrintObject(Print* print, ModelObject* model_object, const Transform3d& trafo, PrintInstances&& instances);
     ~PrintObject() override {
-        if (m_shared_regions && --m_shared_regions->m_ref_cnt == 0)
-            delete m_shared_regions;
         clear_layers();
         clear_support_layers();
     }
@@ -478,7 +476,7 @@ private:
     void _generate_support_material();
     void _compute_max_sparse_spacing();
     std::pair<FillAdaptive::OctreePtr, FillAdaptive::OctreePtr> prepare_adaptive_infill_data(
-        const std::vector<std::pair<const Surface*, float>>& surfaces_w_bottom_z) const;
+        const std::vector<std::pair<const Surface*, coord_t>>& surfaces_w_bottom_z) const;
     FillLightning::GeneratorPtr prepare_lightning_infill_data();
 
     // XYZ in scaled coordinates
@@ -494,7 +492,7 @@ private:
 
     // Object split into layer ranges and regions with their associated configurations.
     // Shared among PrintObjects created for the same ModelObject.
-    PrintObjectRegions                     *m_shared_regions { nullptr };
+    std::shared_ptr<PrintObjectRegions>     m_shared_regions;
 
     std::shared_ptr<SlicingParameters>      m_slicing_params;
     LayerPtrs                               m_layers;
@@ -594,7 +592,7 @@ struct PrintStatistics
     std::string                     initial_filament_type;
     std::string                     printing_filament_types;
     std::map<size_t, double>        filament_stats; // extruder id -> volume in mm3
-    std::vector<std::pair<double, float>> layer_area_stats; // print_z to area
+    std::vector<std::pair<coord_t, float>> _layer_area_stats; // print_z to area
 
     std::atomic_bool is_computing_gcode;
 
@@ -717,16 +715,16 @@ public:
     std::pair<PrintValidationError, std::string> validate(std::vector<std::string>* warnings = nullptr) const override;
     Flow                brim_flow(size_t extruder_id, const PrintObjectConfig &brim_config) const;
     Flow                skirt_flow(size_t extruder_id, bool first_layer=false) const;
-    double              get_min_first_layer_height() const;
-    double              get_object_first_layer_height(const PrintObject& object) const;
+    coord_t             get_min_first_layer_height() const;
+    coord_t             get_object_first_layer_height(const PrintObject& object) const;
 
     // get the extruders of these obejcts
-    std::set<uint16_t>  object_extruders(const PrintObjectPtrs &objects, float z = -1) const;
+    std::set<uint16_t>  object_extruders(const PrintObjectPtrs &objects, coord_t z = -1) const;
     // get all extruders from the list of objects in this print ( same as print.object_extruders(print.objects()) )
-    std::set<uint16_t>  object_extruders(float z = -1) const;
-    std::set<uint16_t>  support_material_extruders(float z = -1) const;
+    std::set<uint16_t>  object_extruders(coord_t z = -1) const;
+    std::set<uint16_t>  support_material_extruders(coord_t z = -1) const;
     // all extruder to print layers that extrude at this z.
-    std::set<uint16_t>  extruders(float z = -1) const;
+    std::set<uint16_t>  extruders(coord_t z = -1) const;
     double              max_allowed_layer_height() const;
     bool                has_support_material() const;
     // Make sure the background processing has no access to this model_object during this call!

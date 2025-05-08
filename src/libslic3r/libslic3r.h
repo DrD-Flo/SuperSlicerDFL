@@ -44,6 +44,9 @@
 #include "Technologies.hpp"
 #include "Semver.hpp"
 
+// unscaled coordinates (in milimiters) are stored in a double
+// scaled coordinates are stored in coord_t for interger and coordf_t (double) when it's needed to have a floating point
+// scaled distance is stored in distf_t (same type as coordf_t, but it's not exactly the same use)
 
 #define COORD_64B 1
 #ifndef COORD_64B
@@ -64,13 +67,6 @@ using distf_t = double;
 using distsqrf_t = double;
 using lengthsqr_t = uint64_t;
 #endif
-
-
-inline uint16_t operator "" _u(unsigned long long value)
-{
-    return static_cast<uint16_t>(value);
-}
-
 
 // Scaling factor for a conversion from coord_t to coordf_t: 10e-6
 // This scaling generates a following fixed point representation with for a 32bit integer:
@@ -99,6 +95,10 @@ static constexpr double INSET_OVERLAP_TOLERANCE = 0.4;
 //inline coord_t scale_(coordf_t v) { return coord_t(floor(v / SCALING_FACTOR + 0.5f)); }
 #define scale_(val) (coord_t)((val) / SCALING_FACTOR + 0.5f)
 
+inline uint16_t operator "" _u(unsigned long long value)
+{
+    return static_cast<uint16_t>(value);
+}
 
 #ifndef UNUSED
 #define UNUSED(x) (void)(x)

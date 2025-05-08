@@ -262,9 +262,9 @@ public:
         start_at = StartPos(-start_at);
     }
 
-    void clip_end(coordf_t distance);
-    void extend_end(coordf_t distance);
-    void extend_start(coordf_t distance);
+    void clip_end(distf_t distance);
+    void extend_end(distf_t distance);
+    void extend_start(distf_t distance);
 
     // Make this closed ThickPolyline starting in the specified index.
     // Be aware that this method can be applicable just for closed ThickPolyline.
@@ -372,8 +372,8 @@ public:
     std::pair<int, Point> foot_pt(const Point &pt) const;
     void                  split_at(Point &point, ArcPolyline &p1, ArcPolyline &p2) const;
     void                  split_at(coordf_t distance, ArcPolyline &p1, ArcPolyline &p2) const;
-    void                  clip_start(coordf_t dist);
-    void                  clip_end(coordf_t dist);
+    void                  clip_start(distf_t dist);
+    void                  clip_end(distf_t dist);
     Polyline              to_polyline(coord_t deviation = 0) const;
     void                  translate(const Vector &vector);
     void                  rotate(double angle); // to test for arc, but should be okay

@@ -32,6 +32,17 @@ Layer::~Layer()
     m_regions.clear();
 }
 
+coord_t Layer::scale_to_layer_coord(double z) {
+    assert(z < 10000);
+    assert(z >= 0);
+    // round it via EPSILON/2
+    coord_t coord_z = scale_t(z + EPSILON/2);
+    // remove epsilon part
+    coord_z /= SCALED_EPSILON;
+    coord_z *= SCALED_EPSILON;
+    return coord_z;
+}
+
 // Test whether whether there are any slices assigned to this layer.
 bool Layer::empty() const
 {
@@ -889,8 +900,10 @@ void Layer::make_milling_post_process() {
                 if (config.milling_post_process == other_config.milling_post_process
                     && config.milling_extra_size == other_config.milling_extra_size
                     && (config.milling_after_z == other_config.milling_after_z ||
-                        this->bottom_z() > std::min(config.milling_after_z.get_abs_value(this->object()->print()->config().milling_diameter.get_at(0)),
-                            other_config.milling_after_z.get_abs_value(this->object()->print()->config().milling_diameter.get_at(0))))) {
+                        this->scaled_bottom_z() > Layer::scale_to_layer_coord(std::min(
+                            config.milling_after_z.get_abs_value(this->object()->print()->config().milling_diameter.get_at(0)),
+                            other_config.milling_after_z.get_abs_value(this->object()->print()->config().milling_diameter.get_at(0))
+                        )))) {
                     layerms.push_back(other_layerm);
                     done[it - m_regions.begin()] = true;
                 }

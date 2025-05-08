@@ -5431,8 +5431,6 @@ void PrintConfigDef::init_fff_params()
     def->is_vector_extruder = true;
     def->set_default_value(new ConfigOptionFloats { 0. });
 
-
-
     def = this->add("retract_lift_below", coFloats);
     def->label = L("Below Z");
     def->full_label = L("Only lift Z below");

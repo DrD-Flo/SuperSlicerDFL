@@ -110,11 +110,11 @@ BoundingBoxf get_print_extrusions_extents(const Print &print)
     return bbox;
 }
 
-BoundingBoxf get_print_object_extrusions_extents(const PrintObject &print_object, const coordf_t max_print_z)
+BoundingBoxf get_print_object_extrusions_extents(const PrintObject &print_object, const coord_t max_print_z)
 {
     BoundingBoxf bbox;
     for (const Layer *layer : print_object.layers()) {
-        if (layer->print_z > max_print_z)
+        if (layer->scaled_print_z() > max_print_z)
             break;
         BoundingBoxf bbox_this;
         for (const LayerRegion *layerm : layer->regions()) {
@@ -138,7 +138,7 @@ BoundingBoxf get_print_object_extrusions_extents(const PrintObject &print_object
 
 // Returns a bounding box of a projection of the wipe tower for the layers <= max_print_z.
 // The projection does not contain the priming regions.
-BoundingBoxf get_wipe_tower_extrusions_extents(const Print &print, const coordf_t max_print_z)
+BoundingBoxf get_wipe_tower_extrusions_extents(const Print &print, const coord_t max_print_z)
 {
     // Wipe tower extrusions are saved as if the tower was at the origin with no rotation
     // We need to get position and angle of the wipe tower to transform them to actual position.
@@ -148,7 +148,7 @@ BoundingBoxf get_wipe_tower_extrusions_extents(const Print &print, const coordf_
 
     BoundingBoxf bbox;
     for (const std::vector<WipeTower::ToolChangeResult> &tool_changes : print.wipe_tower_data().tool_changes) {
-        if (! tool_changes.empty() && tool_changes.front().print_z > max_print_z)
+        if (! tool_changes.empty() && Layer::scale_to_layer_coord(tool_changes.front().print_z) > max_print_z)
             break;
         for (const WipeTower::ToolChangeResult &tcr : tool_changes) {
             for (size_t i = 1; i < tcr.extrusions.size(); ++ i) {

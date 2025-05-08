@@ -399,7 +399,7 @@ ThickLines ThickPolyline::thicklines() const
 }
 
 // Removes the given distance from the end of the ThickPolyline
-void ThickPolyline::clip_end(coordf_t distance)
+void ThickPolyline::clip_end(distf_t distance)
 {
     assert(this->points_width.size() == this->points.size());
     if (! this->empty()) {
@@ -429,14 +429,14 @@ void ThickPolyline::clip_end(coordf_t distance)
     assert(this->points_width.size() == this->points.size());
     }
 }
-void ThickPolyline::extend_end(coordf_t distance)
+void ThickPolyline::extend_end(distf_t distance)
 {
     // relocate last point by extending the last segment by the specified length
     Vec2d v = (this->points.back() - *(this->points.end() - 2)).cast<coordf_t>().normalized();
     this->points.back() += Point::round(v * distance);
 }
 
-void ThickPolyline::extend_start(coordf_t distance)
+void ThickPolyline::extend_start(distf_t distance)
 {
     // relocate first point by extending the first segment by the specified length
     Vec2d v = (this->points.front() - this->points[1]).cast<coordf_t>().normalized();
@@ -922,7 +922,7 @@ void ArcPolyline::pop_back()
     assert(is_valid());
 }
 
-void ArcPolyline::clip_start(coordf_t dist)
+void ArcPolyline::clip_start(distf_t dist)
 {
     Geometry::ArcWelder::clip_start(m_path, dist);
     if (!m_only_strait)
@@ -930,7 +930,7 @@ void ArcPolyline::clip_start(coordf_t dist)
     assert(is_valid());
 }
 
-void ArcPolyline::clip_end(coordf_t dist)
+void ArcPolyline::clip_end(distf_t dist)
 {
     Geometry::ArcWelder::clip_end(m_path, dist);
     if (!m_only_strait)

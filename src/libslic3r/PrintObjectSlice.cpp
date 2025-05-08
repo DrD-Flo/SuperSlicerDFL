@@ -24,18 +24,19 @@ namespace Slic3r {
 LayerPtrs new_layers(
     PrintObject                 *print_object,
     // Object layers (pairs of bottom/top Z coordinate), without the raft.
-    const std::vector<coordf_t> &object_layers)
+    const std::vector<double> &object_layers)
 {
     LayerPtrs out;
     out.reserve(object_layers.size());
     auto     id   = int(print_object->slicing_parameters().raft_layers());
-    coordf_t zmin = print_object->slicing_parameters().object_print_z_min;
+    double zmin = print_object->slicing_parameters().object_print_z_min;
     Layer   *prev = nullptr;
     for (size_t i_layer = 0; i_layer < object_layers.size(); i_layer += 2) {
-        coordf_t lo = object_layers[i_layer];
-        coordf_t hi = object_layers[i_layer + 1];
-        coordf_t slice_z = 0.5 * (lo + hi);
-        Layer *layer = new Layer(id ++, print_object, hi - lo, hi + zmin, slice_z);
+        double lo = object_layers[i_layer];
+        double hi = object_layers[i_layer + 1];
+        double slice_z = 0.5 * (lo + hi);
+        Layer *layer = new Layer(id++, print_object, Layer::scale_to_layer_coord(hi - lo),
+                                 Layer::scale_to_layer_coord(hi + zmin), slice_z, true);
         out.emplace_back(layer);
         if (prev != nullptr) {
             prev->upper_layer = layer;
@@ -171,44 +172,52 @@ static std::vector<VolumeSlices> slice_volumes_inner(
     float min_delta = std::min(outter_delta, std::min(inner_delta, hole_delta));
     const float extra_offset = is_mm_painted ? 0.f : std::max(0.f, min_delta);
 
-    for (const ModelVolume *model_volume : model_volumes)
+    for (const ModelVolume *model_volume : model_volumes) {
         if (model_volume_needs_slicing(*model_volume)) {
-            MeshSlicingParamsEx params { params_base };
-            if (! model_volume->is_negative_volume())
+            MeshSlicingParamsEx params{params_base};
+            if (!model_volume->is_negative_volume()) {
                 params.extra_offset = extra_offset;
+            }
             if (layer_ranges.size() == 1) {
-                if (const PrintObjectRegions::LayerRangeRegions &layer_range = layer_ranges.front(); layer_range.has_volume(model_volume->id())) {
+                if (const PrintObjectRegions::LayerRangeRegions &layer_range = layer_ranges.front();
+                    layer_range.has_volume(model_volume->id())) {
                     if (model_volume->is_model_part() && print_config.spiral_vase) {
-                        auto it = std::find_if(layer_range.volume_regions.begin(), layer_range.volume_regions.end(), 
-                            [model_volume](const auto &slice){ return model_volume == slice.model_volume; });
+                        auto it = std::find_if(layer_range.volume_regions.begin(), layer_range.volume_regions.end(),
+                                               [model_volume](const auto &slice) {
+                                                   return model_volume == slice.model_volume;
+                                               });
                         params.mode = MeshSlicingParams::SlicingMode::PositiveLargestContour;
                         // Slice the bottom layers with SlicingMode::Regular.
                         // This needs to be in sync with LayerRegion::make_perimeters() spiral_vase!
                         const PrintRegionConfig &region_config = it->region->config();
                         params.slicing_mode_normal_below_layer = size_t(region_config.bottom_solid_layers.value);
-                        for (; params.slicing_mode_normal_below_layer < zs.size() && zs[params.slicing_mode_normal_below_layer] < region_config.bottom_solid_min_thickness - EPSILON;
-                            ++ params.slicing_mode_normal_below_layer);
+                        for (; params.slicing_mode_normal_below_layer < zs.size() &&
+                             zs[params.slicing_mode_normal_below_layer] <
+                                 region_config.bottom_solid_min_thickness - EPSILON;
+                             ++params.slicing_mode_normal_below_layer)
+                            ;
                     }
-                    out.push_back({
-                        model_volume->id(), 
-                        slice_volume(*model_volume, zs, params, throw_on_cancel_callback)
-                    });
+                    out.push_back(
+                        {model_volume->id(), slice_volume(*model_volume, zs, params, throw_on_cancel_callback)});
                 }
             } else {
-                assert(! print_config.spiral_vase);
+                assert(!print_config.spiral_vase);
                 slicing_ranges.clear();
-                for (const PrintObjectRegions::LayerRangeRegions &layer_range : layer_ranges)
-                    if (layer_range.has_volume(model_volume->id()))
-                        slicing_ranges.emplace_back(layer_range.layer_height_range);
-                if (! slicing_ranges.empty())
-                    out.push_back({ 
-                        model_volume->id(), 
-                        slice_volume(*model_volume, zs, slicing_ranges, params, throw_on_cancel_callback)
-                    });
+                for (const PrintObjectRegions::LayerRangeRegions &layer_range : layer_ranges) {
+                    if (layer_range.has_volume(model_volume->id())) {
+                        slicing_ranges.emplace_back(unscaled(layer_range.layer_height_range_.first), unscaled(layer_range.layer_height_range_.second));
+                    }
+                }
+                if (!slicing_ranges.empty()) {
+                    out.push_back({model_volume->id(),
+                                   slice_volume(*model_volume, zs, slicing_ranges, params, throw_on_cancel_callback)});
+                }
             }
-            if (! out.empty() && out.back().slices.empty())
+            if (!out.empty() && out.back().slices.empty()) {
                 out.pop_back();
+            }
         }
+    }
 
     return out;
 }
@@ -220,32 +229,34 @@ static inline VolumeSlices& volume_slices_find_by_id(std::vector<VolumeSlices> &
     return *it;
 }
 
-static inline bool overlap_in_xy(const PrintObjectRegions::BoundingBox &l, const PrintObjectRegions::BoundingBox &r)
+static inline bool overlap_in_xy(const PrintObjectRegions::BoundingAlignedBox3f &l, const PrintObjectRegions::BoundingAlignedBox3f &r)
 {
     return ! (l.max().x() < r.min().x() || l.min().x() > r.max().x() ||
               l.max().y() < r.min().y() || l.min().y() > r.max().y());
 }
 
-static std::vector<PrintObjectRegions::LayerRangeRegions>::const_iterator layer_range_first(const std::vector<PrintObjectRegions::LayerRangeRegions> &layer_ranges, double z)
-{
+static std::vector<PrintObjectRegions::LayerRangeRegions>::const_iterator layer_range_first(
+    const std::vector<PrintObjectRegions::LayerRangeRegions> &layer_ranges, double z_mm) {
+    coord_t scaled_z = Layer::scale_to_layer_coord(z_mm);
     auto  it = lower_bound_by_predicate(layer_ranges.begin(), layer_ranges.end(),
-        [z](const PrintObjectRegions::LayerRangeRegions &lr) { return lr.layer_height_range.second < z; });
-    assert(it != layer_ranges.end() && it->layer_height_range.first <= z && z <= it->layer_height_range.second);
-    if (z == it->layer_height_range.second)
-        if (auto it_next = it; ++ it_next != layer_ranges.end() && it_next->layer_height_range.first == z)
+        [scaled_z](const PrintObjectRegions::LayerRangeRegions &lr) { return lr.layer_height_range_.second < scaled_z; });
+    assert(it != layer_ranges.end() && it->layer_height_range_.first <= scaled_z && scaled_z <= it->layer_height_range_.second);
+    if (scaled_z == it->layer_height_range_.second)
+        if (auto it_next = it; ++ it_next != layer_ranges.end() && it_next->layer_height_range_.first == scaled_z)
             it = it_next;
-    assert(it != layer_ranges.end() && it->layer_height_range.first <= z && z <= it->layer_height_range.second);
+    assert(it != layer_ranges.end() && it->layer_height_range_.first <= scaled_z && scaled_z <= it->layer_height_range_.second);
     return it;
 }
 
 static std::vector<PrintObjectRegions::LayerRangeRegions>::const_iterator layer_range_next(
     const std::vector<PrintObjectRegions::LayerRangeRegions>            &layer_ranges, 
     std::vector<PrintObjectRegions::LayerRangeRegions>::const_iterator   it,
-    double                                                               z)
+    double                                                               z_mm)
 {
-    for (; it->layer_height_range.second <= z; ++ it)
+    coord_t scaled_z = Layer::scale_to_layer_coord(z_mm);
+    for (; it->layer_height_range_.second <= scaled_z; ++ it)
         assert(it != layer_ranges.end());
-    assert(it != layer_ranges.end() && it->layer_height_range.first <= z && z < it->layer_height_range.second);
+    assert(it != layer_ranges.end() && it->layer_height_range_.first <= scaled_z && scaled_z < it->layer_height_range_.second);
     return it;
 }
 
@@ -267,7 +278,7 @@ static std::vector<std::vector<ExPolygons>> slices_to_regions(
     {
         size_t z_idx = 0;
         for (const PrintObjectRegions::LayerRangeRegions &layer_range : print_object_regions.layer_ranges) {
-            for (; z_idx < zs.size() && zs[z_idx] < layer_range.layer_height_range.first; ++ z_idx) ;
+            for (; z_idx < zs.size() && Layer::scale_to_layer_coord(zs[z_idx]) < layer_range.layer_height_range_.first; ++ z_idx) ;
             if (layer_range.volume_regions.empty()) {
             } else if (layer_range.volume_regions.size() == 1) {
                 const ModelVolume *model_volume = layer_range.volume_regions.front().model_volume;
@@ -275,14 +286,14 @@ static std::vector<std::vector<ExPolygons>> slices_to_regions(
                 if (model_volume->is_model_part()) {
                     VolumeSlices &slices_src = volume_slices_find_by_id(volume_slices, model_volume->id());
                     auto         &slices_dst = slices_by_region[layer_range.volume_regions.front().region->print_object_region_id()];
-                    for (; z_idx < zs.size() && zs[z_idx] < layer_range.layer_height_range.second; ++z_idx) {
+                    for (; z_idx < zs.size() && Layer::scale_to_layer_coord(zs[z_idx]) < layer_range.layer_height_range_.second; ++z_idx) {
                         slices_dst[z_idx] = std::move(slices_src.slices[z_idx]);
                         ensure_valid(slices_dst[z_idx], SCALED_EPSILON);
                     }
                 }
             } else {
                 zs_complex.reserve(zs.size());
-                for (; z_idx < zs.size() && zs[z_idx] < layer_range.layer_height_range.second; ++ z_idx) {
+                for (; z_idx < zs.size() && Layer::scale_to_layer_coord(zs[z_idx]) < layer_range.layer_height_range_.second; ++ z_idx) {
                     float z                          = zs[z_idx];
                     int   idx_first_printable_region = -1;
                     bool  complex                    = false;
@@ -1152,11 +1163,11 @@ void PrintObject::_transform_hole_to_polyholes()
         for (size_t hole_idx = 0; hole_idx < layerid2center[layer_idx].size(); ++hole_idx) {
             //get all other same polygons
             const LayerData& id = layerid2center[layer_idx][hole_idx].first;
-            float max_z = layers()[layer_idx]->print_z;
+            coord_t max_z = layers()[layer_idx]->scaled_print_z();
             std::vector<std::pair<Polygon*, int>> holes;
             holes.emplace_back(layerid2center[layer_idx][hole_idx].second, layer_idx);
             for (size_t search_layer_idx = layer_idx + 1; search_layer_idx < this->m_layers.size(); ++search_layer_idx) {
-                if (layers()[search_layer_idx]->print_z - layers()[search_layer_idx]->height - max_z > EPSILON) break;
+                if (layers()[search_layer_idx]->scaled_print_z() - layers()[search_layer_idx]->scaled_height() - max_z > 0) break;
                 //search an other polygon with same id
                 for (size_t search_hole_idx = 0; search_hole_idx < layerid2center[search_layer_idx].size(); ++search_hole_idx) {
                     const LayerData& search_id = layerid2center[search_layer_idx][search_hole_idx].first;
@@ -1164,7 +1175,7 @@ void PrintObject::_transform_hole_to_polyholes()
                         && id.center.distance_to(search_id.center) < id.max_deviation
                         && std::abs(id.max_diameter - search_id.max_diameter) < id.max_deviation
                         ) {
-                        max_z = layers()[search_layer_idx]->print_z;
+                        max_z = layers()[search_layer_idx]->scaled_print_z();
                         holes.emplace_back(layerid2center[search_layer_idx][search_hole_idx].second, search_layer_idx);
                         layerid2center[search_layer_idx].erase(layerid2center[search_layer_idx].begin() + search_hole_idx);
                         search_hole_idx--;
@@ -1564,7 +1575,7 @@ void PrintObject::slice_volumes()
             layer->m_regions.emplace_back(new LayerRegion(layer, pr.get()));
     }
 
-    std::vector<float>                   slice_zs      = zs_from_layers(m_layers);
+    std::vector<float> slice_zs = slice_z_from_layers(m_layers);
     std::vector<VolumeSlices> volume_slices = slice_volumes_inner(
         print->config(),
         this->config(),
@@ -1834,7 +1845,7 @@ std::vector<ExPolygons> PrintObject::slice_support_volumes(const ModelVolumeType
     std::vector<ExPolygons> slices;
     if (it_volume != it_volume_end) {
         // Found at least a single support volume of model_volume_type.
-        std::vector<float> zs = zs_from_layers(this->layers());
+        std::vector<float> zs = slice_z_from_layers(this->layers());
         std::vector<char>  merge_layers;
         bool               merge = false;
         const Print       *print = this->print();
