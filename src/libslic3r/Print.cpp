@@ -453,9 +453,13 @@ std::set<uint16_t> Print::object_extruders(const PrintObjectPtrs &objects, coord
             std::set<const PrintRegion*> region_set;
             for (const Layer *layer : object->layers()) {
                 if ((layer->scaled_bottom_z()) <= z && z <= layer->scaled_print_z() ) {
-                    for (const LayerRegion *lr : layer->regions()) {
-                        if (lr->has_extrusions()) {
-                            region_set.insert(&lr->region());
+                    for (const LayerSliceIslandPtr &layer_island_ptr : layer->islands()) {
+                        for (const LayerRegionIslandPtr &region_island_ptr : layer_island_ptr->regions_islands()) {
+                            if (region_island_ptr->has_extrusions()) {
+                                for (const LayerRegion *lr : region_island_ptr->regions()) {
+                                    region_set.insert(&lr->region());
+                                }
+                            }
                         }
                     }
                 }
@@ -1242,10 +1246,12 @@ void Print::process()
         }
     );
 #ifdef _DEBUG
-    for (PrintObject* obj : m_objects)
-        for (Layer* lay : obj->layers())
-            for (LayerRegion* lr : lay->regions())
-                lr->perimeters().visit(ptvisitor);
+    for (const PrintObject* obj : m_objects)
+        for (const Layer* lay : obj->layers())
+            for (const LayerSliceIslandPtr &layer_island_ptr : lay->islands())
+                for (const LayerRegionIslandPtr &lri : layer_island_ptr->regions_islands())
+                    if(lri->has_extrusion(LayerRegionIsland::PERIMETERS))
+                        lri->extrusion(LayerRegionIsland::PERIMETERS).visit(ptvisitor);
 #endif
     secondary_status_counter_reset();
     Slic3r::parallel_for(size_t(0), m_objects.size(),
@@ -1351,10 +1357,12 @@ void Print::process()
         BOOST_LOG_TRIVIAL(error) << boost::format("gcode path conflicts found between %1% and %2%") % conflictRes->_objName1 % conflictRes->_objName2;
 
 #ifdef _DEBUG
-    for (PrintObject* obj : m_objects)
-        for (Layer* lay : obj->layers())
-            for (LayerRegion* lr : lay->regions())
-                lr->perimeters().visit(ptvisitor);
+    for (const PrintObject* obj : m_objects)
+        for (const Layer* lay : obj->layers())
+            for (const LayerSliceIslandPtr &layer_island_ptr : lay->islands())
+                for (const LayerRegionIslandPtr &lri : layer_island_ptr->regions_islands())
+                    if(lri->has_extrusion(LayerRegionIsland::PERIMETERS))
+                        lri->extrusion(LayerRegionIsland::PERIMETERS).visit(ptvisitor);
 #endif
     //simplify / make arc fitting
     {
@@ -1422,9 +1430,14 @@ void Print::process()
     }
     
 #if _DEBUG
-    for (PrintObject* obj : m_objects) {
-        for (auto &l : obj->m_layers) {
-            for (auto &reg : l->regions()) { LoopAssertVisitor lav; reg->perimeters().visit(lav); }
+    for (const PrintObject* obj : m_objects) {
+        for (const Layer *l : obj->m_layers) {
+            for (const LayerSliceIslandPtr &layer_island_ptr : l->islands())
+                for (const LayerRegionIslandPtr &lri : layer_island_ptr->regions_islands())
+                    if (lri->has_extrusion(LayerRegionIsland::PERIMETERS)) {
+                        LoopAssertVisitor lav;
+                        lri->extrusion(LayerRegionIsland::PERIMETERS).visit(lav);
+                    }
         }
     }
 #endif
@@ -2179,17 +2192,26 @@ bool Print::has_wipe_tower() const {
             for (const Layer *layer : obj->layers()) {
                 if (layer->scaled_print_z() > max_z)
                     continue;
-                for (const LayerRegion *lr : layer->regions()) {
-                    if (lr->has_extrusions()) {
-                        if (!lr->perimeters().empty() &&
-                            check_extruder(lr->region().config().perimeter_extruder.value)) {
-                            goto finish_search; // !can_wipe_tower
-                        } else if ((!lr->fills().empty() || !lr->ironings().empty() || !lr->thin_fills().empty()) &&
-                                   (check_extruder(lr->region().config().infill_extruder.value) ||
-                                    check_extruder(lr->region().config().solid_infill_extruder.value))) {
-                            goto finish_search; // !can_wipe_tower
-                        //} else if (lr->has_extrusions() && check_extruder(lr->region().extruder_id)) {
-                        //    goto finish_search; // !can_wipe_tower
+                for (const LayerSliceIslandPtr &layer_island_ptr : layer->islands()) {
+                    for (const LayerRegionIslandPtr &lri : layer_island_ptr->regions_islands()) {
+                        if (lri->has_extrusions()) {
+                            if (lri->has_extrusion(LayerRegionIsland::PERIMETERS)) {
+                                for (const LayerRegion *lr : lri->regions()) {
+                                    if (check_extruder(lr->region().config().perimeter_extruder.value)) {
+                                        goto finish_search;
+                                    }
+                                }
+                            }
+                            if (lri->has_extrusion(LayerRegionIsland::INFILLS) ||
+                                lri->has_extrusion(LayerRegionIsland::IRONINGS) ||
+                                lri->has_extrusion(LayerRegionIsland::GAP_FILLS)) {
+                                for (const LayerRegion *lr : lri->regions()) {
+                                    if (check_extruder(lr->region().config().infill_extruder.value) ||
+                                        check_extruder(lr->region().config().solid_infill_extruder.value)) {
+                                        goto finish_search;
+                                    }
+                                }
+                            }
                         }
                     }
                 }

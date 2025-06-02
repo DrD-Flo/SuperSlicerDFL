@@ -1,7 +1,8 @@
+///|/ Copyright (c) superslicer 2019 - 2025 Durand Rémi @supermerill
 ///|/ Copyright (c) Prusa Research 2016 - 2023 Vojtěch Bubník @bubnikv, Pavel Mikuš @Godrak, Lukáš Matěna @lukasmatena, Lukáš Hejl @hejllukas
 ///|/ Copyright (c) Slic3r 2014 - 2016 Alessandro Ranellucci @alranel
 ///|/
-///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/ SuperSlicer, PrusaSlicer is released under the terms of the AGPLv3 or higher
 ///|/
 #include "ExPolygon.hpp"
 #include "Flow.hpp"
@@ -26,18 +27,8 @@
 namespace Slic3r {
 
 void LayerRegion::clear() {
-    this->m_perimeters.clear();
-    this->m_millings.clear();
     this->m_unsupported_bridge_edges.clear();
     this->m_fill_surfaces.clear();
-    this->m_fills.clear();
-    this->m_ironings.clear();
-    this->m_thin_fills.clear();
-    this->m_fill_expolygons.clear();
-    this->m_fill_expolygons_bboxes.clear();
-    this->m_fill_expolygons_composite.clear();
-    this->m_fill_expolygons_composite_bboxes.clear();
-    this->m_fill_no_overlap_expolygons.clear();
 }
 
 Flow LayerRegion::flow(FlowRole role) const
@@ -92,6 +83,42 @@ Flow LayerRegion::bridging_flow(FlowRole role, BridgeType force_type) const
     }*/
 }
 
+const ExPolygons& LayerRegion::fill_expolygons() const {
+    uint64_t hash_islands = 0;
+    int shift = 0;
+    for (const LayerSliceIslandPtr &layer_island_ptr : this->layer()->islands()) {
+        if (layer_island_ptr->regions().find(this) != layer_island_ptr->regions().end()) {
+            for (const ExPolygon &expoly : layer_island_ptr->fill_expolygons()) {
+                hash_islands ^= (uint64_t(&expoly) << shift);
+                shift++;
+            }
+        }
+        shift++;
+    }
+    if (m_cache_fill_expolygons_computed == 0 || m_cache_fill_expolygons_computed != hash_islands) {
+        m_cache_fill_expolygons_computed = hash_islands;
+        m_cache_fill_expolygons = _compute_fill_expolygons();
+    }
+    return m_cache_fill_expolygons;
+}
+
+ExPolygons LayerRegion::_compute_fill_expolygons() const {
+    ExPolygons my_fill_expolygons;
+    size_t nb_add = 0;
+    for (const LayerSliceIslandPtr &layer_island_ptr : this->layer()->islands()) {
+        if (auto &regions = layer_island_ptr->regions(); regions.find(this) != regions.end()) {
+            append(my_fill_expolygons, layer_island_ptr->fill_expolygons());
+            nb_add++;
+        }
+    }
+    if (nb_add > 1) {
+        my_fill_expolygons = union_safety_offset_ex(my_fill_expolygons);
+        my_fill_expolygons = intersection_ex(my_fill_expolygons, this->get_raw_slices());
+    }
+    ensure_valid(my_fill_expolygons);
+    return my_fill_expolygons;
+}
+
 // Fill in layerm->m_fill_surfaces by trimming the layerm->slices by layerm->fill_expolygons.
 void LayerRegion::slices_to_fill_surfaces_clipped(coord_t opening_offset)
 {
@@ -104,143 +131,16 @@ void LayerRegion::slices_to_fill_surfaces_clipped(coord_t opening_offset)
     // Trim surfaces by the fill_boundaries.
     m_fill_surfaces.surfaces.clear();
     for (auto const& [srf_type, expoly] : polygons_by_surface) {
-        if (!expoly.empty())
-            for (ExPolygon& expoly_to_test : ensure_valid(intersection_ex(expoly, this->fill_expolygons()))) {
-                ExPolygons expolys_to_test = expoly_to_test.simplify(std::max(SCALED_EPSILON, scale_t(this->layer()->object()->print()->config().resolution.value)));
+        if (!expoly.empty()) {
+            for (ExPolygon &expoly_to_test : ensure_valid(intersection_ex(expoly, fill_expolygons()))) {
+                ExPolygons expolys_to_test = expoly_to_test.simplify(
+                    std::max(SCALED_EPSILON, scale_t(this->layer()->object()->print()->config().resolution.value)));
                 if (!opening_ex(expolys_to_test, opening_offset).empty()) {
-                    this->m_fill_surfaces.append({ expoly_to_test }, srf_type);
+                    this->m_fill_surfaces.append({expoly_to_test}, srf_type);
                 }
             }
-    }
-}
-
-// Produce perimeter extrusions, gap fill extrusions and fill polygons for input slices.
-void LayerRegion::make_perimeters(
-    // Input slices for which the perimeters, gap fills and fill expolygons are to be generated.
-    const SurfaceCollection                                &slices,
-    // can be used to apply some configurations only on specific areas.
-    const std::set<LayerRegion*>                           &lregions,
-    // Ranges of perimeter extrusions and gap fill extrusions per suface, referencing
-    // newly created extrusions stored at this LayerRegion.
-    std::vector<std::pair<ExtrusionRange, ExtrusionRange>> &perimeter_and_gapfill_ranges,
-    // All fill areas produced for all input slices above.
-    ExPolygons                                             &fill_expolygons,
-    // Ranges of fill areas above per input slice.
-    std::vector<ExPolygonRange>                            &fill_expolygons_ranges)
-{
-    m_perimeters.clear();
-    m_thin_fills.clear();
-
-    perimeter_and_gapfill_ranges.reserve(perimeter_and_gapfill_ranges.size() + slices.size());
-    // There may be more expolygons produced per slice, thus this reserve is conservative.
-    fill_expolygons.reserve(fill_expolygons.size() + slices.size());
-    fill_expolygons_ranges.reserve(fill_expolygons_ranges.size() + slices.size());
-
-    const PrintConfig       &print_config  = this->layer()->object()->print()->config();
-    const PrintRegionConfig &region_config = this->region().config();
-    // This needs to be in sync with PrintObject::_slice() slicing_mode_normal_below_layer!
-    bool spiral_vase = print_config.spiral_vase &&
-        //FIXME account for raft layers.
-        (this->layer()->id() >= size_t(region_config.bottom_solid_layers.value) &&
-         this->layer()->scaled_print_z() >= Layer::scale_to_layer_coord(region_config.bottom_solid_min_thickness.value));
-
-    //this is a factory, the content will be copied into the PerimeterGenerator
-    PerimeterGenerator::Parameters params(
-        this->layer(),
-        this->flow(frPerimeter),
-        this->flow(frExternalPerimeter),
-        this->bridging_flow(frPerimeter),
-        this->flow(frSolidInfill),
-        region_config,
-        this->layer()->object()->config(),
-        print_config,
-        spiral_vase,
-        (region_config.perimeter_generator.value == PerimeterGeneratorType::Arachne) //use_arachne
-    );
-
-    // perimeter bonding set.
-    if (params.perimeter_flow.spacing_ratio() == 1
-        && params.ext_perimeter_flow.spacing_ratio() == 1
-        && params.config.external_perimeters_first
-        && params.object_config.perimeter_bonding.value > 0) {
-        params.infill_gap = (1 - params.object_config.perimeter_bonding.get_abs_value(1)) * params.get_ext_perimeter_spacing();
-        params.ext_perimeter_spacing2 -= params.infill_gap;
-    }
-
-    const ExPolygons *lower_slices = this->layer()->lower_layer ? &this->layer()->lower_layer->lslices() : nullptr;
-    const ExPolygons *upper_slices = this->layer()->upper_layer ? &this->layer()->upper_layer->lslices() : nullptr;
-    std::vector<BoundingBox> lower_bbox;
-    std::vector<BoundingBox> upper_bbox;
-    if (lower_slices != nullptr) {
-        for (const ExPolygon &lowerp : *lower_slices) {
-            lower_bbox.emplace_back(lowerp.contour.points);
         }
     }
-    if (upper_slices != nullptr) {
-        for (const ExPolygon &upperp : *upper_slices) {
-            upper_bbox.emplace_back(upperp.contour.points);
-        }
-    }
-    assert((lower_slices == nullptr && lower_bbox.empty()) || (lower_slices->size() == lower_bbox.size()));
-    assert((upper_slices == nullptr && upper_bbox.empty()) || (upper_slices->size() == upper_bbox.size()));
-
-    for (const Surface &surface : slices) {
-        size_t perimeters_begin = m_perimeters.size();
-        size_t gap_fills_begin = m_thin_fills.size();
-        size_t fill_expolygons_begin = fill_expolygons.size();
-
-        params.region_setting.segregate_regions(surface.expolygon, lregions);
-
-        PerimeterGenerator::PerimeterGenerator g{params};
-        g.throw_if_canceled = [this]() { this->layer()->object()->print()->throw_if_canceled(); };
-
-        // only send lower & upper slcies that are overlapping the surfaces bb
-        BoundingBox surface_bbox(surface.expolygon.contour.points);
-        ExPolygons lower_slices_srf;
-        for (size_t i = 0; i < lower_bbox.size(); ++i) {
-            if (lower_bbox[i].overlap(surface_bbox)) {
-                lower_slices_srf.push_back((*lower_slices)[i]);
-            }
-        }
-        ExPolygons upper_slices_srf;
-        for (size_t i = 0; i < upper_bbox.size(); ++i) {
-            if (upper_bbox[i].overlap(surface_bbox)) {
-                upper_slices_srf.push_back((*upper_slices)[i]);
-            }
-        }
-
-        g.process(
-            // input:
-            surface, &lower_slices_srf, slices, &upper_slices_srf,
-            // output:
-                // Loops with the external thin walls
-            &m_perimeters,
-                // Gaps without the thin walls
-            &m_thin_fills,
-                // Infills without the gap fills
-            fill_expolygons,
-                // mask for "no overlap" area
-            m_fill_no_overlap_expolygons
-        );
-
-        for(auto *peri : this->m_perimeters.entities()) assert(!peri->empty());
-
-        perimeter_and_gapfill_ranges.emplace_back(
-            ExtrusionRange{ uint32_t(perimeters_begin), uint32_t(m_perimeters.size()) }, 
-            ExtrusionRange{ uint32_t(gap_fills_begin),  uint32_t(m_thin_fills.size()) });
-        fill_expolygons_ranges.emplace_back(ExtrusionRange{ uint32_t(fill_expolygons_begin), uint32_t(fill_expolygons.size()) });
-    }
-}
-
-void LayerRegion::make_milling_post_process(const SurfaceCollection& slices) {
-    MillingPostProcess mill(// input:
-        &slices,
-        (this->layer()->lower_layer != nullptr) ? &this->layer()->lower_layer->lslices() : nullptr,
-        this->region().config(),
-        this->layer()->object()->config(),
-        this->layer()->object()->print()->config()
-    );
-    m_millings = mill.process(this->layer());
 }
 
 #if 1
@@ -1384,30 +1284,6 @@ void LayerRegion::export_region_fill_surfaces_to_svg_debug(const char *name) con
     static std::map<std::string, size_t> idx_map;
     size_t &idx = idx_map[name];
     this->export_region_fill_surfaces_to_svg(debug_out_path("LayerRegion-fill_surfaces-%s-%d.svg", name, idx ++).c_str());
-}
-
-void LayerRegion::simplify_extrusion_entity()
-{
-
-    const PrintConfig& print_config = this->layer()->object()->print()->config();
-    const bool spiral_mode = print_config.spiral_vase;
-    ArcFittingType enable_arc_fitting = print_config.arc_fitting.value;
-    if (spiral_mode)
-        enable_arc_fitting = ArcFittingType::Disabled;
-    coordf_t scaled_resolution = scale_d(print_config.resolution.value);
-    if (enable_arc_fitting != ArcFittingType::Disabled) {
-        scaled_resolution = scale_d(print_config.arc_fitting_resolution.get_abs_value(std::max(EPSILON, unscaled(scaled_resolution))));
-    }
-    if (scaled_resolution == 0) scaled_resolution = enable_arc_fitting != ArcFittingType::Disabled ? SCALED_EPSILON * 2 : SCALED_EPSILON;
-    scaled_resolution = std::max(double(SCALED_EPSILON), scaled_resolution);
-
-	//Ligne 652:     SimplifyVisitor(coordf_t scaled_resolution, ArcFittingType use_arc_fitting, const ConfigOptionFloatOrPercent *arc_fitting_tolearance)
-    //call simplify for all paths
-    Slic3r::SimplifyVisitor visitor{ scaled_resolution , enable_arc_fitting, &print_config.arc_fitting_tolerance, enable_arc_fitting != ArcFittingType::Disabled ? SCALED_EPSILON * 2 : SCALED_EPSILON };
-    this->m_perimeters.visit(visitor);
-    this->m_fills.visit(visitor);
-    this->m_ironings.visit(visitor);
-    this->m_millings.visit(visitor);
 }
 
 }

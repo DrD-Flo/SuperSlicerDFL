@@ -1093,20 +1093,37 @@ namespace SupportMaterialInternal {
     }
     static bool has_bridging_extrusions(const Layer &layer) 
     {
-        for (const LayerRegion *region : layer.regions()) {
-            if (SupportMaterialInternal::has_bridging_perimeters(region->perimeters()))
-                return true;
-            if (region->fill_surfaces().has(stPosBottom | stDensSolid | stModBridge) && has_bridging_fills(region->fills()))
-                return true;
+        for (const LayerSliceIslandPtr &layer_island_ptr : layer.islands()) {
+            for (const LayerRegionIslandPtr &region_island_ptr : layer_island_ptr->regions_islands()) {
+                if (region_island_ptr->has_extrusion(LayerRegionIsland::PERIMETERS) &&
+                    SupportMaterialInternal::has_bridging_perimeters(
+                        region_island_ptr->extrusion(LayerRegionIsland::PERIMETERS))) {
+                    return true;
+                }
+                if (region_island_ptr->has_extrusion(LayerRegionIsland::INFILLS)) {
+                    bool has_bridge = false;
+                    for (const LayerRegion *lregion : region_island_ptr->regions()) {
+                        if (lregion->fill_surfaces().has(stPosBottom | stDensSolid | stModBridge)) {
+                            has_bridge = true;
+                            break;
+                        }
+                    }
+                    if (has_bridge && has_bridging_fills(region_island_ptr->extrusion(LayerRegionIsland::PERIMETERS))) {
+                        return true;
+                    }
+                }
+            }
         }
         return false;
     }
 
-    static inline void collect_bridging_perimeter_areas(const ExtrusionLoop &loop, const float expansion_scaled, Polygons &out)
+    static inline void collect_bridging_perimeter_areas(const ExtrusionLoop &loop, const float expansion_scaled, bool only_flow, Polygons &out)
     {
         assert(expansion_scaled >= 0.f);
         for (const ExtrusionPath &ep : loop.paths)
-            if (ep.role().has(ExtrusionRole::OverhangPerimeter) && ! ep.polyline.empty()) {
+            if (ep.role().has(ExtrusionRole::OverhangPerimeter) && ! ep.polyline.empty() &&
+                // bridging flow => width == height
+                (!only_flow || is_approx(ep.height(), ep.width(), ep.height()/100))) {
                 float exp = 0.5f * (float)scale_(ep.width()) + expansion_scaled;
                 if (ep.is_closed()) {
                     if (ep.size() >= 3) {
@@ -1129,13 +1146,13 @@ namespace SupportMaterialInternal {
                 }
             }
     }
-    static void collect_bridging_perimeter_areas(const ExtrusionEntitiesPtr &perimeters, const float expansion_scaled, Polygons &out)
+    static void collect_bridging_perimeter_areas(const ExtrusionEntitiesPtr &perimeters, const float expansion_scaled, bool only_flow, Polygons &out)
     {
         for (const ExtrusionEntity *ee : perimeters) {
             if (ee->is_collection()) {
-                collect_bridging_perimeter_areas(static_cast<const ExtrusionEntityCollection*>(ee)->entities(), expansion_scaled, out);
+                collect_bridging_perimeter_areas(static_cast<const ExtrusionEntityCollection*>(ee)->entities(), expansion_scaled, only_flow, out);
             } else if (ee->is_loop())
-                collect_bridging_perimeter_areas(*static_cast<const ExtrusionLoop*>(ee), expansion_scaled, out);
+                collect_bridging_perimeter_areas(*static_cast<const ExtrusionLoop*>(ee), expansion_scaled, only_flow, out);
         }
     }
 }
@@ -1388,7 +1405,7 @@ static inline std::tuple<Polygons, Polygons, Polygons, float> detect_overhangs(
             #endif /* SLIC3R_DEBUG */
 
             if (object_config.dont_support_bridges) {
-                // FIXME Expensive, potentially not precise enough. Misses gap fill extrusions, which bridge.
+                // FIXME Expensive, potentially not precise enough.
                 assert_valid(diff_polygons);
                 remove_bridges_from_contacts(print_config, lower_layer, *layerm, flow_width, diff_polygons);
                 ensure_valid(diff_polygons, resolution);
@@ -2856,9 +2873,16 @@ void PrintObjectSupportMaterial::trim_support_layers_by_object(
                             polygons_append(polygons_trimming, 
                                 offset(to_polygons(region->fill_surfaces().filter_by_type(stPosBottom | stDensSolid | stModBridge)), 
                                        gap_xy, SUPPORT_SURFACES_OFFSET_PARAMETERS));
-                            if (region->region().config().overhangs_width.value > 0)
-                                // Add bridging perimeters.
-                                SupportMaterialInternal::collect_bridging_perimeter_areas(region->perimeters().entities(), gap_xy, polygons_trimming);
+                        }
+                        // Add bridging perimeters.
+                        for (const LayerSliceIslandPtr &layer_island_ptr : object_layer.islands()) {
+                            for (const LayerRegionIslandPtr &region_island_ptr : layer_island_ptr->regions_islands()) {
+                                if (region_island_ptr->has_extrusion(LayerRegionIsland::PERIMETERS)) {
+                                    SupportMaterialInternal::collect_bridging_perimeter_areas(
+                                        region_island_ptr->extrusion(LayerRegionIsland::PERIMETERS).entities(), gap_xy,
+                                        /*only_flow=*/false, polygons_trimming);
+                                }
+                            }
                         }
                         if (! some_region_overlaps)
                             break;

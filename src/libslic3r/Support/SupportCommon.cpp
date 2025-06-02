@@ -63,6 +63,23 @@ void remove_bridges_from_contacts(
             SUPPORT_SURFACES_OFFSET_PARAMETERS);
         // Collect perimeters of this layer.
         //FIXME split_at_first_point() could split a bridge mid-way
+
+        //get all periemters lines in relation with this region
+        // they can be outside of the region slices, it's not importnat as it's for removing area.
+        ArcPolylines perimeters_arcpolylines;
+        for (const LayerSliceIslandPtr &layer_island : layerm.layer()->islands()) {
+            for (const LayerRegionIslandPtr &region_island_ptr : layer_island->regions_islands()) {
+                if (region_island_ptr->has_extrusion(LayerRegionIsland::PERIMETERS) &&
+                    region_island_ptr->regions().find(&layerm) != region_island_ptr->regions().end()) {
+                    append(perimeters_arcpolylines, region_island_ptr->extrusion(LayerRegionIsland::PERIMETERS).as_polylines());
+                }
+                if (region_island_ptr->has_extrusion(LayerRegionIsland::GAP_FILLS) &&
+                    region_island_ptr->regions().find(&layerm) != region_island_ptr->regions().end()) {
+                    append(perimeters_arcpolylines, region_island_ptr->extrusion(LayerRegionIsland::GAP_FILLS).as_polylines());
+                }
+            }
+        }
+
     #if 0
         Polylines overhang_perimeters = layerm.perimeters.as_polylines();
         // workaround for Clipper bug, see Slic3r::Polygon::clip_as_polyline()
@@ -71,7 +88,7 @@ void remove_bridges_from_contacts(
         // Trim the perimeters of this layer by the lower layer to get the unsupported pieces of perimeters.
         overhang_perimeters = diff_pl(overhang_perimeters, lower_grown_slices);
     #else
-        Polylines overhang_perimeters = diff_pl(to_polylines(layerm.perimeters().as_polylines(), nozzle_diameter*2), lower_grown_slices);
+        Polylines overhang_perimeters = diff_pl(to_polylines(perimeters_arcpolylines, nozzle_diameter*2), lower_grown_slices);
     #endif
         
         // only consider straight overhangs
@@ -96,7 +113,7 @@ void remove_bridges_from_contacts(
                 bool  supported[2] = { false, false };
                 for (size_t i = 0; i < lower_layer.lslices().size() && ! (supported[0] && supported[1]); ++ i)
                     for (int j = 0; j < 2; ++ j)
-                        if (! supported[j] && lower_layer.lslices_ex[i].bbox.contains(pts[j]) && lower_layer.lslices()[i].contains(pts[j]))
+                        if (! supported[j] && lower_layer.islands()[i]->get_bounding_box().contains(pts[j]) && lower_layer.lslices()[i].contains(pts[j]))
                             supported[j] = true;
                 if (supported[0] && supported[1])
                     // Offset a polyline into a thick line.

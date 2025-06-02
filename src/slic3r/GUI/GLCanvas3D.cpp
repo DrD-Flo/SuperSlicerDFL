@@ -7747,34 +7747,57 @@ void GLCanvas3D::_load_print_object_toolpaths(const PrintObject &               
 
             for (const PrintInstance &instance : *ctxt.shifted_copies) {
                 const Point &copy = instance.shift;
-                for (const LayerRegion *layerm : layer->regions()) {
-                    if (is_selected_separate_extruder) {
-                        const PrintRegionConfig& cfg = layerm->region().config();
-                        if (cfg.perimeter_extruder.value    != m_selected_extruder ||
-                            cfg.infill_extruder.value       != m_selected_extruder ||
-                            cfg.solid_infill_extruder.value != m_selected_extruder)
-                            continue;
-                    }
-                    if (ctxt.has_perimeters)
-                        _3DScene::extrusionentity_to_verts(layerm->perimeters(), float(layer->unscaled_print_z()), copy,
-                                                           select_geometry(idx_layer, layerm->region().config().perimeter_extruder.value,
-                                                                           GCodeExtrusionRole::Perimeter),
-                                                           feature_to_geometry_map);
-                    if (ctxt.has_infill) {
-                        for (const ExtrusionEntity *ee : layerm->fills()) {
+                for (const LayerSliceIslandPtr &layer_island_ptr : layer->islands()) {
+                    for (const LayerRegionIslandPtr &region_island_ptr : layer_island_ptr->regions_islands()) {
+                        if (ctxt.has_perimeters && region_island_ptr->has_extrusion(LayerRegionIsland::PERIMETERS)) {
+                            const LayerRegion *one_lregion = *region_island_ptr->regions().begin();
+                            if (is_selected_separate_extruder) {
+                                const PrintRegionConfig &cfg = one_lregion->region().config();
+                                if (cfg.perimeter_extruder.value != m_selected_extruder)
+                                    continue;
+                            }
+                                _3DScene::extrusionentity_to_verts(
+                                    region_island_ptr->extrusion(LayerRegionIsland::PERIMETERS), float(layer->unscaled_print_z()), copy,
+                                    select_geometry(idx_layer, one_lregion->region().config().perimeter_extruder.value,
+                                                    GCodeExtrusionRole::Perimeter),
+                                    feature_to_geometry_map);
+                        }
+                        if (ctxt.has_perimeters && region_island_ptr->has_extrusion(LayerRegionIsland::GAP_FILLS)) {
+                            const LayerRegion *one_lregion = *region_island_ptr->regions().begin();
+                            if (is_selected_separate_extruder) {
+                                const PrintRegionConfig &cfg = one_lregion->region().config();
+                                if (cfg.perimeter_extruder.value != m_selected_extruder)
+                                    continue;
+                            }
+                                _3DScene::extrusionentity_to_verts(
+                                    region_island_ptr->extrusion(LayerRegionIsland::GAP_FILLS), float(layer->unscaled_print_z()), copy,
+                                    select_geometry(idx_layer, one_lregion->region().config().perimeter_extruder.value,
+                                                    GCodeExtrusionRole::Perimeter),
+                                    feature_to_geometry_map);
+                        }
+                        if (ctxt.has_infill && region_island_ptr->has_extrusion(LayerRegionIsland::INFILLS)) {
+                            const LayerRegion *one_lregion = *region_island_ptr->regions().begin();
+                            if (is_selected_separate_extruder) {
+                                const PrintRegionConfig &cfg = one_lregion->region().config();
+                                if (cfg.infill_extruder.value != m_selected_extruder ||
+                                    cfg.solid_infill_extruder.value != m_selected_extruder)
+                                    continue;
+                            }
                             // fill represents infill extrusions of a single island.
-                            const auto *fill = dynamic_cast<const ExtrusionEntityCollection*>(ee);
-                            if (fill != nullptr && !fill->entities().empty()) {
-                                bool has_solid_infill = HasRoleVisitor::search(fill->entities(), HasSolidInfillVisitor{});
-                                _3DScene::extrusionentity_to_verts(*fill, float(layer->unscaled_print_z()), copy,
-                                                                   select_geometry(idx_layer,
-                                                                                   has_solid_infill ?
-                                                                                       layerm->region().config().solid_infill_extruder :
-                                                                                       layerm->region().config().infill_extruder,
-                                                                                   has_solid_infill ?
-                                                                                       GCodeExtrusionRole::SolidInfill :
-                                                                                       GCodeExtrusionRole::InternalInfill),
-                                                                   feature_to_geometry_map);
+                            const ExtrusionEntityCollection &fill = region_island_ptr->extrusion(
+                                LayerRegionIsland::INFILLS);
+                            if (!fill.entities().empty()) {
+                                bool has_solid_infill = HasRoleVisitor::search(fill.entities(),
+                                                                               HasSolidInfillVisitor{});
+                                _3DScene::extrusionentity_to_verts(
+                                    fill, float(layer->unscaled_print_z()), copy,
+                                    select_geometry(idx_layer,
+                                                    has_solid_infill ?
+                                                        one_lregion->region().config().solid_infill_extruder :
+                                                        one_lregion->region().config().infill_extruder,
+                                                    has_solid_infill ? GCodeExtrusionRole::SolidInfill :
+                                                                       GCodeExtrusionRole::InternalInfill),
+                                    feature_to_geometry_map);
                             }
                         }
                     }

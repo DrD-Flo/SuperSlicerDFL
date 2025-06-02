@@ -106,8 +106,8 @@ namespace Slic3r {
         const coord_t milling_diameter = scale_t(this->print_config.milling_diameter.get_at(0));
 
         ExPolygons milling_lines;
-        for (const Surface& surf : slices->surfaces) {
-            ExPolygons surf_milling = offset_ex(surf.expolygon, double(milling_diameter / 2), ClipperLib::jtRound);
+        for (const ExPolygon& surf_expolygon : *slices) {
+            ExPolygons surf_milling = offset_ex(surf_expolygon, double(milling_diameter / 2), ClipperLib::jtRound);
             for (const ExPolygon& expoly : surf_milling)
 //                expoly.simplify(SCALED_RESOLUTION, &milling_lines); // should already be done
                 milling_lines.push_back(expoly);
@@ -156,12 +156,12 @@ namespace Slic3r {
 
         ExPolygons milling_lines;
         ExPolygons surfaces;
-        for (const Surface& surf : slices->surfaces) {
-            ExPolygons surf_milling = offset_ex(surf.expolygon, milling_radius, ClipperLib::jtRound);
+        for (const ExPolygon& surf_expolygon : *slices) {
+            ExPolygons surf_milling = offset_ex(surf_expolygon, milling_radius, ClipperLib::jtRound);
             for (const ExPolygon& expoly : surf_milling)
 //                expoly.simplify(SCALED_RESOLUTION, &milling_lines); // should already be done
                 milling_lines.push_back(expoly);
-            surfaces.push_back(surf.expolygon);
+            surfaces.push_back(surf_expolygon);
         }
         union_safety_offset_ex(milling_lines);
         union_safety_offset_ex(surfaces);

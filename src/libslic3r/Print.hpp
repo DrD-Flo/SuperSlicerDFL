@@ -506,7 +506,7 @@ private:
 
     // this is set to true when LayerRegion->slices is split in top/internal/bottom
     // so that next call to make_perimeters() performs a union() before computing loops
-    bool                    				m_typed_slices = false;
+    bool                                  m_typed_slices = false;
 
     //this setting allow fill_aligned_z to get the max sparse spacing spacing.
     coord_t                                 m_max_sparse_spacing = 0;

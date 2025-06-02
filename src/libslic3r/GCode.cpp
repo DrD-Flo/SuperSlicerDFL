@@ -1,5 +1,5 @@
+///|/ Copyright (c) SuperSlicer 2019-2025 Durand Rémi @supermerill
 ///|/ Copyright (c) Prusa Research 2016 - 2023 Lukáš Matěna @lukasmatena, Vojtěch Bubník @bubnikv, Enrico Turri @enricoturri1966, Pavel Mikuš @Godrak, Oleksandra Iushchenko @YuSanka, Lukáš Hejl @hejllukas, Filip Sykala @Jony01, David Kocík @kocikdav
-///|/ Copyright (c) SuperSlicer 2023 Remi Durand @supermerill
 ///|/ Copyright (c) 2021 Justin Schuh @jschuh
 ///|/ Copyright (c) 2020 Paul Arden @ardenpm
 ///|/ Copyright (c) 2020 sckunkle
@@ -18,7 +18,7 @@
 ///|/ Copyright (c) 2012 Mark Hindess
 ///|/ Copyright (c) 2012 Henrik Brix Andersen @henrikbrixandersen
 ///|/
-///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/ SuperSlicer, PrusaSlicer is released under the terms of the AGPLv3 or higher
 ///|/
 #include "Color.hpp"
 #include "Config.hpp"
@@ -1027,26 +1027,39 @@ namespace DoExport {
                 // get the minimum cross-section used in the print
                 std::set<double> mm3_per_mm;
                 for (auto object : print.objects()) {
-                    for (size_t region_id = 0; region_id < object->num_printing_regions(); ++region_id) {
-                        const PrintRegion &region = object->printing_region(region_id);
-                        for (auto layer : object->layers()) {
-                            const LayerRegion *layerm = layer->regions()[region_id];
-                            const LayerTools *tools_for_layer = tool_ordering.tools_for_layer(layer->scaled_print_z());
-                            if (tools_for_layer->perimeter_extruder(layerm->region().config()) == extruder_id &&
-                                compute_min_mm3_per_mm.is_compatible(
-                                    {ExtrusionRole::Perimeter, ExtrusionRole::ExternalPerimeter,
-                                     ExtrusionRole::OverhangPerimeter, ExtrusionRole::OverhangExternalPerimeter})) {
-                                mm3_per_mm.insert(compute_min_mm3_per_mm.reset_use_get(layerm->perimeters()));
-                            }
-                            if (tools_for_layer->infill_extruder(layerm->region().config()) == extruder_id &&
-                                compute_min_mm3_per_mm.is_compatible({ExtrusionRole::InternalInfill})) {
-                                mm3_per_mm.insert(compute_min_mm3_per_mm.reset_use_get(layerm->fills()));
-                            }
-                            if (tools_for_layer->solid_infill_extruder(layerm->region().config()) == extruder_id &&
-                                compute_min_mm3_per_mm.is_compatible(
-                                    {ExtrusionRole::SolidInfill, ExtrusionRole::TopSolidInfill,
-                                     ExtrusionRole::BridgeInfill, ExtrusionRole::InternalBridgeInfill})) {
-                                mm3_per_mm.insert(compute_min_mm3_per_mm.reset_use_get(layerm->fills()));
+                    //for (size_t region_id = 0; region_id < object->num_printing_regions(); ++region_id) {
+                        //const PrintRegion &region = object->printing_region(region_id);
+                    for (auto layer : object->layers()) {
+                        for (const LayerSliceIslandPtr &layer_island_ptr : layer->islands()) {
+                            for (const LayerRegionIslandPtr &region_island_ptr : layer_island_ptr->regions_islands()) {
+                                //const LayerRegion *layerm = layer->regions()[region_id];
+                                // which region config doesn't matter as line width should separate them.
+                                const PrintRegionConfig &region_config = (*region_island_ptr->regions().begin())->region().config();
+                                const LayerTools *tools_for_layer = tool_ordering.tools_for_layer(
+                                    layer->scaled_print_z());
+                                if (tools_for_layer->perimeter_extruder(region_config) == extruder_id &&
+                                    region_island_ptr->has_extrusion(LayerRegionIsland::PERIMETERS) &&
+                                    compute_min_mm3_per_mm.is_compatible(
+                                        {ExtrusionRole::Perimeter, ExtrusionRole::ExternalPerimeter,
+                                         ExtrusionRole::OverhangPerimeter,
+                                         ExtrusionRole::OverhangExternalPerimeter})) {
+                                    mm3_per_mm.insert(compute_min_mm3_per_mm.reset_use_get(
+                                        region_island_ptr->extrusion(LayerRegionIsland::PERIMETERS)));
+                                }
+                                if (tools_for_layer->infill_extruder(region_config) == extruder_id &&
+                                    region_island_ptr->has_extrusion(LayerRegionIsland::INFILLS) &&
+                                    compute_min_mm3_per_mm.is_compatible({ExtrusionRole::InternalInfill})) {
+                                    mm3_per_mm.insert(compute_min_mm3_per_mm.reset_use_get(
+                                        region_island_ptr->extrusion(LayerRegionIsland::INFILLS)));
+                                }
+                                if (tools_for_layer->solid_infill_extruder(region_config) == extruder_id &&
+                                    region_island_ptr->has_extrusion(LayerRegionIsland::INFILLS) &&
+                                    compute_min_mm3_per_mm.is_compatible(
+                                        {ExtrusionRole::SolidInfill, ExtrusionRole::TopSolidInfill,
+                                         ExtrusionRole::BridgeInfill, ExtrusionRole::InternalBridgeInfill})) {
+                                    mm3_per_mm.insert(compute_min_mm3_per_mm.reset_use_get(
+                                        region_island_ptr->extrusion(LayerRegionIsland::INFILLS)));
+                                }
                             }
                         }
                     }
@@ -1522,10 +1535,13 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
     if (!config().milling_diameter.empty()) {
         for (const PrintObject* obj : print.objects()) {
             for (const Layer *layer : obj->layers()) {
-                for (const LayerRegion *lr : layer->regions()) {
-                    if (!lr->millings().empty()) {
-                        has_milling = true;
-                        break;
+                for (const LayerSliceIslandPtr &layer_island_ptr : layer->islands()) {
+                    for (const LayerRegionIslandPtr &region_island_ptr : layer_island_ptr->regions_islands()) {
+                        if (region_island_ptr->has_extrusion(LayerRegionIsland::MILLS) &&
+                            !region_island_ptr->extrusion(LayerRegionIsland::MILLS).empty()) {
+                            has_milling = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -1688,9 +1704,15 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
                         if (po->layers().empty()) continue;
                         const Layer* l = po->layers().front();
                         if (l->id() != 0) continue;
-                        for (const LayerRegion* lr : l->regions()) {
-                            lr->perimeters().visit(bbvisitor);
-                            lr->fills().visit(bbvisitor);
+                        for (const LayerSliceIslandPtr &layer_island_ptr : l->islands()) {
+                            for (const LayerRegionIslandPtr &region_island_ptr : layer_island_ptr->regions_islands()) {
+                                if (region_island_ptr->has_extrusion(LayerRegionIsland::PERIMETERS)) {
+                                    region_island_ptr->extrusion(LayerRegionIsland::PERIMETERS).visit(bbvisitor);
+                                }
+                                if (region_island_ptr->has_extrusion(LayerRegionIsland::INFILLS)) {
+                                    region_island_ptr->extrusion(LayerRegionIsland::INFILLS).visit(bbvisitor);
+                                }
+                            }
                         }
                     }
                 }
@@ -2199,6 +2221,18 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
         file.write_format("; objects layers count = %i\n", object_layer_count());
         file.write_format("; total layers count = %i\n", layer_count());
         file.write_format(";%s\n", GCodeProcessor::reserved_tag(GCodeProcessor::ETags::Estimated_Printing_Time_Placeholder).c_str());
+
+        //nematx web fields
+        // has support
+        bool has_support = false;
+        for (const PrintObject *object : print.objects()) {
+            for (const Layer *supp_layer : object->support_layers()) {
+                if (supp_layer->has_extrusions()) {
+                    has_support = true;
+                }
+            }
+        }
+        file.write_format("; has_support = %s\n", has_support ? "1" : "0");
 
         // if exporting gcode in ascii format, config export is done here
         // Append full config, delimited by two 'phony' configuration keys slic3r_config = begin and slic3r_config = end.
@@ -3383,15 +3417,37 @@ LayerResult GCodeGenerator::process_layer(
     if (m_spiral_vase && layers.size() == 1 && support_layer == nullptr) {
         bool enable = (layer.id() > 0 || !layer.object()->has_brim()) && (layer.id() >= (size_t)print.config().skirt_height.value && ! print.has_infinite_skirt());
         if (enable) {
-            for (const LayerRegion *layer_region : layer.regions())
-                if (size_t(layer_region->region().config().bottom_solid_layers.value) > layer.id() ||
-                    layer_region->perimeters().items_count() > 1u ||
-                    layer_region->fills().items_count() > 0 ||
-                    // there should be a fills if there is an ironings anyway
-                    layer_region->ironings().items_count() > 0) {
-                    enable = false;
-                    break;
+            for (const LayerSliceIslandPtr &layer_island_ptr : layer.islands()) {
+                for (const LayerRegionIslandPtr &region_island_ptr : layer_island_ptr->regions_islands()) {
+                    size_t nb_peri = 0;
+                    if (region_island_ptr->has_extrusion(LayerRegionIsland::PERIMETERS)) {
+                        nb_peri = region_island_ptr->extrusion(LayerRegionIsland::PERIMETERS).items_count();
+                    }
+                    size_t nb_gap_fill = 0;
+                    if (region_island_ptr->has_extrusion(LayerRegionIsland::GAP_FILLS)) {
+                        nb_gap_fill = region_island_ptr->extrusion(LayerRegionIsland::GAP_FILLS).items_count();
+                    }
+                    size_t nb_fill = 0;
+                    if (region_island_ptr->has_extrusion(LayerRegionIsland::INFILLS)) {
+                        nb_fill = region_island_ptr->extrusion(LayerRegionIsland::INFILLS).items_count();
+                    }
+                    size_t nb_ironing = 0;
+                    if (region_island_ptr->has_extrusion(LayerRegionIsland::IRONINGS)) {
+                        nb_ironing = region_island_ptr->extrusion(LayerRegionIsland::IRONINGS).items_count();
+                    }
+                    // note: not needed i think. peris & infill are enough.
+                    bool inside_a_bottom_solid_layers = false;
+                    //for (const LayerRegion *lregion : region_island_ptr->regions()) {
+                    //    inside_a_bottom_solid_layers |=
+                    //        size_t(lregion->region().config().bottom_solid_layers.value) > layer.id();
+                    //}
+                    if (inside_a_bottom_solid_layers || nb_peri > 1 || nb_gap_fill > 0 || nb_fill > 0 ||
+                        nb_ironing > 0) {
+                        enable = false;
+                        break;
+                    }
                 }
+            }
         }
         result.spiral_vase_enable = enable;
         if (enable)
@@ -3761,6 +3817,14 @@ static inline bool comment_is_perimeter(const std::string_view comment) {
     return comment.data() == comment_perimeter.data() && comment.size() == comment_perimeter.size();
 }
 
+distsqrf_t dist_from_bb(const BoundingBox &bb, const Point &pt) {
+    distsqrf_t dist = pt.distance_to_square(bb.min);
+    dist = std::min(dist, pt.distance_to_square(bb.max));
+    dist = std::min(dist, pt.distance_to_square(Point(bb.min.x(), bb.max.y())));
+    dist = std::min(dist, pt.distance_to_square(Point(bb.max.x(), bb.min.y())));
+    return dist;
+}
+
 void GCodeGenerator::process_layer_single_object(
     // output
     std::string              &gcode, 
@@ -3893,27 +3957,71 @@ void GCodeGenerator::process_layer_single_object(
         this->set_origin(offset);
     }
 
+    auto clear_leftover =
+        [this, &gcode]() {
+            // clear any leftover
+            if (!this->m_last_too_small.empty()) {
+                // finish extrude the little thing that was left before us and incompatible with our next extrusion.
+                ExtrusionPath to_finish = this->m_last_too_small;
+                gcode += this->_extrude(this->m_last_too_small, this->m_last_description, this->m_last_speed_mm_per_sec);
+                this->m_last_too_small.polyline.clear();
+            }
+        };
+
     if (const Layer *layer = layer_to_print.object_layer; layer) {
-        for (size_t idx : layer->lslice_indices_sorted_by_print_order) {
-            const LayerSlice &lslice = layer->lslices_ex[idx];
 
-            //FIXME order islands?
-            // Sequential tool path ordering of multiple parts within the same object, aka. perimeter tracking (#5511)
-            for (const LayerIsland &island : lslice.islands) {
-                init_layer_delayed();
-                this->extrude_infill(print_args, island, true, gcode);
-                this->extrude_perimeters(print_args, island, gcode);
-                this->extrude_infill(print_args, island, false, gcode);
-                this->extrude_ironing(print_args, island, gcode);
-
-                //clear any leftover
-                if(!m_last_too_small.empty()){
-                    // finish extrude the little thing that was left before us and incompatible with our next extrusion.
-                    ExtrusionPath to_finish = m_last_too_small;
-                    gcode += this->_extrude(m_last_too_small, m_last_description, m_last_speed_mm_per_sec);
-                    m_last_too_small.polyline.clear();
+        // order islands (get next best)
+        std::vector<size_t> idxs_islands(layer->islands().size());
+        std::iota (std::begin(idxs_islands), std::end(idxs_islands), 0);
+        while (!idxs_islands.empty()) {
+            // get best (currently, only via bb)
+            //TODO: use island slice polygon.
+            size_t nearest_idx = 0;
+            if (last_pos_defined()) {
+                distsqrf_t nearest_dist_sqr = dist_from_bb(layer->islands()[idxs_islands[nearest_idx]]->get_bounding_box(),
+                                                           last_pos());
+                for (size_t i = 1; i < idxs_islands.size(); i++) {
+                    distsqrf_t other_dist_sqr = dist_from_bb(layer->islands()[idxs_islands[i]]->get_bounding_box(),
+                                                             last_pos());
+                    if (other_dist_sqr < nearest_dist_sqr) {
+                        nearest_idx = i;
+                        nearest_dist_sqr = other_dist_sqr;
+                    }
                 }
             }
+
+            // extrude island
+            const LayerSliceIslandPtr &layer_island_ptr = layer->islands()[idxs_islands[nearest_idx]];
+            //same island: 
+            init_layer_delayed();
+            // Sequential tool path ordering of multiple parts within the same object, aka. perimeter tracking (#5511)
+            //TODO merge (keep linked regions) & let the algo sort them
+            for (const LayerRegionIslandPtr &region_island_ptr : layer_island_ptr->regions_islands()) {
+                if (region_island_ptr->extruder_id() == print_args.extruder_id) {
+                    this->extrude_infill(print_args, *region_island_ptr, true, gcode);
+                    clear_leftover();
+                }
+            }
+            for (const LayerRegionIslandPtr &region_island_ptr : layer_island_ptr->regions_islands()) {
+                if (region_island_ptr->extruder_id() == print_args.extruder_id) {
+                    this->extrude_perimeters(print_args, *region_island_ptr, gcode);
+                    clear_leftover();
+                }
+            }
+            for (const LayerRegionIslandPtr &region_island_ptr : layer_island_ptr->regions_islands()) {
+                if (region_island_ptr->extruder_id() == print_args.extruder_id) {
+                    this->extrude_infill(print_args, *region_island_ptr, false, gcode);
+                    clear_leftover();
+                }
+            }
+            for (const LayerRegionIslandPtr &region_island_ptr : layer_island_ptr->regions_islands()) {
+                if (region_island_ptr->extruder_id() == print_args.extruder_id) {
+                    this->extrude_ironing(print_args, *region_island_ptr, gcode);
+                    clear_leftover();
+                }
+            }
+
+            idxs_islands.erase(idxs_islands.begin() + nearest_idx);
         }
     }
     // Don't set m_gcode_label_objects_end if you don't had to write the m_gcode_label_objects_start.
@@ -3940,12 +4048,14 @@ void GCodeGenerator::emit_milling_commands(std::string& gcode, const ObjectsLaye
     //add milling post-process if enabled
     if (!config().milling_diameter.empty()) {
         bool milling_ok = false;
-        for (const ObjectLayerToPrint& ltp : layers) {
+        for (const ObjectLayerToPrint &ltp : layers) {
             if (ltp.object_layer != nullptr) {
-                for (const LayerRegion* lr : ltp.object_layer->regions()) {
-                    if (!lr->millings().empty()) {
-                        milling_ok = true;
-                        break;
+                for (const LayerSliceIslandPtr &layer_island_ptr : ltp.object_layer->islands()) {
+                    for (const LayerRegionIslandPtr &lri : layer_island_ptr->regions_islands()) {
+                        if (lri->has_extrusion(LayerRegionIsland::MILLS)) {
+                            milling_ok = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -3973,15 +4083,18 @@ void GCodeGenerator::emit_milling_commands(std::string& gcode, const ObjectsLaye
             }
 
             gcode += "\n; began milling:\n";
-            for (const ObjectLayerToPrint& ltp : layers) {
+            for (const ObjectLayerToPrint &ltp : layers) {
                 if (ltp.object_layer != nullptr) {
-                    for (const PrintInstance& print_instance : ltp.object()->instances()) {
+                    for (const PrintInstance &print_instance : ltp.object()->instances()) {
                         this->set_origin(unscale(print_instance.shift));
-                        for (const LayerRegion* lr : ltp.object_layer->regions()) {
-                            if (!lr->millings().empty()) {
-                                //EXTRUDE MOVES
-                                gcode += "; extrude lr->milling\n";
-                                gcode += this->extrude_entity({lr->millings(), false}, "; milling post-process");
+                        for (const LayerSliceIslandPtr &layer_island_ptr : ltp.object_layer->islands()) {
+                            for (const LayerRegionIslandPtr &lri : layer_island_ptr->regions_islands()) {
+                                if (lri->has_extrusion(LayerRegionIsland::MILLS)) {
+                                    // EXTRUDE MOVES
+                                    gcode += "; extrude lr->milling\n";
+                                    gcode += this->extrude_entity({lri->extrusion(LayerRegionIsland::MILLS), false},
+                                                                  "; milling post-process");
+                                }
                             }
                         }
                     }
@@ -5908,21 +6021,21 @@ void GCodeGenerator::set_region_for_extrude(const Print &print, const PrintObjec
     }
     // give the boundary to wipe
     if (layerm) {
-        m_wipe.set_boundaries(&layerm->get_cached_slices());
+        m_wipe.set_boundaries(&layerm->get_raw_slices());
     } else {
         m_wipe.set_boundaries(nullptr);
     }
 }
 
 // Extrude perimeters: Decide where to put seams (hide or align seams).
-void GCodeGenerator::extrude_perimeters(const ExtrudeArgs &print_args, const LayerIsland &island, std::string &gcode)
+void GCodeGenerator::extrude_perimeters(const ExtrudeArgs &print_args, const LayerRegionIsland &region_island, std::string &gcode)
 {
     m_seam_perimeters = true;
-    const LayerRegion &layerm = *layer()->get_region(island.perimeters.region());
+    const LayerRegion &layerm = **region_island.regions().begin(); //FIXME multiple regions to have different speed modifiers
     // PrintObjects own the PrintRegions, thus the pointer to PrintRegion would be unique to a PrintObject, they would not
     // identify the content of PrintRegion accross the whole print uniquely. Translate to a Print specific PrintRegion.
     const Print       &print  = *print_args.print_instance.print_object.print();
-    m_region = &print.get_print_region(layerm.region().print_region_id());
+    m_region = &layerm.region();
     bool first = true;
     ExtrusionEntityCollection to_extrude(true, true);
 //
@@ -5937,12 +6050,11 @@ void GCodeGenerator::extrude_perimeters(const ExtrudeArgs &print_args, const Lay
 //    OverhangAssertVisitor visitor;
 //    layerm.perimeters().visit(visitor);
 //#endif
-    for (uint32_t perimeter_id : island.perimeters) {
+    if (region_island.has_extrusion(LayerRegionIsland::PERIMETERS)) {
         // Extrusions inside islands are expected to be ordered already.
         // Don't reorder them. (supermerill: it's reordered afterwards by the chain_extrusion_references)
-        assert(dynamic_cast<const ExtrusionEntityCollection*>(layerm.perimeters().entities()[perimeter_id]));
-        const ExtrusionEntityCollection *eec = static_cast<const ExtrusionEntityCollection*>(layerm.perimeters().entities()[perimeter_id]);
-        if (shall_print_this_extrusion_collection(print_args, eec, *m_region)) {
+        const ExtrusionEntityCollection &eec = region_island.extrusion(LayerRegionIsland::PERIMETERS);
+        if (shall_print_this_extrusion_collection(print_args, &eec, *m_region)) {
             // This may not apply to Arachne, but maybe the Arachne gap fill should disable reverse as well?
             // assert(! eec->can_reverse());
             if (first) {
@@ -5951,53 +6063,68 @@ void GCodeGenerator::extrude_perimeters(const ExtrudeArgs &print_args, const Lay
                 set_region_for_extrude(print, nullptr, &layerm, gcode);
             }
             // flatten it to allow better reordering
-            eec->flatten(true, to_extrude);
+            eec.flatten(true, to_extrude);
+        }
+
+        // reorder
+        ExtrusionEntityReferences chained = chain_extrusion_references(to_extrude,
+                                                                       last_pos_defined() ? &last_pos() : nullptr);
+        for (const ExtrusionEntityReference &next_entity : chained) {
+            //#ifdef _DEBUG
+            //        OverhangAssertVisitor visitor;
+            //        next_entity.extrusion_entity().visit(visitor);
+            //#endif
+            gcode += this->extrude_entity(next_entity, comment_perimeter, -1.);
+            if (m_travel_obstacle_tracker.is_init())
+                m_travel_obstacle_tracker.mark_extruded(&next_entity.extrusion_entity(),
+                                                        print_args.print_instance.object_layer_to_print_id,
+                                                        print_args.print_instance.instance_id);
         }
     }
-    // reorder
-    ExtrusionEntityReferences chained = chain_extrusion_references(to_extrude, last_pos_defined() ? &last_pos() : nullptr);
-    for (const ExtrusionEntityReference &next_entity : chained) {
-//#ifdef _DEBUG
-//        OverhangAssertVisitor visitor;
-//        next_entity.extrusion_entity().visit(visitor);
-//#endif
-        gcode += this->extrude_entity(next_entity, comment_perimeter, -1.);
-        if (m_travel_obstacle_tracker.is_init())
-            m_travel_obstacle_tracker.mark_extruded(&next_entity.extrusion_entity(),
-                                                    print_args.print_instance.object_layer_to_print_id,
-                                                    print_args.print_instance.instance_id);
+    if (region_island.has_extrusion(LayerRegionIsland::GAP_FILLS)) {
+        const ExtrusionEntityCollection &eec = region_island.extrusion(LayerRegionIsland::GAP_FILLS);
+        if (shall_print_this_extrusion_collection(print_args, &eec, *m_region)) {
+            if (first) {
+                first = false;
+                // Apply region-specific settings
+                set_region_for_extrude(print, nullptr, &layerm, gcode);
+            }
+            // flatten it to allow better reordering
+            eec.flatten(true, to_extrude);
+        }
+        // reorder
+        ExtrusionEntityReferences chained = chain_extrusion_references(to_extrude,
+                                                                       last_pos_defined() ? &last_pos() : nullptr);
+        for (const ExtrusionEntityReference &next_entity : chained) {
+            gcode += this->extrude_entity(next_entity, comment_perimeter, -1.);
+            if (m_travel_obstacle_tracker.is_init())
+                m_travel_obstacle_tracker.mark_extruded(&next_entity.extrusion_entity(),
+                                                        print_args.print_instance.object_layer_to_print_id,
+                                                        print_args.print_instance.instance_id);
+        }
     }
     m_region = nullptr;
     m_seam_perimeters = false;
 }
 
 // Chain the paths hierarchically by a greedy algorithm to minimize a travel distance.
-void GCodeGenerator::extrude_infill(const ExtrudeArgs& print_args, const LayerIsland &island, bool is_infill_first, std::string &gcode)
+void GCodeGenerator::extrude_infill(const ExtrudeArgs& print_args, const LayerRegionIsland &region_island, bool is_infill_first, std::string &gcode)
 {
     ExtrusionEntityCollection temp_fill_extrusions;
     const Print &print  = *print_args.print_instance.print_object.print();
-    for (auto it = island.fills.begin(); it != island.fills.end();) {
+    if (region_island.has_extrusion(LayerRegionIsland::INFILLS)) {
         // Gather range of fill ranges with the same region.
-        auto it_end = it;
-        for (++ it_end; it_end != island.fills.end() && it->region() == it_end->region(); ++ it_end) ;
-        const LayerRegion &layerm = *layer()->get_region(it->region());
-        const ExtrusionEntityCollection &fills = layerm.fills();
-        LayerExtrusionRanges::const_iterator it_fill_ranges_begin = it;
-        LayerExtrusionRanges::const_iterator it_fill_ranges_end = it_end;
+        const LayerRegion &layerm = **region_island.regions().begin(); //FIXME now you can have multiple region, to have different speeds
         // PrintObjects own the PrintRegions, thus the pointer to PrintRegion would be unique to a PrintObject, they would not
                 // identify the content of PrintRegion accross the whole print uniquely. Translate to a Print specific PrintRegion.
-        m_region = &print.get_print_region(layerm.region().print_region_id());
+        assert(&print.get_print_region(layerm.region().print_region_id()) == &layerm.region());
+        //m_region = &print.get_print_region(layerm.region().print_region_id());
+        m_region = &layerm.region();
         if (m_region->config().infill_first == is_infill_first) {
             temp_fill_extrusions.clear();
-            for (auto it_fill_range = it_fill_ranges_begin; it_fill_range != it_fill_ranges_end; ++it_fill_range) {
-                assert(it_fill_range->region() == it_fill_ranges_begin->region());
-                for (uint32_t fill_id : *it_fill_range) {
-                    const ExtrusionEntityCollection *eec = static_cast<const ExtrusionEntityCollection *>(fills.entities()[fill_id]);
-                    assert(dynamic_cast<const ExtrusionEntityCollection *>(fills.entities()[fill_id]));
-                    if (shall_print_this_extrusion_collection(print_args, eec, layerm.region())) {
-                        eec->flatten(true, temp_fill_extrusions);
-                    }
-                }
+            const ExtrusionEntityCollection &eec = region_island.extrusion(LayerRegionIsland::INFILLS);
+            if (shall_print_this_extrusion_collection(print_args, &eec, layerm.region())) {
+                eec.flatten(true, temp_fill_extrusions);
             }
             if (!temp_fill_extrusions.empty()) {
                 set_region_for_extrude(print, nullptr, &layerm, gcode);
@@ -6007,37 +6134,24 @@ void GCodeGenerator::extrude_infill(const ExtrudeArgs& print_args, const LayerIs
                 }
             }
         }
-        it = it_end;
         m_region = nullptr;
     }
 }
 
 // Chain the paths hierarchically by a greedy algorithm to minimize a travel distance.
-void GCodeGenerator::extrude_ironing(const ExtrudeArgs &print_args, const LayerIsland &island, std::string &gcode)
+void GCodeGenerator::extrude_ironing(const ExtrudeArgs &print_args, const LayerRegionIsland &region_island, std::string &gcode)
 {
     ExtrusionEntityCollection temp_fill_extrusions;
     const Print &print  = *print_args.print_instance.print_object.print();
-    for (auto it = island.ironings.begin(); it != island.ironings.end();) {
-        // Gather range of fill ranges with the same region.
-        auto it_end = it;
-        for (++ it_end; it_end != island.ironings.end() && it->region() == it_end->region(); ++ it_end) ;
-        const LayerRegion &layerm = *layer()->get_region(it->region());
-        const ExtrusionEntityCollection &ironings = layerm.ironings();
-        LayerExtrusionRanges::const_iterator it_fill_ranges_begin = it;
-        LayerExtrusionRanges::const_iterator it_fill_ranges_end = it_end;
+    if (region_island.has_extrusion(LayerRegionIsland::IRONINGS)) {
+        const LayerRegion &layerm = **region_island.regions().begin(); //FIXME now you can have multiple region, to have different speeds
         // PrintObjects own the PrintRegions, thus the pointer to PrintRegion would be unique to a PrintObject, they would not
                 // identify the content of PrintRegion accross the whole print uniquely. Translate to a Print specific PrintRegion.
         m_region = &print.get_print_region(layerm.region().print_region_id());
         temp_fill_extrusions.clear();
-        for (auto it_fill_range = it_fill_ranges_begin; it_fill_range != it_fill_ranges_end; ++ it_fill_range) {
-            assert(it_fill_range->region() == it_fill_ranges_begin->region());
-            for (uint32_t fill_id : *it_fill_range) {
-                assert(dynamic_cast<ExtrusionEntityCollection*>(ironings.entities()[fill_id]));
-                const ExtrusionEntityCollection *eec = static_cast<const ExtrusionEntityCollection*>(ironings.entities()[fill_id]);
-                if (shall_print_this_extrusion_collection(print_args, eec, layerm.region())) {
-                    eec->flatten(true, temp_fill_extrusions);
-                }
-            }
+        const ExtrusionEntityCollection &eec = region_island.extrusion(LayerRegionIsland::IRONINGS);
+        if (shall_print_this_extrusion_collection(print_args, &eec, layerm.region())) {
+            eec.flatten(true, temp_fill_extrusions);
         }
         if (!temp_fill_extrusions.empty()) {
             set_region_for_extrude(print, nullptr, &layerm, gcode);
@@ -6046,7 +6160,6 @@ void GCodeGenerator::extrude_ironing(const ExtrudeArgs &print_args, const LayerI
                 gcode += this->extrude_entity(fill, "ironing"sv);
             }
         }
-        it = it_end;
         m_region = nullptr;
     }
 }

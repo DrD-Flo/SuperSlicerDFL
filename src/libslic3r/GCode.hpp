@@ -362,9 +362,9 @@ private:
     // if no m_region, then it will take the default region config from print_object
     // if no print_object, then it will take the default region config from print
     void set_region_for_extrude(const Print &print, const PrintObject *print_object, const LayerRegion *layerm, std::string &gcode);
-    void extrude_perimeters(const ExtrudeArgs &print_args, const LayerIsland &island, std::string &gcode);
-    void extrude_infill(const ExtrudeArgs &print_args, const LayerIsland &island, bool is_infill_first, std::string &gcode);
-    void extrude_ironing(const ExtrudeArgs &print_args, const LayerIsland &island, std::string &gcode);
+    void extrude_perimeters(const ExtrudeArgs &print_args, const LayerRegionIsland &island, std::string &gcode);
+    void extrude_infill(const ExtrudeArgs &print_args, const LayerRegionIsland &island, bool is_infill_first, std::string &gcode);
+    void extrude_ironing(const ExtrudeArgs &print_args, const LayerRegionIsland &island, std::string &gcode);
     void extrude_skirt(ExtrusionLoop &loop_src, const ExtrusionFlow &extrusion_flow_override, std::string &gcode, const std::string_view description);
     std::string     extrude_support(const ExtrusionEntityReferences &support_fills);
     bool            shall_print_this_extrusion_collection(const ExtrudeArgs &              print_args,
