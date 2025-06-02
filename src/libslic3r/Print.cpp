@@ -667,7 +667,7 @@ bool Print::sequential_print_horizontal_clearance_valid(const Print &print, Poly
 
 static inline bool sequential_print_vertical_clearance_valid(const Print &print)
 {
-	std::vector<const PrintInstance*> print_instances_ordered = sort_object_instances_by_model_order(print);
+	std::vector<const PrintInstance*> print_instances_ordered = print.sort_object_instances_by_model_order();
 	// Ignore the last instance printed.
 	print_instances_ordered.pop_back();
 	// Find the other highest instance.
@@ -1289,17 +1289,48 @@ void Print::process()
         }
     );
 
+    // Tool ordering
     if (this->set_started(psWipeTower)) {
         m_wipe_tower_data.clear();
-        m_tool_ordering.clear();
+        m_tool_orderings.clear();
         if (this->has_wipe_tower()) {
+            assert(!this->config().complete_objects.value && config().parallel_objects_step.value == 0);
             this->set_status(printstep_2_percent[PrintStep::psWipeTower], _u8L("Generating wipe tower"));
+            // Let the Toolordering class know there will be initial priming extrusions at the start of the print.
+            m_tool_orderings.emplace_back(*this, (uint16_t) -1, true);
             this->_make_wipe_tower();
-        } else if (! this->config().complete_objects.value) {
-            // Initialize the tool ordering, so it could be used by the G-code preview slider for planning tool changes and filament switches.
-            m_tool_ordering = ToolOrdering(*this, -1, false);
-            if (m_tool_ordering.empty() || m_tool_ordering.last_extruder() == unsigned(-1))
-                throw Slic3r::SlicingError("The print is empty. The model is not printable with current print settings.");
+            m_tool_orderings.back().assign_custom_gcodes(*this);
+        } else if (this->config().complete_objects.value || config().parallel_objects_step.value > 0) {
+            // FIXME: parallel_objects_step: end extruder on each pass isn't computed correctly.
+            // TODO: add extruder-switch minimizing option.
+            // Order object instances for sequential print.
+            std::vector<const PrintInstance *> instances_ordering;
+            if (config().complete_objects_sort.value == cosObject)
+                instances_ordering = this->sort_object_instances_by_model_order();
+            else if (config().complete_objects_sort.value == cosZ)
+                instances_ordering = this->sort_object_instances_by_max_z();
+            else if (config().complete_objects_sort.value == cosY)
+                instances_ordering = this->sort_object_instances_by_max_y();
+            else if (config().complete_objects_sort.value == cosNearest)
+                instances_ordering = chain_print_object_instances(*this);
+            // Find the 1st printing object, find its tool ordering and the initial extruder ID.
+            uint16_t previous_final_extruder = -1;
+            for (auto it = instances_ordering.begin(); it != instances_ordering.end(); ++it) {
+                m_tool_orderings.emplace_back(*(*it)->print_object, previous_final_extruder);
+                // last_extruder == -1 => nothign to print, so skip
+                if (m_tool_orderings.back().last_extruder() != uint16_t(-1)) {
+                    previous_final_extruder = m_tool_orderings.back().last_extruder();
+                }
+            }
+        } else {
+            // Initialize the tool ordering, so it could be used by the G-code preview slider for planning tool
+            // changes and filament switches.
+            m_tool_orderings.emplace_back(*this, -1, false);
+            if (m_tool_orderings.empty() || m_tool_orderings.back().last_extruder() == uint16_t(-1))
+                throw Slic3r::SlicingError(
+                    "The print is empty. The model is not printable with current print settings.");
+
+            m_tool_orderings.back().assign_custom_gcodes(*this);
         }
         this->set_done(psWipeTower);
     }
@@ -1420,6 +1451,8 @@ std::string Print::export_gcode(const std::string& path_template, GCodeProcessor
     } else {
         this->set_status(printstep_2_percent[PrintStep::psGCodeExport], L("Generating G-code"));
     }
+
+    // order tools
 
     // Create GCode on heap, it has quite a lot of data.
     std::unique_ptr<GCodeGenerator> gcode(new GCodeGenerator());
@@ -2234,23 +2267,22 @@ void Print::_make_wipe_tower()
 
     std::vector<std::vector<float>> wipe_volumes = WipeTower::extract_wipe_volumes(m_config);
 
-    // Let the ToolOrdering class know there will be initial priming extrusions at the start of the print.
-    m_wipe_tower_data.tool_ordering = ToolOrdering(*this, (uint16_t)-1, true);
-
-    if (! m_wipe_tower_data.tool_ordering.has_wipe_tower())
+    if (! m_wipe_tower_data.print->tool_orderings().front().has_wipe_tower())
         // Don't generate any wipe tower.
         return;
 
-    // Check whether there are any layers in m_tool_ordering, which are marked with has_wipe_tower,
+    assert(m_tool_orderings.size() == 1);
+
+    // Check whether there are any layers in m_tool_orderings, which are marked with has_wipe_tower,
     // they print neither object, nor support. These layers are above the raft and below the object, and they
     // shall be added to the support layers to be printed.
     // see https://github.com/prusa3d/PrusaSlicer/issues/607
     {
         size_t idx_begin = size_t(-1);
-        size_t idx_end   = m_wipe_tower_data.tool_ordering.layer_tools().size();
+        size_t idx_end   = m_tool_orderings.front().layer_tools().size();
         // Find the first wipe tower layer, which does not have a counterpart in an object or a support layer.
         for (size_t i = 0; i < idx_end; ++ i) {
-            const LayerTools &lt = m_wipe_tower_data.tool_ordering.layer_tools()[i];
+            const LayerTools &lt = m_tool_orderings.front().layer_tools()[i];
             if (lt.has_wipe_tower && ! lt.has_object && ! lt.has_support) {
                 idx_begin = i;
                 break;
@@ -2258,17 +2290,17 @@ void Print::_make_wipe_tower()
         }
         if (idx_begin != size_t(-1)) {
             // Find the position in m_objects.first()->support_layers to insert these new support layers.
-            coord_t wipe_tower_new_layer_print_z_first = m_wipe_tower_data.tool_ordering.layer_tools()[idx_begin]._print_z;
+            coord_t wipe_tower_new_layer_print_z_first = m_tool_orderings.front().layer_tools()[idx_begin]._print_z;
             SupportLayerPtrs::const_iterator it_layer = m_objects.front()->edit_support_layers().begin();
             for (; it_layer != m_objects.front()->edit_support_layers().end() && (*it_layer)->scaled_print_z() <= wipe_tower_new_layer_print_z_first; ++ it_layer);
             // Find the stopper of the sequence of wipe tower layers, which do not have a counterpart in an object or a support layer.
             for (size_t i = idx_begin; i < idx_end; ++ i) {
-                LayerTools &lt = const_cast<LayerTools&>(m_wipe_tower_data.tool_ordering.layer_tools()[i]);
+                LayerTools &lt = const_cast<LayerTools&>(m_tool_orderings.front().layer_tools()[i]);
                 if (! (lt.has_wipe_tower && ! lt.has_object && ! lt.has_support))
                     break;
                 lt.has_support = true;
                 // Insert the new support layer.
-                coord_t height = lt._print_z - (i == 0 ? 0. : m_wipe_tower_data.tool_ordering.layer_tools()[i-1]._print_z);
+                coord_t height = lt._print_z - (i == 0 ? 0. : m_tool_orderings.front().layer_tools()[i-1]._print_z);
                 //FIXME the support layer ID is set to -1, as Vojtech hopes it is not being used anyway.
                 it_layer = m_objects.front()->insert_support_layer(it_layer, -1, 0, height, lt._print_z, unscaled(lt._print_z - height / 2));
                 ++ it_layer;
@@ -2278,25 +2310,25 @@ void Print::_make_wipe_tower()
     this->throw_if_canceled();
 
     // Initialize the wipe tower.
-    WipeTower wipe_tower(m_config, m_default_object_config, m_default_region_config, wipe_volumes, m_wipe_tower_data.tool_ordering.first_extruder());
+    WipeTower wipe_tower(m_config, m_default_object_config, m_default_region_config, wipe_volumes, m_tool_orderings.front().first_extruder());
 
     // Set the extruder & material properties at the wipe tower object.
     for (size_t i = 0; i < m_config.nozzle_diameter.size(); ++ i)
         wipe_tower.set_extruder(i);
 
     m_wipe_tower_data.priming = Slic3r::make_unique<std::vector<WipeTower::ToolChangeResult>>(
-        wipe_tower.prime((float)unscaled(get_min_first_layer_height()), m_wipe_tower_data.tool_ordering.all_extruders(), false));
+        wipe_tower.prime((float)unscaled(get_min_first_layer_height()), m_tool_orderings.front().all_extruders(), false));
 
     // Lets go through the wipe tower layers and determine pairs of extruder changes for each
     // to pass to wipe_tower (so that it can use it for planning the layout of the tower)
     {
-        unsigned int current_extruder_id = m_wipe_tower_data.tool_ordering.all_extruders().back();
-        for (LayerTools &layer_tools : m_wipe_tower_data.tool_ordering.layer_tools()) { // for all layers
+        unsigned int current_extruder_id = m_tool_orderings.front().all_extruders().back();
+        for (LayerTools &layer_tools : m_tool_orderings.front().layer_tools()) { // for all layers
             if (!layer_tools.has_wipe_tower) continue;
-            bool first_layer = &layer_tools == &m_wipe_tower_data.tool_ordering.front();
+            bool first_layer = &layer_tools == &m_tool_orderings.front().front();
             wipe_tower.plan_toolchange((float)unscaled(layer_tools._print_z), (float)unscaled(layer_tools.wipe_tower_layer_height), current_extruder_id, current_extruder_id, false);
             for (const auto extruder_id : layer_tools.extruders) {
-                if ((first_layer && extruder_id == m_wipe_tower_data.tool_ordering.all_extruders().back()) || extruder_id != current_extruder_id) {
+                if ((first_layer && extruder_id == m_tool_orderings.front().all_extruders().back()) || extruder_id != current_extruder_id) {
                     double volume_to_wipe = wipe_volumes[current_extruder_id][extruder_id];             // total volume to wipe after this toolchange
                     
                     // START filament_wipe_advanced_pigment
@@ -2348,13 +2380,13 @@ void Print::_make_wipe_tower()
                 }
             }
             layer_tools.wiping_extrusions_nonconst().ensure_perimeters_infills_order(*this, layer_tools);
-            if (&layer_tools == &m_wipe_tower_data.tool_ordering.back() || (&layer_tools + 1)->wipe_tower_partitions == 0)
+            if (&layer_tools == &m_tool_orderings.front().back() || (&layer_tools + 1)->wipe_tower_partitions == 0)
                 break;
         }
     }
 
     // Generate the wipe tower layers.
-    m_wipe_tower_data.tool_changes.reserve(m_wipe_tower_data.tool_ordering.layer_tools().size());
+    m_wipe_tower_data.tool_changes.reserve(m_tool_orderings.front().layer_tools().size());
     wipe_tower.generate(m_wipe_tower_data.tool_changes);
     m_wipe_tower_data.depth = wipe_tower.get_depth();
     m_wipe_tower_data.z_and_depth_pairs = wipe_tower.get_z_and_depth_pairs();
@@ -2363,19 +2395,19 @@ void Print::_make_wipe_tower()
 
     // Unload the current filament over the purge tower.
     double layer_height = m_objects.front()->config().layer_height.value;
-    if (m_wipe_tower_data.tool_ordering.back().wipe_tower_partitions > 0) {
+    if (m_tool_orderings.front().back().wipe_tower_partitions > 0) {
         // The wipe tower goes up to the last layer of the print.
         if (wipe_tower.layer_finished()) {
             // The wipe tower is printed to the top of the print and it has no space left for the final extruder purge.
             // Lift Z to the next layer.
-            wipe_tower.set_layer(float(unscaled(m_wipe_tower_data.tool_ordering.back()._print_z) + layer_height), float(layer_height), 0, false, true);
+            wipe_tower.set_layer(float(unscaled(m_tool_orderings.front().back()._print_z) + layer_height), float(layer_height), 0, false, true);
         } else {
             // There is yet enough space at this layer of the wipe tower for the final purge.
         }
     } else {
         // The wipe tower does not reach the last print layer, perform the pruge at the last print layer.
-        assert(m_wipe_tower_data.tool_ordering.back().wipe_tower_partitions == 0);
-        wipe_tower.set_layer(float(unscaled(m_wipe_tower_data.tool_ordering.back()._print_z)), float(layer_height), 0, false, true);
+        assert(m_tool_orderings.front().back().wipe_tower_partitions == 0);
+        wipe_tower.set_layer(float(unscaled(m_tool_orderings.front().back()._print_z)), float(layer_height), 0, false, true);
     }
     m_wipe_tower_data.final_purge = Slic3r::make_unique<WipeTower::ToolChangeResult>(
         wipe_tower.tool_change((unsigned int)(-1)));
@@ -2409,6 +2441,71 @@ std::string Print::output_filename(const std::string &filename_base) const
         output_filename_format.erase(output_filename_format.end()-6);
 
     return this->PrintBase::output_filename(output_filename_format, ".gcode", filename_base, &config);
+}
+
+// Sort the PrintObjects by their increasing Z, likely useful for avoiding colisions on Deltas during sequential prints.
+std::vector<const PrintInstance*> Print::sort_object_instances_by_max_z() const
+{
+    std::vector<const PrintObject*> objects(this->objects().begin(), this->objects().end());
+    std::sort(objects.begin(), objects.end(), [](const PrintObject* po1, const PrintObject* po2) { return po1->height() < po2->height(); });
+    std::vector<const PrintInstance*> instances;
+    instances.reserve(objects.size());
+    for (const PrintObject* object : objects)
+        for (size_t i = 0; i < object->instances().size(); ++i)
+            instances.emplace_back(&object->instances()[i]);
+    return instances;
+}
+
+// Sort the PrintObjects by their increasing Y, likely useful for avoiding colisions on printer with a x-bar during sequential prints.
+std::vector<const PrintInstance*> Print::sort_object_instances_by_max_y() const
+{
+    std::vector<const PrintObject*> objects(this->objects().begin(), this->objects().end());
+    std::sort(objects.begin(), objects.end(), [](const PrintObject* po1, const PrintObject* po2) { return po1->height() < po2->height(); });
+    std::vector<const PrintInstance*> instances;
+    instances.reserve(objects.size());
+    std::map<const PrintInstance*, coord_t> map_min_y;
+    for (const PrintObject* object : objects) {
+        for (size_t i = 0; i < object->instances().size(); ++i) {
+            instances.emplace_back(&object->instances()[i]);
+            // Calculate the convex hull of a printable object. 
+            Polygon poly = object->model_object()->convex_hull_2d(
+                object->trafo()
+                // already in object->trafo()
+                //* Geometry::assemble_transform(Vec3d::Zero(),
+                //    object->instances()[i].model_instance->get_rotation(), 
+                //    object->instances()[i].model_instance->get_scaling_factor(), 
+                //    object->instances()[i].model_instance->get_mirror())
+            );
+            BoundingBox bb(poly.points);
+            Vec2crd offset = object->instances()[i].shift - object->center_offset();
+            bb.translate(offset.x(), offset.y());
+            map_min_y[instances.back()] = bb.min.y();
+        }
+    }
+    std::sort(instances.begin(), instances.end(), [&map_min_y](const PrintInstance* po1, const PrintInstance* po2) { return map_min_y[po1] < map_min_y[po2]; });
+    return instances;
+}
+
+// Produce a vector of PrintObjects in the order of their respective ModelObjects in this->model().
+std::vector<const PrintInstance*> Print::sort_object_instances_by_model_order() const
+{
+    // Build up map from ModelInstance* to PrintInstance*
+    std::vector<std::pair<const ModelInstance*, const PrintInstance*>> model_instance_to_print_instance;
+    model_instance_to_print_instance.reserve(this->num_object_instances());
+    for (const PrintObject *print_object : this->objects())
+        for (const PrintInstance &print_instance : print_object->instances())
+            model_instance_to_print_instance.emplace_back(print_instance.model_instance, &print_instance);
+    std::sort(model_instance_to_print_instance.begin(), model_instance_to_print_instance.end(), [](auto &l, auto &r) { return l.first < r.first; });
+
+    std::vector<const PrintInstance*> instances;
+    instances.reserve(model_instance_to_print_instance.size());
+    for (const ModelObject *model_object : this->model().objects)
+        for (const ModelInstance *model_instance : model_object->instances) {
+            auto it = std::lower_bound(model_instance_to_print_instance.begin(), model_instance_to_print_instance.end(), std::make_pair(model_instance, nullptr), [](auto &l, auto &r) { return l.first < r.first; });
+            if (it != model_instance_to_print_instance.end() && it->first == model_instance)
+                instances.emplace_back(it->second);
+        }
+    return instances;
 }
 
 const std::string PrintStatistics::FilamentUsedG     = "filament used [g]";

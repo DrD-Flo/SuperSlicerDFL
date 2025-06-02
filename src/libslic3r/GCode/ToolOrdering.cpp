@@ -101,6 +101,7 @@ ToolOrdering::ToolOrdering(const PrintObject &object, uint16_t first_extruder, b
 {
     if (object.layers().empty())
         return;
+    m_objects = {&object};
 
     // Initialize the print layers for just a single object.
     {
@@ -138,6 +139,7 @@ ToolOrdering::ToolOrdering(const PrintObject &object, const GCode::ObjectsLayerT
 {
     if (object.layers().empty() || layers.empty())
         return;
+    m_objects = {&object};
 
     // Initialize the print layers for just a single object.
     coord_t bottom_z = -1;
@@ -234,8 +236,11 @@ ToolOrdering::ToolOrdering(const Print &print, uint16_t first_extruder, bool pri
     }
 
     // Collect extruders required to print the layers.
-    for (auto object : print.objects())
+    m_objects.clear();
+    for (const PrintObject *object : print.objects()) {
+        m_objects.push_back(object);
         this->collect_extruders(*object, {}, per_layer_extruder_switches, per_layer_color_changes);
+    }
 
     // Reorder the extruders to minimize tool switches.
     this->reorder_extruders(first_extruder);
@@ -267,6 +272,7 @@ void ToolOrdering::initialize_layers(std::vector<coord_t> &zs)
         coord_t zmax = zs[i] + SCALED_EPSILON * 4;
         for (; j < zs.size() && zs[j] <= zmax; ++j) {
             assert(zs[j] == zs[i]);
+            assert(false); // duplicates are already removed
         }
         assert(j == i + 1);
         //// Assign an average print_z to the set of layers with nearly equal print_z.

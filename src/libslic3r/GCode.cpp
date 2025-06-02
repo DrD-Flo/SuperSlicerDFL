@@ -1194,73 +1194,6 @@ namespace DoExport {
     }
 }
 
-
-// Sort the PrintObjects by their increasing Z, likely useful for avoiding colisions on Deltas during sequential prints.
-static inline std::vector<const PrintInstance*> sort_object_instances_by_max_z(const Print& print)
-{
-    std::vector<const PrintObject*> objects(print.objects().begin(), print.objects().end());
-    std::sort(objects.begin(), objects.end(), [](const PrintObject* po1, const PrintObject* po2) { return po1->height() < po2->height(); });
-    std::vector<const PrintInstance*> instances;
-    instances.reserve(objects.size());
-    for (const PrintObject* object : objects)
-        for (size_t i = 0; i < object->instances().size(); ++i)
-            instances.emplace_back(&object->instances()[i]);
-    return instances;
-}
-
-
-// Sort the PrintObjects by their increasing Y, likely useful for avoiding colisions on printer with a x-bar during sequential prints.
-static inline std::vector<const PrintInstance*> sort_object_instances_by_max_y(const Print& print)
-{
-    std::vector<const PrintObject*> objects(print.objects().begin(), print.objects().end());
-    std::sort(objects.begin(), objects.end(), [](const PrintObject* po1, const PrintObject* po2) { return po1->height() < po2->height(); });
-    std::vector<const PrintInstance*> instances;
-    instances.reserve(objects.size());
-    std::map<const PrintInstance*, coord_t> map_min_y;
-    for (const PrintObject* object : objects) {
-        for (size_t i = 0; i < object->instances().size(); ++i) {
-            instances.emplace_back(&object->instances()[i]);
-            // Calculate the convex hull of a printable object. 
-            Polygon poly = object->model_object()->convex_hull_2d(
-                object->trafo()
-                // already in object->trafo()
-                //* Geometry::assemble_transform(Vec3d::Zero(),
-                //    object->instances()[i].model_instance->get_rotation(), 
-                //    object->instances()[i].model_instance->get_scaling_factor(), 
-                //    object->instances()[i].model_instance->get_mirror())
-            );
-            BoundingBox bb(poly.points);
-            Vec2crd offset = object->instances()[i].shift - object->center_offset();
-            bb.translate(offset.x(), offset.y());
-            map_min_y[instances.back()] = bb.min.y();
-        }
-    }
-    std::sort(instances.begin(), instances.end(), [&map_min_y](const PrintInstance* po1, const PrintInstance* po2) { return map_min_y[po1] < map_min_y[po2]; });
-    return instances;
-}
-
-// Produce a vector of PrintObjects in the order of their respective ModelObjects in print.model().
-std::vector<const PrintInstance*> sort_object_instances_by_model_order(const Print& print)
-{
-    // Build up map from ModelInstance* to PrintInstance*
-    std::vector<std::pair<const ModelInstance*, const PrintInstance*>> model_instance_to_print_instance;
-    model_instance_to_print_instance.reserve(print.num_object_instances());
-    for (const PrintObject *print_object : print.objects())
-        for (const PrintInstance &print_instance : print_object->instances())
-            model_instance_to_print_instance.emplace_back(print_instance.model_instance, &print_instance);
-    std::sort(model_instance_to_print_instance.begin(), model_instance_to_print_instance.end(), [](auto &l, auto &r) { return l.first < r.first; });
-
-    std::vector<const PrintInstance*> instances;
-    instances.reserve(model_instance_to_print_instance.size());
-    for (const ModelObject *model_object : print.model().objects)
-        for (const ModelInstance *model_instance : model_object->instances) {
-            auto it = std::lower_bound(model_instance_to_print_instance.begin(), model_instance_to_print_instance.end(), std::make_pair(model_instance, nullptr), [](auto &l, auto &r) { return l.first < r.first; });
-            if (it != model_instance_to_print_instance.end() && it->first == model_instance)
-                instances.emplace_back(it->second);
-        }
-    return instances;
-}
-
 // set standby temp for extruders
 // Parse the custom G-code, try to find T, and add it if not present
 void GCodeGenerator::_init_multiextruders(const Print& print, std::string& out, GCodeWriter & writer, const ToolOrdering &tool_ordering, const std::string &custom_gcode )
@@ -1579,9 +1512,9 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
 
     // Get optimal tool ordering to minimize tool switches of a multi-exruder print.
     // For a print by objects, find the 1st printing object.
-    ToolOrdering tool_ordering;
+    //ToolOrdering tool_ordering;
     uint16_t initial_extruder_id     = (uint16_t)-1;
-    uint16_t final_extruder_id       = (uint16_t)-1;
+    //uint16_t final_extruder_id       = (uint16_t)-1;
     bool         has_wipe_tower      = false;
     std::vector<const PrintInstance*> 					print_object_instances_ordering;
     std::vector<const PrintInstance*>::const_iterator 	print_object_instance_sequential_active;
@@ -1601,20 +1534,18 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
     if (print.config().complete_objects.value || print.config().parallel_objects_step.value > 0) {
         // Order object instances for sequential print.
         if(print.config().complete_objects_sort.value == cosObject)
-            print_object_instances_ordering = sort_object_instances_by_model_order(print);
+            print_object_instances_ordering = print.sort_object_instances_by_model_order();
         else if (print.config().complete_objects_sort.value == cosZ)
-            print_object_instances_ordering = sort_object_instances_by_max_z(print);
+            print_object_instances_ordering = print.sort_object_instances_by_max_z();
         else if (print.config().complete_objects_sort.value == cosY)
-            print_object_instances_ordering = sort_object_instances_by_max_y(print);
+            print_object_instances_ordering = print.sort_object_instances_by_max_y();
         else if(print.config().complete_objects_sort.value == cosNearest)
             print_object_instances_ordering = chain_print_object_instances(print);
         // Find the 1st printing object, find its tool ordering and the initial extruder ID.
         print_object_instance_sequential_active = print_object_instances_ordering.begin();
-        for (; print_object_instance_sequential_active != print_object_instances_ordering.end(); ++ print_object_instance_sequential_active) {
-            tool_ordering = ToolOrdering(*(*print_object_instance_sequential_active)->print_object, initial_extruder_id);
-            if ((initial_extruder_id = tool_ordering.first_extruder()) != static_cast<uint16_t>(-1))
-                break;
-        }
+        assert(!print.tool_orderings().empty());
+        for(size_t i=0; i< print.tool_orderings().size() && initial_extruder_id == uint16_t(-1); ++i)
+            initial_extruder_id = print.tool_orderings()[i].first_extruder();
         has_wipe_tower = print.has_wipe_tower();
         if (initial_extruder_id == static_cast<unsigned int>(-1))
             // No object to print was found, cancel the G-code export.
@@ -1628,35 +1559,26 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
     } else {
         // Find tool ordering for all the objects at once, and the initial extruder ID.
         // If the tool ordering has been pre-calculated by Print class for wipe tower already, reuse it.
-        tool_ordering = print.tool_ordering();
-        tool_ordering.assign_custom_gcodes(print);
-        if (tool_ordering.all_extruders().empty())
+        assert(print.tool_orderings().size() == 1);
+        if (print.tool_orderings().front().all_extruders().empty())
             // No object to print was found, cancel the G-code export.
             throw Slic3r::SlicingError(_u8L("No extrusions were generated for objects."));
-        m_volumetric_speed_mm3_per_s = DoExport::autospeed_volumetric_limit(print, tool_ordering);
-        has_wipe_tower = print.has_wipe_tower() && tool_ordering.has_wipe_tower();
+        m_volumetric_speed_mm3_per_s = DoExport::autospeed_volumetric_limit(print, print.tool_orderings().front());
+        has_wipe_tower = print.has_wipe_tower() && print.tool_orderings().front().has_wipe_tower();
         initial_extruder_id = (has_wipe_tower && ! print.config().single_extruder_multi_material_priming) ?
             // The priming towers will be skipped.
-            tool_ordering.all_extruders().back() :
+            print.tool_orderings().front().all_extruders().back() :
             // Don't skip the priming towers.
-            tool_ordering.first_extruder();
+            print.tool_orderings().front().first_extruder();
         // In non-sequential print, the printing extruders may have been modified by the extruder switches stored in Model::custom_gcode_per_print_z.
         // Therefore initialize the printing extruders from there.
-        this->set_extruders(tool_ordering.all_extruders());
+        this->set_extruders(print.tool_orderings().front().all_extruders());
         if (has_milling)
             m_writer.set_mills(std::vector<uint16_t>() = { 0 });
         // Order object instances using a nearest neighbor search.
         print_object_instances_ordering = chain_print_object_instances(print);
         // prusaslicer replaced the previous m_layer_count set by `m_layer_count=tool_ordering.layer_tools().size()` here
-        assert(layer_count() == tool_ordering.layer_tools().size());
-    }
-    if (initial_extruder_id == (uint16_t)-1) {
-        // Nothing to print!
-        //initial_extruder_id = 0;
-        //final_extruder_id   = 0;
-    } else {
-        final_extruder_id = tool_ordering.last_extruder();
-        assert(final_extruder_id != (uint16_t)-1);
+        assert(layer_count() == print.tool_orderings().front().layer_tools().size());
     }
      this->m_throw_if_canceled();
 
@@ -1694,7 +1616,10 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
     // For the start / end G-code to do the priming and final filament pull in case there is no wipe tower provided.
     this->placeholder_parser().set("has_wipe_tower", has_wipe_tower);
     this->placeholder_parser().set("has_single_extruder_multi_material_priming", has_wipe_tower && print.config().single_extruder_multi_material_priming);
-    this->placeholder_parser().set("total_toolchanges", tool_ordering.toolchanges_count());
+    double toolchanges_count = 0;
+    for(auto &tool_ordering : print.tool_orderings())
+        toolchanges_count += tool_ordering.toolchanges_count();
+    this->placeholder_parser().set("total_toolchanges", toolchanges_count);
     this->placeholder_parser().set("bounding_box", new ConfigOptionFloats({ global_bounding_box.min.x(), global_bounding_box.min.y(), global_bounding_box.min.z(), global_bounding_box.max.x(), global_bounding_box.max.y(), global_bounding_box.max.z() }));
     {
         BoundingBoxf bbox(print.config().bed_shape.get_values());
@@ -1789,6 +1714,7 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
         // We rather sacrifice 256B of memory before we change the behavior of the PlaceholderParser, which should really only fill in the non-existent
         // vector elements for filament parameters.
         std::vector<unsigned char> is_extruder_used(std::max(size_t(255), print.config().nozzle_diameter.size()), 0);
+        for (auto &tool_ordering : print.tool_orderings())
         for (unsigned int extruder_id : tool_ordering.all_extruders())
             is_extruder_used[extruder_id] = true;
         this->placeholder_parser().set("is_extruder_used", new ConfigOptionBools(is_extruder_used));
@@ -1828,8 +1754,11 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
          this->_print_first_layer_bed_temperature(preamble_to_put_start_layer, print, start_all_gcode, initial_extruder_id, false);
 
     //init extruders
-    if (!this->config().start_gcode_manual)
-        this->_init_multiextruders(print, preamble_to_put_start_layer, m_writer, tool_ordering, start_gcode);
+    if (!this->config().start_gcode_manual) {
+        assert(print.tool_orderings().size() == 1);
+        this->_init_multiextruders(print, preamble_to_put_start_layer, m_writer, print.tool_orderings().front(),
+                                   start_gcode);
+    }
 
     // Set extruder(s) temperature before and after start G-code.
     if ((initial_extruder_id != (uint16_t)-1) && !this->config().start_gcode_manual && (this->config().gcode_flavor != gcfKlipper || print.config().start_gcode.value.empty()) && print.config().first_layer_temperature.get_at(initial_extruder_id) != 0)
@@ -1926,21 +1855,27 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
         if (print.config().complete_objects.value) {
             size_t finished_objects = 0;
             const PrintObject* prev_object = (*print_object_instance_sequential_active)->print_object;
-            for (; print_object_instance_sequential_active != print_object_instances_ordering.end(); ++print_object_instance_sequential_active) {
+            auto it_tool_ordering = print.tool_orderings().begin();
+            while (print_object_instance_sequential_active != print_object_instances_ordering.end()) {
+                assert(it_tool_ordering != print.tool_orderings().end());
+                assert(it_tool_ordering->objects().size() == 1);
+                assert(it_tool_ordering->objects().front() == (*print_object_instance_sequential_active)->print_object);
                 const PrintObject& object = *(*print_object_instance_sequential_active)->print_object;
-                if (&object != prev_object || tool_ordering.first_extruder() != final_extruder_id) {
-                    tool_ordering = ToolOrdering(object, final_extruder_id);
-                    uint16_t new_extruder_id = tool_ordering.first_extruder();
-                    if (new_extruder_id == (uint16_t)-1)
-                        // Skip this object.
+                //if (&object != prev_object || tool_ordering.first_extruder() != final_extruder_id) {
+                //    tool_ordering = ToolOrdering(object, final_extruder_id);
+                //    uint16_t new_extruder_id = tool_ordering.first_extruder();
+                //    if (new_extruder_id == (uint16_t)-1)
+                //        // Skip this object.
+                //        continue;
+                //    initial_extruder_id = new_extruder_id;
+                //    final_extruder_id = tool_ordering.last_extruder();
+                //    assert(final_extruder_id != (uint16_t)-1);
+                //}
+                if (it_tool_ordering->first_extruder() == (uint16_t) -1)
+                    // Skip this object instance.
                         continue;
-                    m_volumetric_speed_mm3_per_s = DoExport::autospeed_volumetric_limit(print, tool_ordering);
-                    initial_extruder_id = new_extruder_id;
-                    final_extruder_id = tool_ordering.last_extruder();
-                    assert(final_extruder_id != (uint16_t)-1);
-                } else {
-                    m_volumetric_speed_mm3_per_s = DoExport::autospeed_volumetric_limit(print, tool_ordering);
-                }
+
+                m_volumetric_speed_mm3_per_s = DoExport::autospeed_volumetric_limit(print, *it_tool_ordering);
                 this->m_throw_if_canceled();
                 this->set_origin(unscale((*print_object_instance_sequential_active)->shift));
                 if (finished_objects > 0) {
@@ -1962,7 +1897,7 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
                 // Process all layers of a single object instance (sequential mode) with a parallel pipeline:
                 // Generate G-code, run the filters (vase mode, cooling buffer), run the G-code analyser
                 // and export G-code into file.
-                this->process_layers(print, status_monitor, tool_ordering, collect_layers_to_print(object, status_monitor),
+                this->process_layers(print, status_monitor, *it_tool_ordering, collect_layers_to_print(object, status_monitor),
                                      *print_object_instance_sequential_active - object.instances().data(),
                                      preamble_to_put_start_layer, file);
                 ++finished_objects;
@@ -1970,7 +1905,12 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
                 // Reset it when starting another object from 1st layer.
                 m_second_layer_things_done = false;
                 prev_object = &object;
+
+                // relance
+                ++print_object_instance_sequential_active;
+                ++it_tool_ordering;
             }
+            assert(it_tool_ordering == print.tool_orderings().end());
             set_extra_lift(m_last_layer_z_, prev_object->layers().back()->id(), print.config(), m_writer, initial_extruder_id /* osef, it's only for the lift_min */);
         } else {
             if (print.config().parallel_objects_step > 0) {
@@ -1979,9 +1919,12 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
                 std::unique_ptr<GCode::WipeTowerIntegration> wipe_tower;
                 ToolOrdering parallel_ordering;
                 std::vector<std::pair<coord_t, ObjectsLayerToPrint>> parallel_layers_to_print;
-                if (has_wipe_tower) {
+                assert(!has_wipe_tower || (!print.tool_orderings().empty()));
+                if (has_wipe_tower && !print.tool_orderings().empty()) {
                     parallel_layers_to_print = collect_layers_to_print(print, status_monitor);
-                    parallel_ordering = print.tool_ordering();
+                    // if wipetower, it's in the last part, after the sequentail parts.
+                    //TODO better way to find it/them
+                    parallel_ordering = print.tool_orderings().back();
                     assert(!parallel_layers_to_print.empty());
                     assert(print.config().parallel_objects_step > 0);
                      wipe_tower = std::make_unique<GCode::WipeTowerIntegration>(print.config(),
@@ -1997,7 +1940,7 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
                     // Print first wipe tower layer
                     this->m_layer = parallel_layers_to_print[0].second.back().layer();
                     wipe_tower->next_layer();
-                    file.write(wipe_tower->tool_change(*this, tool_ordering.first_extruder(), true));
+                    file.write(wipe_tower->tool_change(*this, parallel_ordering.first_extruder(), true));
                 }
                 coord_t height_step_range = Layer::scale_to_layer_coord(
                     std::min(print.config().parallel_objects_step, print.config().extruder_clearance_height));
@@ -2005,7 +1948,7 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
                     print_object_instances_ordering = chain_print_object_instances(print);
                 }
                 bool first_layers = true;
-                final_extruder_id = initial_extruder_id;
+                //final_extruder_id = initial_extruder_id;
                 coord_t z_start = 0, z_end = height_step_range;
                 bool is_layers = true;
                 while (is_layers && (print.config().parallel_objects_step_max_z.value == 0 || z_start + EPSILON < print.config().parallel_objects_step_max_z.value)) {
@@ -2013,9 +1956,10 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
                         z_end = std::min(z_end, Layer::scale_to_layer_coord(print.config().parallel_objects_step_max_z.value));
                     }
                     is_layers = false;
-                    for (auto it_print_object_instance = print_object_instances_ordering.begin();
-                         it_print_object_instance != print_object_instances_ordering.end();
-                         ++it_print_object_instance) {
+                    auto it_tool_ordering = print.tool_orderings().begin();
+                    auto it_print_object_instance = print_object_instances_ordering.begin();
+                    while (it_print_object_instance != print_object_instances_ordering.end()) {
+                        assert(it_tool_ordering != print.tool_orderings().end());
                         ObjectsLayerToPrint layers_to_print_range;
                         const PrintObject &       object        = *(*it_print_object_instance)->print_object;
                         ObjectsLayerToPrint object_and_support_layers = collect_layers_to_print(object, status_monitor);
@@ -2032,10 +1976,9 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
                         }
 
                         // complete the tool ordering for this sequence.
-                        tool_ordering = ToolOrdering(object, layers_to_print_range, final_extruder_id);
-                        m_volumetric_speed_mm3_per_s = DoExport::autospeed_volumetric_limit(print, tool_ordering);
+                        m_volumetric_speed_mm3_per_s = DoExport::autospeed_volumetric_limit(print, *it_tool_ordering);
 
-                        if (!layers_to_print_range.empty() && tool_ordering.first_extruder() != uint16_t(-1)) {
+                        if (!layers_to_print_range.empty() && it_tool_ordering->first_extruder() != uint16_t(-1)) {
                             this->set_origin(unscale((*it_print_object_instance)->shift));
 
                             size_t finished_objects = 1 + (it_print_object_instance -
@@ -2046,14 +1989,18 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
                             assert(!object.instances().empty());
                             assert(*it_print_object_instance >= &*object.instances().begin() &&
                                    *it_print_object_instance <= &*(object.instances().end()-1));
-                            this->process_layers(print, status_monitor, tool_ordering, layers_to_print_range,
+                            this->process_layers(print, status_monitor, *it_tool_ordering, layers_to_print_range,
                                                  *it_print_object_instance - object.instances().data(),
                                                  preamble_to_put_start_layer, file);
                             is_layers = true;
                             //update "current exturder" for the next ToolOrdering
-                            final_extruder_id = tool_ordering.last_extruder();
                         }
+
+                        // relance
+                         ++it_print_object_instance;
+                         ++it_tool_ordering;
                     }
+                    assert(it_tool_ordering == print.tool_orderings().end());
                     if (first_layers) {
                         first_layers = false;
                     } else {
@@ -2061,7 +2008,8 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
                         z_end += height_step_range;
                     }
                 }
-                if (is_layers) {
+                assert(!is_layers || !print.tool_orderings().empty());
+                if (is_layers && !print.tool_orderings().empty()) {
                     assert(print.config().parallel_objects_step_max_z.value > 0);
                     if (wipe_tower) {
                         m_wipe_tower = std::move(wipe_tower);
@@ -2072,7 +2020,7 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
                     for (idx = 0; idx < parallel_layers_to_print.size() && parallel_layers_to_print[idx].first + EPSILON < print.config().parallel_objects_step_max_z.value; idx++) {
                         //print wipe tower (if here) up to the z
                         if (m_wipe_tower && idx > 0) {
-                            uint16_t extruder_id = tool_ordering.first_extruder();
+                            uint16_t extruder_id = print.tool_orderings().back().first_extruder();
 
                             assert (/*m_wipe_tower->get_last_wipe_tower_print_z()*/ parallel_ordering
                                        .layer_tools()[m_wipe_tower->get_current_layer_idx() + 1]
@@ -2080,7 +2028,6 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
                                 m_wipe_tower->next_layer();
                                 this->m_layer = parallel_layers_to_print[idx].second.back().layer();
                                 file.write(m_wipe_tower->tool_change(*this, extruder_id, true));
-                            
                         }
                     }
                     parallel_layers_to_print = {parallel_layers_to_print.begin() + idx, parallel_layers_to_print.end()};
@@ -2149,7 +2096,7 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
                 // Process all layers of all objects (non-sequential mode) with a parallel pipeline:
                 // Generate G-code, run the filters (vase mode, cooling buffer), run the G-code analyser
                 // and export G-code into file.
-                this->process_layers(print, status_monitor, tool_ordering, print_object_instances_ordering, layers_to_print, preamble_to_put_start_layer, file);
+                this->process_layers(print, status_monitor, print.tool_orderings().front(), print_object_instances_ordering, layers_to_print, preamble_to_put_start_layer, file);
                 if (m_wipe_tower)
                     // Purge the extruder, pull out the active filament.
                     file.write(m_wipe_tower->finalize(*this));
@@ -2184,18 +2131,21 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
                                                               current_extruder_id, &config));
             }
         } else {
-            //for all extruder used in this print
-            for (uint16_t extruder_id : print.tool_ordering().all_extruders()) {
-                //only for extruders
+            // for all extruder used in this print
+            for (auto &tool_ordering : print.tool_orderings()) {
+                for (uint16_t extruder_id : tool_ordering.all_extruders()) {
+                    // only for extruders
                 auto extr_ids = m_writer.extruder_ids();
-                if (std::find(extr_ids.begin(), extr_ids.end(), extruder_id) != extr_ids.end() ) {
-                    //write end flament gcode.
-                    const std::string& end_gcode = print.config().end_filament_gcode.get_at(extruder_id);
+                    if (std::find(extr_ids.begin(), extr_ids.end(), extruder_id) != extr_ids.end()) {
+                        // write end flament gcode.
+                        const std::string &end_gcode = print.config().end_filament_gcode.get_at(extruder_id);
                     config.set_key_value("filament_extruder_id", new ConfigOptionInt(extruder_id));
                     config.set_key_value("previous_extruder", new ConfigOptionInt(current_extruder_id));
-                    file.writeln(this->placeholder_parser_process("end_filament_gcode", end_gcode, extruder_id, &config));
+                        file.writeln(
+                            this->placeholder_parser_process("end_filament_gcode", end_gcode, extruder_id, &config));
                 }
             }
+        }
         }
         file.writeln(this->placeholder_parser_process("end_gcode", print.config().end_gcode, m_writer.tool()->id(), &config));
     } else {
@@ -2221,7 +2171,7 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
         this->config(),
         m_writer.extruders(),
         initial_extruder_id,
-        tool_ordering.toolchanges_count(),
+        toolchanges_count,
         // Modifies
         status_monitor.stats(),
         export_to_binary_gcode,

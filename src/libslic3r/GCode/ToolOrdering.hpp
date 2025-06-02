@@ -175,8 +175,10 @@ public:
     std::vector<LayerTools>::const_iterator end()   const { return m_layer_tools.end(); }
     bool 				empty()       const { return m_layer_tools.empty(); }
     std::vector<LayerTools>& layer_tools() { return m_layer_tools; }
+    const std::vector<LayerTools>& layer_tools() const { return m_layer_tools; }
     bool 				has_wipe_tower() const { return ! m_layer_tools.empty() && m_first_printing_extruder != (uint16_t)-1 && m_layer_tools.front().wipe_tower_partitions > 0; }
     int                 toolchanges_count() const;
+    const std::vector<const PrintObject *>& objects() const { return m_objects; };
 
 private:
     void				initialize_layers(std::vector<coord_t> &zs);
@@ -193,6 +195,7 @@ private:
     void 				collect_extruder_statistics(bool prime_multi_material);
 
     std::vector<LayerTools>     m_layer_tools;
+    std::vector<const PrintObject*> m_objects;
     // First printing extruder, including the multi-material priming sequence.
     uint16_t                    m_first_printing_extruder = (uint16_t)-1;
     // Final printing extruder.

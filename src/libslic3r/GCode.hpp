@@ -617,8 +617,6 @@ private:
     static void cooldown_marker_init();
 };
 
-std::vector<const PrintInstance*> sort_object_instances_by_model_order(const Print& print);
-
 }
 
 #endif

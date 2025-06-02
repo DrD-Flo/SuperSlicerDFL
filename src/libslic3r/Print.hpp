@@ -524,7 +524,7 @@ struct WipeTowerData
     // Following section will be consumed by the GCodeGenerator.
     // Tool ordering of a non-sequential print has to be known to calculate the wipe tower.
     // Cache it here, so it does not need to be recalculated during the G-code generation.
-    ToolOrdering                                         &tool_ordering;
+    Print                                                *print;
     // Cache of tool changes per print layer.
     std::unique_ptr<std::vector<WipeTower::ToolChangeResult>> priming;
     std::vector<std::vector<WipeTower::ToolChangeResult>> tool_changes;
@@ -566,7 +566,7 @@ private:
 	// Only allow the WipeTowerData to be instantiated internally by Print, 
 	// as this WipeTowerData shares reference to Print::m_tool_ordering.
 	friend class Print;
-	WipeTowerData(ToolOrdering &tool_ordering) : tool_ordering(tool_ordering) { clear(); }
+	WipeTowerData(Print *print) : print(print) { clear(); }
 	WipeTowerData(const WipeTowerData & /* rhs */) = delete;
 	WipeTowerData &operator=(const WipeTowerData & /* rhs */) = delete;
 };
@@ -676,9 +676,9 @@ public:
         m_default_object_config.parent = &m_config;
         m_default_region_config.parent = &m_default_object_config;
     };
-	virtual ~Print() { this->clear(); }
+    virtual ~Print() { this->clear(); }
 
-	PrinterTechnology	technology() const noexcept override { return ptFFF; }
+    PrinterTechnology	technology() const noexcept override { return ptFFF; }
 
     // Methods, which change the state of Print / PrintObject / PrintRegion.
     // The following methods are synchronized with process() and export_gcode(),
@@ -751,6 +751,12 @@ public:
     // How many of PrintObject::copies() over all print objects are there?
     // If zero, then the print is empty and the print shall not be executed.
     uint16_t                    num_object_instances() const;
+    // Sort the PrintObjects by their increasing Z, likely useful for avoiding colisions on Deltas during sequential prints.
+    std::vector<const PrintInstance*> sort_object_instances_by_max_z() const;
+    // Sort the PrintObjects by their increasing Y, likely useful for avoiding colisions on printer with a x-bar during sequential prints.
+    std::vector<const PrintInstance*> sort_object_instances_by_max_y() const;
+    // Produce a vector of PrintObjects in the order of their respective ModelObjects in print.model().
+    std::vector<const PrintInstance*> sort_object_instances_by_model_order() const;
 
     const std::optional<ExtrusionEntityCollection>& skirt_first_layer() const { return m_skirt_first_layer; }
 
@@ -771,13 +777,12 @@ public:
     bool                        has_wipe_tower() const;
     const WipeTowerData&        wipe_tower_data(const ConfigBase* config, double nozzle_diameter) const;
     const WipeTowerData&        wipe_tower_data() const { return wipe_tower_data(&this->m_config,0); }
-    const ToolOrdering& 		tool_ordering() const { return m_tool_ordering; }
+    const std::vector<ToolOrdering> &tool_orderings() const { return m_tool_orderings; }
 
-	std::string                 output_filename(const std::string &filename_base = std::string()) const override;
+    std::string                 output_filename(const std::string &filename_base = std::string()) const override;
 
     size_t                      num_print_regions() const throw() { return m_print_regions.size(); }
     const PrintRegion&          get_print_region(size_t idx) const  { return *m_print_regions[idx]; }
-    const ToolOrdering&         get_tool_ordering() const { return m_wipe_tower_data.tool_ordering; }
 
     const Polygons& get_sequential_print_clearance_contours() const { return m_sequential_print_clearance_contours; }
 //TODO: decide to use this one or the printconfig one.
@@ -850,8 +855,8 @@ private:
     Points                                  m_skirt_convex_hull;
 
     // Following section will be consumed by the GCodeGenerator.
-    ToolOrdering 							m_tool_ordering;
-    WipeTowerData                           m_wipe_tower_data {m_tool_ordering};
+    std::vector<ToolOrdering>               m_tool_orderings;
+    WipeTowerData                           m_wipe_tower_data {this};
 
     // Estimated print time, filament consumed.
     PrintStatistics                         m_print_statistics;

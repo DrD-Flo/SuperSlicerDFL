@@ -2098,21 +2098,20 @@ std::set<int> TickCodeInfo::get_used_extruders_for_tick(int tick, int only_extru
 
     if (e_mode == MultiExtruder) {
         // #ys_FIXME: get tool ordering from _correct_ place
-        const ToolOrdering& tool_ordering = GUI::wxGetApp().plater()->fff_print().get_tool_ordering();
-
-        if (tool_ordering.empty())
-            return {};
 
         std::set<int> used_extruders;
+        for (const ToolOrdering &tool_ordering : GUI::wxGetApp().plater()->fff_print().tool_orderings()) {
 
-        auto it_layer_tools = std::lower_bound(tool_ordering.begin(), tool_ordering.end(), print_z_mm, 
-            [](const LayerTools &lhs, double rhs){ return unscaled(lhs._print_z) < rhs; });
-        for (; it_layer_tools != tool_ordering.end(); ++it_layer_tools) {
-            const std::vector<uint16_t>& extruders = it_layer_tools->extruders;
-            for (const uint16_t& extruder : extruders)
-                used_extruders.emplace(extruder+1);
+            auto it_layer_tools = std::lower_bound(tool_ordering.begin(), tool_ordering.end(), print_z_mm,
+                                                   [](const LayerTools &lhs, double rhs) {
+                                                       return unscaled(lhs._print_z) < rhs;
+                                                   });
+            for (; it_layer_tools != tool_ordering.end(); ++it_layer_tools) {
+                const std::vector<uint16_t> &extruders = it_layer_tools->extruders;
+                for (const uint16_t &extruder : extruders)
+                    used_extruders.emplace(extruder + 1);
+            }
         }
-
         return used_extruders;
     }
 
