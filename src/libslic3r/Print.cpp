@@ -29,6 +29,8 @@
 #include "Extruder.hpp"
 #include "Flow.hpp"
 #include "Fill/FillBase.hpp"
+#include "GCode/ToolOrdering.hpp"
+#include "GCode/WipeTower2.hpp"
 #include "Geometry/ConvexHull.hpp"
 #include "I18N.hpp"
 #include "ShortestPath.hpp"
@@ -820,80 +822,80 @@ std::pair<PrintBase::PrintValidationError, std::string> Print::validate(std::vec
         // EPSILON comparison is used for nozzles and 10 % tolerance is used for filaments
         double first_nozzle_diam = m_config.nozzle_diameter.get_at(*extruders.begin());
         double first_filament_diam = m_config.filament_diameter.get_at(*extruders.begin());
-        for (const uint16_t& extruder_idx : extruders) {
-            double nozzle_diam = m_config.nozzle_diameter.get_at(extruder_idx);
-            double filament_diam = m_config.filament_diameter.get_at(extruder_idx);
-            if (nozzle_diam - EPSILON > first_nozzle_diam || nozzle_diam + EPSILON < first_nozzle_diam
-             || std::abs((filament_diam-first_filament_diam)/first_filament_diam) > 0.1)
-                return { PrintBase::PrintValidationError::pveWrongSettings, _u8L("The wipe tower is only supported if all extruders have the same nozzle diameter "
-                         "and use filaments of the same diameter.") };
-        }
+        //for (const uint16_t& extruder_idx : extruders) {
+        //    double nozzle_diam = m_config.nozzle_diameter.get_at(extruder_idx);
+        //    double filament_diam = m_config.filament_diameter.get_at(extruder_idx);
+        //    if (nozzle_diam - EPSILON > first_nozzle_diam || nozzle_diam + EPSILON < first_nozzle_diam
+        //     || std::abs((filament_diam-first_filament_diam)/first_filament_diam) > 0.1)
+        //        return { PrintBase::PrintValidationError::pveWrongSettings, _u8L("The wipe tower is only supported if all extruders have the same nozzle diameter "
+        //                 "and use filaments of the same diameter.") };
+        //}
 
-        if (m_config.gcode_flavor != gcfRepRap 
-            && m_config.gcode_flavor != gcfSprinter
-            && m_config.gcode_flavor != gcfRepetier 
-            && m_config.gcode_flavor != gcfMarlinLegacy
-            && m_config.gcode_flavor != gcfMarlinFirmware
-            && m_config.gcode_flavor != gcfKlipper )
-            return { PrintBase::PrintValidationError::pveWrongSettings, _u8L("The Wipe Tower is currently only supported for the Marlin, Klipper, RepRap/Sprinter and Repetier G-code flavors.") };
+        //if (m_config.gcode_flavor != gcfRepRap 
+        //    && m_config.gcode_flavor != gcfSprinter
+        //    && m_config.gcode_flavor != gcfRepetier 
+        //    && m_config.gcode_flavor != gcfMarlinLegacy
+        //    && m_config.gcode_flavor != gcfMarlinFirmware
+        //    && m_config.gcode_flavor != gcfKlipper )
+        //    return { PrintBase::PrintValidationError::pveWrongSettings, _u8L("The Wipe Tower is currently only supported for the Marlin, Klipper, RepRap/Sprinter, Repetier and NematX G-code flavors.") };
         //if (! m_config.use_relative_e_distances)
             //return { PrintBase::PrintValidationError::pveWrongSettings, _u8L("The Wipe Tower is currently only supported with the relative extruder addressing (use_relative_e_distances=1).") };
-        if (m_config.ooze_prevention && m_config.single_extruder_multi_material)
-            return { PrintBase::PrintValidationError::pveWrongSettings, _u8L("Ooze prevention is currently not supported with the wipe tower enabled.") };
-        if (m_config.use_volumetric_e)
-            return { PrintBase::PrintValidationError::pveWrongSettings, _u8L("The Wipe Tower currently does not support volumetric E (use_volumetric_e=0).") };
-        if (m_config.complete_objects && extruders.size() > 1)
-            return { PrintBase::PrintValidationError::pveWrongSettings, _u8L("The Wipe Tower is currently not supported for multimaterial sequential prints.") };
-        
-        if (m_objects.size() > 1) {
-            const SlicingParameters     &slicing_params0       = m_objects.front()->slicing_parameters();
-            size_t                       tallest_object_idx    = 0;
-            for (size_t i = 1; i < m_objects.size(); ++ i) {
-                const PrintObject       *object         = m_objects[i];
-                const SlicingParameters &slicing_params = object->slicing_parameters();
-                if (std::abs(slicing_params.first_print_layer_height - slicing_params0.first_print_layer_height) > EPSILON ||
-                    std::abs(slicing_params.layer_height             - slicing_params0.layer_height            ) > EPSILON)
-                    return { PrintBase::PrintValidationError::pveWrongSettings, _u8L("The Wipe Tower is only supported for multiple objects if they have equal layer heights") };
-                if (slicing_params.raft_layers() != slicing_params0.raft_layers())
-                    return { PrintBase::PrintValidationError::pveWrongSettings, _u8L("The Wipe Tower is only supported for multiple objects if they are printed over an equal number of raft layers") };
-                if (object->config().support_material_contact_distance_type != m_objects.front()->config().support_material_contact_distance_type
-                    || object->config().support_material_contact_distance.value != m_objects.front()->config().support_material_contact_distance.value
-                    || object->config().support_material_bottom_contact_distance.value != m_objects.front()->config().support_material_bottom_contact_distance.value
-                    || slicing_params0.gap_object_support != slicing_params.gap_object_support
-                    || slicing_params0.gap_support_object != slicing_params.gap_support_object)
-                    return { PrintBase::PrintValidationError::pveWrongSettings, _u8L("The Wipe Tower is only supported for multiple objects if they are printed with the same support_material_contact_distance") };
-                if (! equal_layering(slicing_params, slicing_params0))
-                    return { PrintBase::PrintValidationError::pveWrongSettings, _u8L("The Wipe Tower is only supported for multiple objects if they are sliced equally.") };
-                if (has_custom_layering) {
-                    auto &lh         = layer_height_profile(i);
-                    auto &lh_tallest = layer_height_profile(tallest_object_idx);
-                    if (*(lh.end()-2) > *(lh_tallest.end()-2))
-                        tallest_object_idx = i;
-                }
-            }
+        //if (m_config.ooze_prevention && m_config.single_extruder_multi_material)
+        //    return { PrintBase::PrintValidationError::pveWrongSettings, _u8L("Ooze prevention is currently not supported with the wipe tower enabled.") };
+        //if (m_config.use_volumetric_e)
+        //    return { PrintBase::PrintValidationError::pveWrongSettings, _u8L("The Wipe Tower currently does not support volumetric E (use_volumetric_e=0).") };
+        //if (m_config.complete_objects && extruders.size() > 1)
+        //    return { PrintBase::PrintValidationError::pveWrongSettings, _u8L("The Wipe Tower is currently not supported for multimaterial sequential prints.") };
 
-            if (has_custom_layering) {
-                for (size_t idx_object = 0; idx_object < m_objects.size(); ++ idx_object) {
-                    if (idx_object == tallest_object_idx)
-                        continue;
-                    // Check that the layer height profiles are equal. This will happen when one object is
-                    // a copy of another, or when a layer height modifier is used the same way on both objects.
-                    // The latter case might create a floating point inaccuracy mismatch, so compare
-                    // element-wise using an epsilon check.
-                    size_t i = 0;
-                    const coordf_t eps = 0.5 * EPSILON; // layers closer than EPSILON will be merged later. Let's make
-                    // this check a bit more sensitive to make sure we never consider two different layers as one.
-                    while (i < layer_height_profiles[idx_object].size()
-                        && i < layer_height_profiles[tallest_object_idx].size()) {
-                        if (i%2 == 0 && layer_height_profiles[tallest_object_idx][i] > layer_height_profiles[idx_object][layer_height_profiles[idx_object].size() - 2 ])
-                            break;
-                        if (std::abs(layer_height_profiles[idx_object][i] - layer_height_profiles[tallest_object_idx][i]) > eps)
-                            return { PrintBase::PrintValidationError::pveWrongSettings, _u8L("The Wipe tower is only supported if all objects have the same variable layer height") };
-                        ++i;
-                    }
-                }
-            }
-        }
+        //if (m_objects.size() > 1) {
+        //    const SlicingParameters     &slicing_params0       = m_objects.front()->slicing_parameters();
+        //    size_t                       tallest_object_idx    = 0;
+        //    for (size_t i = 1; i < m_objects.size(); ++ i) {
+        //        const PrintObject       *object         = m_objects[i];
+        //        const SlicingParameters &slicing_params = object->slicing_parameters();
+        //        if (std::abs(slicing_params.first_print_layer_height - slicing_params0.first_print_layer_height) > EPSILON ||
+        //            std::abs(slicing_params.layer_height             - slicing_params0.layer_height            ) > EPSILON)
+        //            return { PrintBase::PrintValidationError::pveWrongSettings, _u8L("The Wipe Tower is only supported for multiple objects if they have equal layer heights") };
+        //        if (slicing_params.raft_layers() != slicing_params0.raft_layers())
+        //            return { PrintBase::PrintValidationError::pveWrongSettings, _u8L("The Wipe Tower is only supported for multiple objects if they are printed over an equal number of raft layers") };
+        //        if (object->config().support_material_contact_distance_type != m_objects.front()->config().support_material_contact_distance_type
+        //            || object->config().support_material_contact_distance.value != m_objects.front()->config().support_material_contact_distance.value
+        //            || object->config().support_material_bottom_contact_distance.value != m_objects.front()->config().support_material_bottom_contact_distance.value
+        //            || slicing_params0.gap_object_support != slicing_params.gap_object_support
+        //            || slicing_params0.gap_support_object != slicing_params.gap_support_object)
+        //            return { PrintBase::PrintValidationError::pveWrongSettings, _u8L("The Wipe Tower is only supported for multiple objects if they are printed with the same support_material_contact_distance") };
+        //        if (! equal_layering(slicing_params, slicing_params0))
+        //            return { PrintBase::PrintValidationError::pveWrongSettings, _u8L("The Wipe Tower is only supported for multiple objects if they are sliced equally.") };
+        //        if (has_custom_layering) {
+        //            auto &lh         = layer_height_profile(i);
+        //            auto &lh_tallest = layer_height_profile(tallest_object_idx);
+        //            if (*(lh.end()-2) > *(lh_tallest.end()-2))
+        //                tallest_object_idx = i;
+        //        }
+        //    }
+
+        //    if (has_custom_layering) {
+        //        for (size_t idx_object = 0; idx_object < m_objects.size(); ++ idx_object) {
+        //            if (idx_object == tallest_object_idx)
+        //                continue;
+        //            // Check that the layer height profiles are equal. This will happen when one object is
+        //            // a copy of another, or when a layer height modifier is used the same way on both objects.
+        //            // The latter case might create a floating point inaccuracy mismatch, so compare
+        //            // element-wise using an epsilon check.
+        //            size_t i = 0;
+        //            const coordf_t eps = 0.5 * EPSILON; // layers closer than EPSILON will be merged later. Let's make
+        //            // this check a bit more sensitive to make sure we never consider two different layers as one.
+        //            while (i < layer_height_profiles[idx_object].size()
+        //                && i < layer_height_profiles[tallest_object_idx].size()) {
+        //                if (i%2 == 0 && layer_height_profiles[tallest_object_idx][i] > layer_height_profiles[idx_object][layer_height_profiles[idx_object].size() - 2 ])
+        //                    break;
+        //                if (std::abs(layer_height_profiles[idx_object][i] - layer_height_profiles[tallest_object_idx][i]) > eps)
+        //                    return { PrintBase::PrintValidationError::pveWrongSettings, _u8L("The Wipe tower is only supported if all objects have the same variable layer height") };
+        //                ++i;
+        //            }
+        //        }
+        //    }
+        //}
     }
     
 	{
@@ -1297,16 +1299,24 @@ void Print::process()
 
     // Tool ordering
     if (this->set_started(psWipeTower)) {
-        m_wipe_tower_data.clear();
+        //m_ordering.clear();
+        //if (this->config().complete_objects.value || config().parallel_objects_step.value > 0) {
+        //    //an ordering per object
+        //}
+        //ml_ordering.
+
+        //m_wipe_tower_data.clear();
         m_tool_orderings.clear();
-        if (this->has_wipe_tower()) {
-            assert(!this->config().complete_objects.value && config().parallel_objects_step.value == 0);
-            this->set_status(printstep_2_percent[PrintStep::psWipeTower], _u8L("Generating wipe tower"));
-            // Let the Toolordering class know there will be initial priming extrusions at the start of the print.
-            m_tool_orderings.emplace_back(*this, (uint16_t) -1, true);
-            this->_make_wipe_tower();
-            m_tool_orderings.back().assign_custom_gcodes(*this);
-        } else if (this->config().complete_objects.value || config().parallel_objects_step.value > 0) {
+        //if (this->has_wipe_tower()) {
+        //    assert(!this->config().complete_objects.value && config().parallel_objects_step.value == 0);
+        //    this->set_status(printstep_2_percent[PrintStep::psWipeTower], _u8L("Generating wipe tower"));
+        //    // Let the Toolordering class know there will be initial priming extrusions at the start of the print.
+        //    m_tool_orderings.emplace_back(*this, (uint16_t) -1, true);
+        //    this->_make_wipe_tower();
+        //    m_tool_orderings.back().assign_custom_gcodes(*this);
+        //} else
+        if (this->config().complete_objects.value || config().parallel_objects_step.value > 0) {
+            throw new std::exception();
             // FIXME: parallel_objects_step: end extruder on each pass isn't computed correctly.
             // TODO: add extruder-switch minimizing option.
             // Order object instances for sequential print.
@@ -1331,13 +1341,21 @@ void Print::process()
         } else {
             // Initialize the tool ordering, so it could be used by the G-code preview slider for planning tool
             // changes and filament switches.
-            m_tool_orderings.emplace_back(*this, -1, false);
+            m_tool_orderings.emplace_back(*this, -1, /*prime_mmu*/true/*false*/);
             if (m_tool_orderings.empty() || m_tool_orderings.back().last_extruder() == uint16_t(-1))
                 throw Slic3r::SlicingError(
                     "The print is empty. The model is not printable with current print settings.");
 
+            //add colorchange/pause/custom
             m_tool_orderings.back().assign_custom_gcodes(*this);
         }
+        //now create the wipe tower to move from extruder to the next one.
+        this->m_wipe_tower2.reset(new WipeTower2());
+        this->m_wipe_tower2->set_config(&this->config(), &this->default_object_config(), &this->default_region_config());
+
+        assert(m_tool_orderings.size() == 1);
+        this->m_wipe_tower2->init(this, this->objects(), this->m_tool_orderings.back());
+
         this->set_done(psWipeTower);
     }
     

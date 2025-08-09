@@ -35,6 +35,7 @@
 #include "GCode/PrintExtents.hpp"
 #include "GCode/Thumbnails.hpp"
 #include "GCode/WipeTower.hpp"
+#include "GCode/WipeTower2.hpp"
 #include "GCode/WipeTowerIntegration.hpp"
 #include "GCode/Travels.hpp"
 #include "Point.hpp"
@@ -101,7 +102,7 @@ using namespace std::literals::string_view_literals;
 #define _DEBUG
 #undef NDEBUG
 #endif
-
+#pragma UNOPTIMIZE
 
 namespace Slic3r {
 
@@ -1148,8 +1149,8 @@ namespace DoExport {
                 print_statistics.printing_extruders.emplace_back(extruder.id());
                 filament_types.emplace_back(config.filament_type.get_at(extruder.id()));
 
-                double used_filament   = extruder.used_filament() + (has_wipe_tower ? wipe_tower_data.used_filament_until_layer.back().second[extruder.id()] : 0.f);
-                double extruded_volume = extruder.extruded_volume() + (has_wipe_tower ? wipe_tower_data.used_filament_until_layer.back().second[extruder.id()] * extruder.filament_crossection() : 0.f); // assumes 1.75mm filament diameter
+                double used_filament   = extruder.used_filament() + 0.f;//(has_wipe_tower ? wipe_tower_data.used_filament_until_layer.back().second[extruder.id()] : 0.f);
+                double extruded_volume = extruder.extruded_volume() + 0.f;//(has_wipe_tower ? wipe_tower_data.used_filament_until_layer.back().second[extruder.id()] * extruder.filament_crossection() : 0.f); // assumes 1.75mm filament diameter
                 double filament_weight = extruded_volume * extruder.filament_density() * 0.001;
                 double filament_cost   = filament_weight * extruder.filament_cost()    * 0.001;
                 auto append = [&extruder](std::pair<std::string, unsigned int> &dst, const char *tmpl, double value) {
@@ -1580,10 +1581,10 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
             // No object to print was found, cancel the G-code export.
             throw Slic3r::SlicingError(_u8L("No extrusions were generated for objects."));
         m_volumetric_speed_mm3_per_s = DoExport::autospeed_volumetric_limit(print, print.tool_orderings().front());
-        has_wipe_tower = print.has_wipe_tower() && print.tool_orderings().front().has_wipe_tower();
+        has_wipe_tower = print.has_wipe_tower() && print.wipe_tower2()->has_toolchange();
         initial_extruder_id = (has_wipe_tower && ! print.config().single_extruder_multi_material_priming) ?
             // The priming towers will be skipped.
-            print.tool_orderings().front().all_extruders().back() :
+            print.tool_orderings().front().all_extruders().back() : 
             // Don't skip the priming towers.
             print.tool_orderings().front().first_extruder();
         // In non-sequential print, the printing extruders may have been modified by the extruder switches stored in Model::custom_gcode_per_print_z.
@@ -2068,51 +2069,51 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
                 std::vector<std::pair<coord_t, ObjectsLayerToPrint>> layers_to_print = collect_layers_to_print(print, status_monitor);
                 // Prusa Multi-Material wipe tower.
                 if (has_wipe_tower && !layers_to_print.empty()) {
-                    m_wipe_tower = std::make_unique<GCode::WipeTowerIntegration>(print.config(), print.default_object_config(), *print.wipe_tower_data().priming.get(), print.wipe_tower_data().tool_changes, *print.wipe_tower_data().final_purge.get());
+                    //m_wipe_tower = std::make_unique<GCode::WipeTowerIntegration>(print.config(), print.default_object_config(), *print.wipe_tower_data().priming.get(), print.wipe_tower_data().tool_changes, *print.wipe_tower_data().final_purge.get());
 
                     // Set position for wipe tower generation.
                     preamble_to_put_start_layer.append(this->writer().travel_to_z(unscaled(first_layer_height), "Move to first z, for wipe tower"));
                     m_last_layer_z_ = first_layer_height;
                     m_max_layer_z_ = std::max(m_max_layer_z_, Layer::scale_to_layer_coord(this->writer().get_unlifted_position().z()));
 
-                    if (print.config().single_extruder_multi_material_priming) {
-                    // TODO: 2.7: check that the preamble_to_put_start_layer has the z-move at first (from m_wipe_tower->prime, I guess)
-                        preamble_to_put_start_layer.append(m_wipe_tower->prime(*this));
-                        // Verify, whether the print overaps the priming extrusions.
-                        BoundingBoxf bbox_print(get_print_extrusions_extents(print));
-                        coord_t twolayers_printz = ((layers_to_print.size() == 1) ? layers_to_print.front() : layers_to_print[1]).first;
-                        for (const PrintObject* print_object : print.objects())
-                            bbox_print.merge(get_print_object_extrusions_extents(*print_object, twolayers_printz));
-                        bbox_print.merge(get_wipe_tower_extrusions_extents(print, twolayers_printz));
-                        BoundingBoxf bbox_prime(get_wipe_tower_priming_extrusions_extents(print));
-                        this->m_throw_if_canceled();
-                        bbox_prime.offset(0.5f);
-                        bool overlap = bbox_prime.overlap(bbox_print);
+                    //if (print.config().single_extruder_multi_material_priming) {
+                    //// TODO: 2.7: check that the preamble_to_put_start_layer has the z-move at first (from m_wipe_tower->prime, I guess)
+                    //    preamble_to_put_start_layer.append(m_wipe_tower->prime(*this));
+                    //    // Verify, whether the print overaps the priming extrusions.
+                    //    BoundingBoxf bbox_print(get_print_extrusions_extents(print));
+                    //    coord_t twolayers_printz = ((layers_to_print.size() == 1) ? layers_to_print.front() : layers_to_print[1]).first;
+                    //    for (const PrintObject* print_object : print.objects())
+                    //        bbox_print.merge(get_print_object_extrusions_extents(*print_object, twolayers_printz));
+                    //    bbox_print.merge(get_wipe_tower_extrusions_extents(print, twolayers_printz));
+                    //    BoundingBoxf bbox_prime(get_wipe_tower_priming_extrusions_extents(print));
+                    //    this->m_throw_if_canceled();
+                    //    bbox_prime.offset(0.5f);
+                    //    bool overlap = bbox_prime.overlap(bbox_print);
 
-                        if (print.config().gcode_flavor.value == gcfMarlinLegacy || print.config().gcode_flavor.value == gcfMarlinFirmware) {
-                            preamble_to_put_start_layer.append(this->retract_and_wipe());
-                            preamble_to_put_start_layer.append("M300 S800 P500\n"); // Beep for 500ms, tone 800Hz.
-                            if (overlap) {
-                                // Wait for the user to remove the priming extrusions.
-                                preamble_to_put_start_layer.append("M1 Remove priming towers and click button.\n");
-                            } else {
-                                // Just wait for a bit to let the user check, that the priming succeeded.
-                                //TODO Add a message explaining what the printer is waiting for. This needs a firmware fix.
-                                preamble_to_put_start_layer.append("M1 S10\n");
-                            }
-                        } else {
-                            // This is not Marlin, M1 command is probably not supported.
-                            // (See https://github.com/prusa3d/PrusaSlicer/issues/5441.)
-                            if (overlap) {
-                                status_monitor.active_step_add_warning(PrintStateBase::WarningLevel::CRITICAL,
-                                    _u8L("Your print is very close to the priming regions. "
-                                        "Make sure there is no collision."));
-                            } else {
-                                // Just continue printing, no action necessary.
-                            }
+                    //    if (print.config().gcode_flavor.value == gcfMarlinLegacy || print.config().gcode_flavor.value == gcfMarlinFirmware) {
+                    //        preamble_to_put_start_layer.append(this->retract_and_wipe());
+                    //        preamble_to_put_start_layer.append("M300 S800 P500\n"); // Beep for 500ms, tone 800Hz.
+                    //        if (overlap) {
+                    //            // Wait for the user to remove the priming extrusions.
+                    //            preamble_to_put_start_layer.append("M1 Remove priming towers and click button.\n");
+                    //        } else {
+                    //            // Just wait for a bit to let the user check, that the priming succeeded.
+                    //            //TODO Add a message explaining what the printer is waiting for. This needs a firmware fix.
+                    //            preamble_to_put_start_layer.append("M1 S10\n");
+                    //        }
+                    //    } else {
+                    //        // This is not Marlin, M1 command is probably not supported.
+                    //        // (See https://github.com/prusa3d/PrusaSlicer/issues/5441.)
+                    //        if (overlap) {
+                    //            status_monitor.active_step_add_warning(PrintStateBase::WarningLevel::CRITICAL,
+                    //                _u8L("Your print is very close to the priming regions. "
+                    //                    "Make sure there is no collision."));
+                    //        } else {
+                    //            // Just continue printing, no action necessary.
+                    //        }
 
-                        }
-                    }
+                    //    }
+                    //}
                     this->m_throw_if_canceled();
                 }
                 // Process all layers of all objects (non-sequential mode) with a parallel pipeline:
@@ -3649,9 +3650,69 @@ LayerResult GCodeGenerator::process_layer(
         }
     }
 
+    std::unique_ptr<WipeTowerLayer> wtl;
+    if (print.wipe_tower2()->has_toolchange()) {
+        // find our WipeTowerLayer
+        for (const auto &z_to_WTLD : print.wipe_tower2()->m_printz_to_WTLayer_data) {
+            for (WipeTower2::ObjectLayerData *z_to_OLD : z_to_WTLD.second.fused_with) {
+                if (z_to_OLD->real_z == print_z && z_to_OLD->real_height == layer.scaled_height()) {
+                    wtl = std::move(z_to_OLD->create_wipe_tower_layer());
+                    goto found_WTL;
+                }
+            }
+        }
+    found_WTL:;
+        assert(wtl);
+        std::vector<const Layer *> layers;
+        layers.push_back(&layer);
+        assert(!layer_tools.extruders.empty());
+        if (m_writer.tool() && !layer_tools.extruders.empty() &&
+            m_writer.tool()->id() != layer_tools.extruders.front()) {
+            assert(std::find(layer_tools.extruders.begin(), layer_tools.extruders.end(), m_writer.tool()->id()) == layer_tools.extruders.end());
+            // last extruder don't print anything here, plan to change to another one right away.
+            std::vector<uint16_t> extruder_with_empty_first;
+            extruder_with_empty_first.push_back(m_writer.tool()->id());
+            extruder_with_empty_first.insert(extruder_with_empty_first.end(), layer_tools.extruders.begin(), layer_tools.extruders.end());
+            wtl->init(layers, extruder_with_empty_first, std::vector<uint16_t>{});
+        } else {
+            wtl->init(layers, layer_tools.extruders, std::vector<uint16_t>{});
+        }
+    }
+
     // Extrude the skirt, brim, support, perimeters, infill ordered by the extruders.
     for (const uint16_t extruder_id : layer_tools.extruders)
     {
+        if (wtl) {
+            ExtrusionEntityCollection wt_extrusions;
+            uint16_t old_extruder_id = uint16_t(m_writer.tool() != nullptr ? m_writer.tool()->id() : -1);
+            wtl->tool_change(wt_extrusions, &layer, old_extruder_id, extruder_id);
+            if (extruder_id == layer_tools.extruders.back()) {
+                wtl->finish_layer(wt_extrusions, extruder_id, true);
+            }
+
+            Vec2d old_origin = this->origin();
+            this->set_origin(print.wipe_tower2()->position());
+            //setup
+            assert(m_current_entity.empty());
+            assert(m_speed_override.empty());
+            assert(!visitor_in_use);
+            this->visitor_in_use = true;
+            this->visitor_gcode.clear();
+            this->visitor_comment = "";
+            this->visitor_speed = -1;
+            this->visitor_flipped = false;
+            //visit
+            this->use(wt_extrusions);
+            //clean
+            this->visitor_in_use = false;
+            assert(m_current_entity.empty());
+            assert(m_speed_override.empty());
+            this->set_origin(old_origin);
+            gcode += this->visitor_gcode;
+        }
+
+        assert(extruder_id == m_writer.tool()->id());
+
         gcode += (layer_tools.has_wipe_tower && m_wipe_tower) ?
             m_wipe_tower->tool_change(*this, extruder_id, extruder_id == layer_tools.extruders.back()) :
             this->set_extruder(extruder_id, print_z, true);
@@ -3790,7 +3851,7 @@ LayerResult GCodeGenerator::process_layer(
                 layers[instance.object_layer_to_print_id]);
         }
     }
-    
+
     emit_milling_commands(gcode, layers);
 
     // set area used in this layer
@@ -5905,7 +5966,7 @@ void GCodeGenerator::use(const ExtrusionPropertySpecialCommand& command) {
     assert(visitor_in_use);
     switch (command.code) {
     case ExtrusionPropertySpecialCommand::Code::TOOLCHANGE: // to tool 'extra_data' (uint16_t)
-        visitor_gcode += this->toolchange(uint16_t(command.extra_data), m_layer->scaled_print_z());
+        visitor_gcode += this->set_extruder(uint16_t(command.extra_data), m_layer->scaled_print_z());
         break;
     case ExtrusionPropertySpecialCommand::Code::SAVE_AND_RESET_SPEED_RATIO: // also set new speed ratio to extra_data
                                                                             // (1 = 100%)
@@ -5914,7 +5975,9 @@ void GCodeGenerator::use(const ExtrusionPropertySpecialCommand& command) {
         if (config().gcode_flavor.value == gcfMarlinLegacy || config().gcode_flavor.value == gcfMarlinFirmware)
             visitor_gcode += "M220 B\n";
         // set speed override
-        visitor_gcode += "M220 S" + std::to_string(command.extra_data) + "\n";
+        {
+            visitor_gcode += "M220 S" + std::to_string(int(command.extra_data*100)) + "\n";
+        }
         break;
     case ExtrusionPropertySpecialCommand::Code::RESTORE_SPEED_RATIO:
         // Let the firmware restore the active speed override value.
@@ -6884,6 +6947,14 @@ double_t GCodeGenerator::_compute_speed_mm_per_sec(const ExtrusionPath& path, co
         } else if (path.role() == ExtrusionRole::Skirt) {
             speed = m_config.get_computed_value("brim_speed");
             if(comment) *comment = "brim_speed";
+        } else if (path.role() == ExtrusionRole::WipeTowerWipe) {
+            speed = m_config.get_computed_value("wipe_tower_wipe_starting_speed");
+            speed = std::min(m_config.get_computed_value("filament_max_wipe_tower_speed", m_writer.tool()->id()), speed);
+            if(comment) *comment = "wipetower_wipe_speed";
+        } else if ((path.role()() & ExtrusionRoleModifier::ERM_WipeTower) != 0) {
+            speed = m_config.get_computed_value("wipe_tower_speed");
+            speed = std::min(m_config.get_computed_value("filament_max_wipe_tower_speed", m_writer.tool()->id()), speed);
+            if(comment) *comment = "wipetower_speed";
         } else {
             throw Slic3r::InvalidArgument("Invalid speed");
         }
@@ -7532,11 +7603,11 @@ std::string GCodeGenerator::_before_extrude(const ExtrusionPath &path, const std
     // compensate retraction
     if (m_delayed_layer_change.empty()) {
         gcode += m_writer.unlift();//this->unretract();
-        assert(is_approx(m_writer.get_position().z(), m_layer->unscaled_print_z(), EPSILON));
+        assert(is_approx(m_writer.get_position().z(), m_layer->unscaled_print_z(), EPSILON) || path.role().is_wipetower());
     } else {
         //check if an unlift happens
         std::string unlift = m_writer.unlift();
-        assert(is_approx(m_writer.get_position().z(), m_layer->unscaled_print_z(), EPSILON));
+        assert(is_approx(m_writer.get_position().z(), m_layer->unscaled_print_z(), EPSILON) || path.role().is_wipetower());
         if (unlift.empty()) {
             unlift = m_delayed_layer_change;
         }
@@ -8096,7 +8167,7 @@ void GCodeGenerator::write_travel_to(std::string &gcode, Polyline& travel, std::
         m_pos_layer = m_layer;
         _m_new_z_target.reset();
     }
-    assert(!m_layer || is_approx(this->writer().get_unlifted_position().z(), m_layer->unscaled_print_z(), EPSILON) || comment == "Travel to a Wipe Tower");
+    assert(!m_layer || is_approx(this->writer().get_unlifted_position().z(), m_layer->unscaled_print_z(), EPSILON) || comment.find("Wipe tower") != std::string::npos);
 }
 
 // generate a travel in xyz
@@ -8628,6 +8699,7 @@ void GCodeGenerator::set_extra_lift(const coord_t previous_print_z, const int la
         writer.set_extra_lift(unscaled(extra_lift_value));
 }
 
+// note: maybe you want to call set_extruder instead. Set_extruder calls toolchange after wipe & retraction.
 std::string GCodeGenerator::toolchange(uint16_t extruder_id, coord_t print_z) {
     assert( (print_z == 0 && m_max_layer_z_ == 0) || (print_z != 0 && m_max_layer_z_ != 0));
 
@@ -8737,13 +8809,11 @@ std::string GCodeGenerator::set_extruder(uint16_t extruder_id, coord_t print_z, 
     // Set the temperature if the wipe tower didn't (not needed for non-single extruder MM)
     // supermerill change: try to set the good temp, because the wipe tower don't use the gcode writer and so can write wrong stuff.
     std::string gcode_set_temp;
-    //if (m_config.single_extruder_multi_material /*&& !m_config.wipe_tower*/) {
-        int temp = (m_layer_index <= 0 && m_config.first_layer_temperature.get_at(extruder_id) > 0 ? m_config.first_layer_temperature.get_at(extruder_id) :
-                                         m_config.temperature.get_at(extruder_id));
-        if (temp > 0) {
-            gcode_set_temp += m_writer.set_temperature(temp, true);
-        }
-    //}
+    int temp = (m_layer_index <= 0 && m_config.first_layer_temperature.get_at(extruder_id) > 0 ? m_config.first_layer_temperature.get_at(extruder_id) :
+                                        m_config.temperature.get_at(extruder_id));
+    if (temp > 0) {
+        gcode_set_temp += m_writer.set_temperature(temp, true);
+    }
 
     this->placeholder_parser().set("current_extruder", extruder_id);
 

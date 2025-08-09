@@ -35,6 +35,7 @@
 #include "Surface.hpp"
 #include "GCode/ToolOrdering.hpp"
 #include "GCode/WipeTower.hpp"
+#include "GCode/WipeTower2.hpp"
 #include "GCode/ThumbnailData.hpp"
 #include "MultiMaterialSegmentation.hpp"
 
@@ -58,6 +59,7 @@ class ModelObject;
 class Print;
 class PrintObject;
 class SupportLayer;
+class WipeTower2;
 
 namespace FillAdaptive {
     struct Octree;
@@ -777,6 +779,7 @@ public:
     bool                        has_wipe_tower() const;
     const WipeTowerData&        wipe_tower_data(const ConfigBase* config, double nozzle_diameter) const;
     const WipeTowerData&        wipe_tower_data() const { return wipe_tower_data(&this->m_config,0); }
+    const WipeTower2*           wipe_tower2() const { return m_wipe_tower2.get(); }
     const std::vector<ToolOrdering> &tool_orderings() const { return m_tool_orderings; }
 
     std::string                 output_filename(const std::string &filename_base = std::string()) const override;
@@ -857,6 +860,7 @@ private:
     // Following section will be consumed by the GCodeGenerator.
     std::vector<ToolOrdering>               m_tool_orderings;
     WipeTowerData                           m_wipe_tower_data {this};
+    std::unique_ptr<WipeTower2>             m_wipe_tower2;
 
     // Estimated print time, filament consumed.
     PrintStatistics                         m_print_statistics;

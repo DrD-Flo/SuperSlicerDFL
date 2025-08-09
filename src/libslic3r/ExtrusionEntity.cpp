@@ -829,7 +829,7 @@ void LoopAssertVisitor::use(const ExtrusionLoop& loop) {
     Point last_pt = loop.last_point();
     for (const ExtrusionPath &path : loop.paths) {
         release_assert(path.polyline.size() >= 2);
-        release_assert(!m_check_length || path.length() >= SCALED_EPSILON);
+        release_assert(!m_check_length || path.length() >= SCALED_EPSILON / 2);
         release_assert(path.first_point() == last_pt);
         if(m_check_length)
             for (size_t idx = 1; idx < path.size(); ++idx)

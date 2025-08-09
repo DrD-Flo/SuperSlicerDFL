@@ -706,7 +706,7 @@ std::string GCodeWriter::travel_to_xyz(const Vec3d &point, const bool is_lift, c
     }
 
     m_pos = point;
-    
+
     GCodeG1Formatter w(this->get_default_gcode_formatter());
     bool has_x_y = w.emit_xy(point.head<2>(), m_pos_str_x, m_pos_str_y);
     if (!has_x_y) {
