@@ -5754,6 +5754,8 @@ std::string GCodeGenerator::extrude_multi_path3D(const ExtrusionMultiPath3D &mul
 
 std::string GCodeGenerator::extrude_entity(const ExtrusionEntityReference &entity, const std::string_view description, double speed)
 {
+    assert(m_current_entity.empty());
+    assert(m_speed_override.empty());
     assert(!visitor_in_use);
     this->visitor_in_use = true;
     this->visitor_gcode.clear();
@@ -5762,10 +5764,56 @@ std::string GCodeGenerator::extrude_entity(const ExtrusionEntityReference &entit
     this->visitor_flipped = entity.flipped();
     entity.extrusion_entity().visit(*this);
     this->visitor_in_use = false;
+    assert(m_current_entity.empty());
+    assert(m_speed_override.empty());
     return this->visitor_gcode;
 }
+void GCodeGenerator::use(const ExtrusionPath &path) {
+    start_using_extrusion(path);
+    if (path.has_properties()) {
+        path.get_root_property()->visit(*this);
+    }
+    visitor_gcode += extrude_path(path, visitor_comment, visitor_speed);
+    end_using_extrusion(path);
+};
+void GCodeGenerator::use(const ExtrusionPath3D &path3D) {
+    start_using_extrusion(path3D);
+    if (path3D.has_properties()) {
+        path3D.get_root_property()->visit(*this);
+    }
+    visitor_gcode += extrude_path_3D(path3D, visitor_comment, visitor_speed);
+    end_using_extrusion(path3D);
+};
+void GCodeGenerator::use(const ExtrusionMultiPath &multipath) {
+    start_using_extrusion(multipath);
+    if (multipath.has_properties()) {
+        multipath.get_root_property()->visit(*this);
+    }
+    visitor_gcode += extrude_multi_path(multipath, visitor_comment, visitor_speed);
+    end_using_extrusion(multipath);
+};
+void GCodeGenerator::use(const ExtrusionMultiPath3D &multipath) {
+    start_using_extrusion(multipath);
+    if (multipath.has_properties()) {
+        multipath.get_root_property()->visit(*this);
+    }
+    visitor_gcode += extrude_multi_path3D(multipath, visitor_comment, visitor_speed);
+    end_using_extrusion(multipath);
+};
+void GCodeGenerator::use(const ExtrusionLoop &loop) {
+    start_using_extrusion(loop);
+    if (loop.has_properties()) {
+        loop.get_root_property()->visit(*this);
+    }
+    visitor_gcode += extrude_loop(loop, visitor_comment, visitor_speed);
+    end_using_extrusion(loop);
+};
 
 void GCodeGenerator::use(const ExtrusionEntityCollection &collection) {
+    start_using_extrusion(collection);
+    if (collection.has_properties()) {
+        collection.get_root_property()->visit(*this);
+    }
     if (!collection.can_sort() /*|| collection.role() == ExtrusionRole::Mixed*/ || collection.entities().size() <= 1) {
         if (this->visitor_flipped && collection.can_reverse()) {
             for (size_t idx = collection.entities().size() - 1; idx <collection.entities().size(); --idx) {
@@ -5789,7 +5837,137 @@ void GCodeGenerator::use(const ExtrusionEntityCollection &collection) {
         }
         this->visitor_flipped = reversed;
     }
+    end_using_extrusion(collection);
 }
+
+void GCodeGenerator::use(const ExtrusionNop &command) {
+    assert(visitor_in_use);
+    start_using_extrusion(command);
+    //create gcode from the command properties
+    if (command.has_properties()) {
+        command.get_root_property()->visit(*this);
+    }
+    end_using_extrusion(command);
+}
+
+
+void GCodeGenerator::start_using_extrusion(const ExtrusionEntity &entity) {
+    assert(m_current_entity.empty() || m_current_entity.back() != &entity);
+    m_current_entity.push_back(&entity);
+}
+
+// remove last overrides from properties if needed
+void GCodeGenerator::end_using_extrusion(const ExtrusionEntity &entity) {
+    assert(visitor_in_use);
+    if (!m_speed_override.empty() && m_speed_override.back().first == &entity) {
+        // reset temp to previous value
+        if (m_speed_override.back().second->temperature_C >= 0) {
+            visitor_gcode += m_writer.set_temperature(m_saved_temp.back(), false);
+            m_saved_temp.pop_back();
+        }
+        m_speed_override.pop_back();
+    }
+    assert(!m_current_entity.empty() && m_current_entity.back() == &entity);
+    m_current_entity.pop_back();
+}
+
+void GCodeGenerator::default_use(const ExtrusionProperty &) { assert(false); }
+void GCodeGenerator::use(const ExtrusionMultiProperties & thing) {
+    for (const std::unique_ptr<ExtrusionProperty> &prop : thing.properties)
+        prop->visit(*this);
+}
+void GCodeGenerator::use(const ExtrusionPropertySpeed& speed_override) {
+    assert(visitor_in_use);
+    assert(!m_current_entity.empty() && (m_speed_override.empty() || m_speed_override.back().first != m_current_entity.back()));
+    m_speed_override.push_back(std::pair<const ExtrusionEntity*, const ExtrusionPropertySpeed*>(m_current_entity.back(), &speed_override));
+    if (m_speed_override.back().second->temperature_C >= 0) {
+        m_saved_temp.push_back(m_writer.get_temperature());
+        visitor_gcode += m_writer.set_temperature(m_speed_override.back().second->temperature_C, false);
+    }
+}
+void GCodeGenerator::use(const ExtrusionPropertyCustomGcode& custom_gcode) {
+    if (custom_gcode.gcode.empty()) {
+        return;
+    }
+    assert(visitor_in_use);
+    if (custom_gcode.code == ExtrusionPropertyCustomGcode::Code::COMMENT) {
+        visitor_gcode += "; ";
+        visitor_gcode += custom_gcode.gcode;
+    } else {
+        visitor_gcode += custom_gcode.gcode;
+    }
+    if (custom_gcode.gcode.back() != '\n') {
+        visitor_gcode += "\n";
+    }
+}
+void GCodeGenerator::use(const ExtrusionPropertySpecialCommand& command) {
+    //TODO move into new firware-specific gcode writer
+    assert(visitor_in_use);
+    switch (command.code) {
+    case ExtrusionPropertySpecialCommand::Code::TOOLCHANGE: // to tool 'extra_data' (uint16_t)
+        visitor_gcode += this->toolchange(uint16_t(command.extra_data), m_layer->scaled_print_z());
+        break;
+    case ExtrusionPropertySpecialCommand::Code::SAVE_AND_RESET_SPEED_RATIO: // also set new speed ratio to extra_data
+                                                                            // (1 = 100%)
+        // backup speed_override
+        // This is only supported by Prusa at this point (https://github.com/prusa3d/PrusaSlicer/issues/3114)
+        if (config().gcode_flavor.value == gcfMarlinLegacy || config().gcode_flavor.value == gcfMarlinFirmware)
+            visitor_gcode += "M220 B\n";
+        // set speed override
+        visitor_gcode += "M220 S" + std::to_string(command.extra_data) + "\n";
+        break;
+    case ExtrusionPropertySpecialCommand::Code::RESTORE_SPEED_RATIO:
+        // Let the firmware restore the active speed override value.
+        if (config().gcode_flavor.value == gcfMarlinLegacy || config().gcode_flavor.value == gcfMarlinFirmware) {
+            visitor_gcode += "M220 R\n";
+        } else {
+            visitor_gcode += "M220 S100\n";
+        }
+        break;
+    case ExtrusionPropertySpecialCommand::Code::FLUSH_PLANNER_QUEUE:
+        visitor_gcode += "G4 S0\n";
+        break;
+    case ExtrusionPropertySpecialCommand::Code::EXTRUSION: // only e move: by extra_data mm
+        visitor_gcode += m_writer.extrude_to_e(command.extra_data);
+        break;
+    case ExtrusionPropertySpecialCommand::Code::PAUSE: // pause (G4) for extra_data miliseconds (int)
+        visitor_gcode += ";" + GCodeProcessor::reserved_tag(GCodeProcessor::ETags::Pause_Print) + "\n";
+        if (config().pause_print_gcode.value.empty()) {
+            visitor_gcode += "G4 P";
+            visitor_gcode += std::to_string(int(command.extra_data));
+
+        } else {
+            uint16_t current_extruder_id = uint16_t(m_writer.tool() != nullptr ? m_writer.tool()->id() : -1);
+            DynamicConfig cfg;
+            cfg.set_key_value("color_change_extruder", new ConfigOptionInt(int(current_extruder_id)));
+            visitor_gcode += this->placeholder_parser_process("pause_print_gcode",
+                                                                   GCodeWriter::get_default_pause_gcode(config()),
+                                                                   current_extruder_id, &cfg);
+        }
+        visitor_gcode += "\n";
+        break;
+        // SET_TEMP: // for extra_data °C should be done via ExtrusionPropertySpeed.temperature
+    case ExtrusionPropertySpecialCommand::Code::WAIT_FOR_TEMP: // wait for current temperature: given by ExtrusionPropertySpeed
+        visitor_gcode += m_writer.set_temperature(m_writer.get_temperature(), true);
+        break;
+    case ExtrusionPropertySpecialCommand::Code::DISABLE_PREVIEW:
+        m_no_gcodeviewer_tag = true; break;
+    case ExtrusionPropertySpecialCommand::Code::ENABLE_PREVIEW:
+        m_no_gcodeviewer_tag = false; break;
+    case ExtrusionPropertySpecialCommand::Code::EXTRUDER_CURRENT: // set extruder trimpot to extra_data
+        if (config().gcode_flavor.value != gcfKlipper) {
+            if (config().gcode_flavor.value == gcfRepRap || config().gcode_flavor.value == gcfSprinter) {
+                visitor_gcode += "M906 E";
+            } else {
+                visitor_gcode += "M907 E";
+            }
+            visitor_gcode += std::to_string(int(command.extra_data)) + "\n";
+        }
+        break;
+    default: assert(false); break;
+    }
+}
+
 
 std::string GCodeGenerator::extrude_path(const ExtrusionPath &path, const std::string_view description, double speed_mm_per_sec) {
     std::string gcode;
@@ -6636,6 +6814,9 @@ double_t GCodeGenerator::_compute_speed_mm_per_sec(const ExtrusionPath& path, co
 
     float factor = 1;
     double speed = set_speed;
+    if (!m_speed_override.empty() && m_speed_override.back().second->speed_mm_per_s > 0) {
+        speed = (double)m_speed_override.back().second->speed_mm_per_s;
+    }
     // set speed
     if (speed < 0) {
         //if speed == -1, then it's means "choose yourself, but if it's < SMALL_PERIMETER_SPEED_RATIO_OFFSET, then it's a scaling from small_perimeter.
@@ -6895,6 +7076,10 @@ double_t GCodeGenerator::_compute_speed_mm_per_sec(const ExtrusionPath& path, co
         if(comment) *comment += ", reduced by filament_max_speed";
     }
 
+    if (!m_speed_override.empty() && m_speed_override.back().second->fan_speed_percent > 0) {
+        fan_speed = (double)m_speed_override.back().second->fan_speed_percent;
+    }
+
     return speed;
 }
 
@@ -7054,6 +7239,9 @@ std::pair<double, double> GCodeGenerator::_compute_acceleration(const ExtrusionP
 
         acceleration = std::min(max_acceleration, acceleration);
 
+    }
+    if (!m_speed_override.empty() && m_speed_override.back().second->accel_mm_per_s2 > 0) {
+        travel_acceleration = acceleration = (double)m_speed_override.back().second->accel_mm_per_s2;
     }
     return {acceleration, travel_acceleration};
 }
@@ -7325,6 +7513,10 @@ std::string GCodeGenerator::_before_extrude(const ExtrusionPath &path, const std
     speed_mm_s = _compute_speed_mm_per_sec(path, speed_mm_s, m_overhang_fan_override, m_config.gcode_comments ? &speed_comment : nullptr);
 
     auto[/*double*/pa, /*double*/travel_pa] = _compute_pressure_advance(path);
+    if (!m_speed_override.empty() && m_speed_override.back().second->pressure_adv > 0) {
+        pa = m_speed_override.back().second->pressure_adv;
+        travel_pa = -1;
+    }
     if (travel_pa >= 0) {
         m_writer.set_pressure_advance(travel_pa);
     } else {

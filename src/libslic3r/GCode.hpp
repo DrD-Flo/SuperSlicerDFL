@@ -123,7 +123,7 @@ struct PrintObjectInstance
 
 } // namespace GCode
 
-class GCodeGenerator : ExtrusionVisitorConst {
+class GCodeGenerator : ExtrusionVisitorConst, ExtrusionPropertyVisitorConst {
 
 public:
     GCodeGenerator();
@@ -296,12 +296,22 @@ private:
     bool             visitor_in_use = false;
     std::string_view visitor_comment;
     double           visitor_speed;
-    virtual void use(const ExtrusionPath &path) override { visitor_gcode += extrude_path(path, visitor_comment, visitor_speed); };
-    virtual void use(const ExtrusionPath3D &path3D) override { visitor_gcode += extrude_path_3D(path3D, visitor_comment, visitor_speed); };
-    virtual void use(const ExtrusionMultiPath &multipath) override { visitor_gcode += extrude_multi_path(multipath, visitor_comment, visitor_speed); };
-    virtual void use(const ExtrusionMultiPath3D &multipath) override { visitor_gcode += extrude_multi_path3D(multipath, visitor_comment, visitor_speed); };
-    virtual void use(const ExtrusionLoop &loop) override { visitor_gcode += extrude_loop(loop, visitor_comment, visitor_speed); };
+    virtual void use(const ExtrusionPath &path) override;
+    virtual void use(const ExtrusionPath3D &path3D) override;
+    virtual void use(const ExtrusionMultiPath &multipath) override;
+    virtual void use(const ExtrusionMultiPath3D &multipath) override;
+    virtual void use(const ExtrusionLoop &loop) override;
     virtual void use(const ExtrusionEntityCollection &collection) override;
+    virtual void use(const ExtrusionNop &command) override;
+    void start_using_extrusion(const ExtrusionEntity &entity);
+    void end_using_extrusion(const ExtrusionEntity &entity);
+
+    virtual void default_use(const ExtrusionProperty&) override;
+    virtual void use(const ExtrusionMultiProperties&) override;
+    virtual void use(const ExtrusionPropertySpeed&) override;
+    virtual void use(const ExtrusionPropertyCustomGcode&) override;
+    virtual void use(const ExtrusionPropertySpecialCommand&) override;
+
     std::string     extrude_entity(const ExtrusionEntityReference &entity, const std::string_view description, double speed = -1.);
     std::string     extrude_loop(const ExtrusionLoop &loop, const std::string_view description, double speed = -1.);
     std::string     extrude_loop_vase(const ExtrusionLoop &loop, const std::string_view description, double speed = -1.);
@@ -523,6 +533,12 @@ private:
     std::vector<double>                 m_last_layer_used_filament;
     // to pass between before_xtrude and after_extrude.
     double                              m_overhang_fan_override{ -1.0 };
+    // from extrusion properties.
+    std::vector<const ExtrusionEntity*> m_current_entity;
+    std::vector<std::pair<const ExtrusionEntity*, const ExtrusionPropertySpeed*>> m_speed_override;
+    std::vector<int16_t>                m_saved_temp;
+    bool                                m_force_unretract{false};
+    bool                                m_no_gcodeviewer_tag{false};
 #if ENABLE_GCODE_VIEWER_DATA_CHECKING
     double                              m_last_mm3_per_mm;
 #endif // ENABLE_GCODE_VIEWER_DATA_CHECKING

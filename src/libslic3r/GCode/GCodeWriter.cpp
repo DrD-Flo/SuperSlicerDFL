@@ -252,6 +252,14 @@ std::string GCodeWriter::write_pressure_advance(double pa) {
     return gcode;
 }
 
+int16_t GCodeWriter::get_temperature(int tool) {
+    //use m_tool if tool isn't set
+    if (tool < 0 && m_tool != nullptr)
+        tool = m_tool->id();
+
+    return m_last_temperature;
+}
+
 std::string GCodeWriter::set_temperature(const int16_t temperature, bool wait, int tool)
 {
     //use m_tool if tool isn't set
@@ -793,6 +801,17 @@ void GCodeWriter::_extrude_e(GCodeFormatter &w, double dE)
     if (is_extrude) {
         w.emit_e(m_extrusion_axis, e_to_write);
     }
+}
+
+std::string GCodeWriter::extrude_to_e(const double dE, const std::string_view comment)
+{
+    assert(dE == dE);
+
+    GCodeG1Formatter w(this->get_default_gcode_formatter());
+    _extrude_e(w, dE);
+
+    w.emit_comment(this->config.gcode_comments, comment);
+    return write_acceleration() + w.string();
 }
 
 std::string GCodeWriter::extrude_to_xy(const Vec2d &point, const double dE, const std::string_view comment)
