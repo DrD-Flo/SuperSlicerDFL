@@ -175,6 +175,7 @@ public:
     Point           gcode_to_point(const Vec2d &point) const;
     const FullPrintConfig &config() const { return m_config; }
     const Layer*    layer() const { return m_layer; }
+    const Layer*    current_z_layer() const { return m_pos_layer; }
     GCodeWriter&    writer() { return m_writer; }
     const GCodeWriter& writer() const { return m_writer; }
     PlaceholderParser& placeholder_parser() { return m_placeholder_parser_integration.parser; }
@@ -479,6 +480,8 @@ private:
     // Current layer processed. In sequential printing mode, only a single copy will be printed.
     // In non-sequential mode, all its copies will be printed.
     const Layer*                        m_layer;
+    // layer at our current position, can be different than m_layer before the wipe & retract & delayed layer change
+    const Layer*                        m_pos_layer;
     // last layers printed at our current Z, to 
     std::vector<const Layer*>           m_last_object_layers;
     coord_t                             m_last_layers_z{ 0 };

@@ -1960,7 +1960,7 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
                     // parallel tool ordering to prime correctly the wipe tower
                     //tool_ordering = print.tool_ordering();
                     // Print first wipe tower layer
-                    this->m_layer = parallel_layers_to_print[0].second.back().layer();
+                    this->m_pos_layer = this->m_layer = parallel_layers_to_print[0].second.back().layer();
                     wipe_tower->next_layer();
                     file.write(wipe_tower->tool_change(*this, parallel_ordering.first_extruder(), true));
                 }
@@ -2048,7 +2048,7 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
                                        .layer_tools()[m_wipe_tower->get_current_layer_idx() + 1]
                                        ._print_z < Layer::scale_to_layer_coord(print.config().parallel_objects_step_max_z.value));
                                 m_wipe_tower->next_layer();
-                                this->m_layer = parallel_layers_to_print[idx].second.back().layer();
+                                this->m_pos_layer = this->m_layer = parallel_layers_to_print[idx].second.back().layer();
                                 file.write(m_wipe_tower->tool_change(*this, extruder_id, true));
                         }
                     }
@@ -4248,6 +4248,7 @@ std::string GCodeGenerator::change_layer(coord_t print_z) {
         gcode += m_writer.travel_to_z(unscaled_print_z, std::string("move to next layer (") + std::to_string(m_layer_index) + ", "+  to_string_nozero(unscaled_print_z, 5) + ")");
         assert(!_m_new_z_target);
         _m_new_z_target.reset();
+        m_pos_layer = m_layer;
     } else {
         assert(BOOL_EXTRUDER_CONFIG(travel_ramping_lift));
         gcode += std::string(";move to next layer (") + std::to_string(m_layer_index) + ", "+  to_string_nozero(unscaled_print_z, 5)+") delayed by travel_ramping_lift.\n";
@@ -7900,6 +7901,7 @@ void GCodeGenerator::write_travel_to(std::string &gcode, Polyline& travel, std::
     if (_m_new_z_target) {
         assert(this->writer().get_position().z() + EPSILON > unscaled(*_m_new_z_target));
         this->writer().set_lift(this->writer().get_position().z() - unscaled(*_m_new_z_target));
+        m_pos_layer = m_layer;
         _m_new_z_target.reset();
     }
     assert(!m_layer || is_approx(this->writer().get_unlifted_position().z(), m_layer->unscaled_print_z(), EPSILON) || comment == "Travel to a Wipe Tower");

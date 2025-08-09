@@ -102,7 +102,7 @@ std::string WipeTowerIntegration::append_tcr(GCodeGenerator &gcodegen, const Wip
                                          || will_go_down);       // don't dig into the print
     if (should_travel_to_tower) {
         const Point xy_point = wipe_tower_point_to_object_point(gcodegen, start_pos);
-        gcode += gcodegen.retract_and_wipe();
+        gcode += gcodegen.retract_and_wipe(needs_toolchange);
         gcodegen.m_avoid_crossing_perimeters.use_external_mp_once();
         const std::string comment{"Travel to a Wipe Tower"};
         Polyline travel_path = gcodegen.travel_to(gcode, xy_point, ExtrusionRole::Mixed);
