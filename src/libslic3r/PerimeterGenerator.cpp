@@ -4109,10 +4109,9 @@ void PerimeterGenerator::process(// Input:
         0;
 
     // if only one OPT_EXTRA_PERIMETER, then just add it to nb_loop_contour & nb_loop_hole
-    const int extra_surface_perimeter =
-        (params.region_setting.has_many_config(&Parameters::OPT_EXTRA_PERIMETER) ?
-             0 :
-             params.region_setting.get_solo_config(&Parameters::OPT_EXTRA_PERIMETER).get_int());
+    const int extra_surface_perimeter = (!params.region_setting.has_many_config(&Parameters::OPT_EXTRA_PERIMETER)) ?
+        params.region_setting.get_solo_config(&Parameters::OPT_EXTRA_PERIMETER).get_int() :
+        0;
 
     for (const ExPolygon& surface_expolygon : new_islands) {
         surface_idx++;
@@ -7038,8 +7037,12 @@ void Parameters::segregate_extra_perimeters(const ExPolygon &my_srf, const Layer
         opt_2_areas[RegionSettings::SettingsValue::create({&Parameters::OPT_EXTRA_PERIMETER},
                                                       {&extra_perimeters_storage.back()})] = {};
     } else {
-        assert(false);
+        // no LayerRegion has any surface, so whatever.
+        extra_perimeters_storage.emplace_back(0);
+        opt_2_areas[RegionSettings::SettingsValue::create({&Parameters::OPT_EXTRA_PERIMETER},
+                                                        {&extra_perimeters_storage.back()})] = {};
     }
+    assert(!opt_2_areas.empty());
 }
 
 }
