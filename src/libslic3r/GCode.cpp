@@ -3544,16 +3544,16 @@ LayerResult GCodeGenerator::process_layer(
         // still do the retraction
         gcode += this->retract_and_wipe();
         gcode += m_writer.reset_e();
-        m_delayed_layer_change = this->change_layer(print_z); //HACK for superslicer#1775
-        assert(!_m_new_z_target);
+        m_delayed_layer_change = this->change_layer(m_last_layer_z_,print_z); //HACK for superslicer#1775
+        assert(!_m_force_move_z_from);
     } else {
         //extra lift on layer change if multiple objects
         if(single_object_instance_idx == size_t(-1) && (support_layer != nullptr || layers.size() > 1))
             set_extra_lift(m_last_layer_z_, layer.id(), print.config(), m_writer, first_extruder_id);
-        gcode += this->change_layer(print_z);  // this will increase m_layer_index
+        gcode += this->change_layer(m_last_layer_z_, print_z);  // this will increase m_layer_index
         //forget wipe from previous layer
         //gcode += "; m_wipe.reset_path(); after change_layer\n";
-        assert(_m_new_z_target || is_approx(unscaled(print_z), m_writer.get_unlifted_position().z(), EPSILON));
+        assert(_m_force_move_z_from || is_approx(unscaled(print_z), m_writer.get_unlifted_position().z(), EPSILON));
     }
     for (const ObjectLayerToPrint &l : layers) {
         if (l.object_layer) {
@@ -4296,24 +4296,24 @@ std::string GCodeGenerator::preamble()
 }
 
 // called by GCodeGenerator::process_layer()
-std::string GCodeGenerator::change_layer(coord_t print_z) {
-    const double unscaled_print_z = unscaled(print_z);
+std::string GCodeGenerator::change_layer(coord_t from_z, coord_t to_z) {
+    const double unscaled_to_print_z = unscaled(to_z);
     std::string gcode;
     if (layer_count() > 0)
         // Increment a progress bar indicator.
         gcode += m_writer.update_progress(++ m_layer_index, layer_count());
     // travel_ramping_lift only if not m_spiral_vase_layer and over the lift_min
-    if (!BOOL_EXTRUDER_CONFIG(travel_ramping_lift) || m_spiral_vase_layer > 0 || Layer::scale_to_layer_coord(m_config.lift_min.value) > print_z) {
-        if (BOOL_EXTRUDER_CONFIG(retract_layer_change) && m_writer.will_move_z(unscaled_print_z))
+    if (!BOOL_EXTRUDER_CONFIG(travel_ramping_lift) || m_spiral_vase_layer > 0 || Layer::scale_to_layer_coord(m_config.lift_min.value) > to_z) {
+        if (BOOL_EXTRUDER_CONFIG(retract_layer_change) && m_writer.will_move_z(unscaled_to_print_z))
             gcode += this->retract_and_wipe();
-        gcode += m_writer.travel_to_z(unscaled_print_z, std::string("move to next layer (") + std::to_string(m_layer_index) + ", "+  to_string_nozero(unscaled_print_z, 5) + ")");
-        assert(!_m_new_z_target);
-        _m_new_z_target.reset();
+        gcode += m_writer.travel_to_z(unscaled_to_print_z, std::string("move to next layer (") + std::to_string(m_layer_index) + ", "+  to_string_nozero(unscaled_to_print_z, 5) + ")");
+        assert(!_m_force_move_z_from);
+        _m_force_move_z_from.reset();
         m_pos_layer = m_layer;
     } else {
         assert(BOOL_EXTRUDER_CONFIG(travel_ramping_lift));
-        gcode += std::string(";move to next layer (") + std::to_string(m_layer_index) + ", "+  to_string_nozero(unscaled_print_z, 5)+") delayed by travel_ramping_lift.\n";
-        _m_new_z_target = print_z;
+        gcode += std::string(";move to next layer (") + std::to_string(m_layer_index) + ", "+  to_string_nozero(unscaled_to_print_z, 5)+") delayed by travel_ramping_lift.\n";
+        _m_force_move_z_from = from_z;
     }
 
     //if needed, write the gcode_label_objects_end then gcode_label_objects_start
@@ -4476,10 +4476,10 @@ std::string GCodeGenerator::extrude_loop_vase(const ExtrusionLoop &original_loop
                         paths.back().polyline.size() >= 3) {
                         paths[0].polyline.append_before(inward_point);
                     }
-                    this->m_writer.travel_to_z(this->m_layer->unscaled_print_z() + init_z);
+                    this->m_writer.get_travel_to_z_gcode(this->m_layer->unscaled_print_z() + init_z);
                 } else {
                     //ensure we're at the right height
-                    this->m_writer.travel_to_z(this->m_layer->unscaled_print_z());
+                    this->m_writer.get_travel_to_z_gcode(this->m_layer->unscaled_print_z());
                 }
             }
             gcode += this->_before_extrude(*path, description, speed);
@@ -7764,8 +7764,8 @@ void GCodeGenerator::_add_object_change_labels(std::string& gcode) {
         m_gcode_label_objects_in_session = true;
         // if ramping lift, the move_z may be removed by exclude object. so ensure it's at the right z
         // if m_new_z_target, then the ramping lift will be written. if not, then there isn't anything to ensure a good z
-        if(!_m_new_z_target && BOOL_EXTRUDER_CONFIG(travel_ramping_lift) && m_spiral_vase_layer <= 0) {
-            gcode += m_writer.get_travel_to_z_gcode(m_writer.get_position().z(), "ensure z is correct when starting this object");
+        if(!_m_force_move_z_from && BOOL_EXTRUDER_CONFIG(travel_ramping_lift) && m_spiral_vase_layer <= 0) {
+            gcode += m_writer.ensure_z(-1, "ensure z is correct when starting this object");
             //m_writer.set_lift(0); // don't remove lift, we used get_position, not get_unlifted_position()
         }
     }
@@ -8025,18 +8025,17 @@ void GCodeGenerator::write_travel_to(std::string &gcode, Polyline& travel, std::
         coord_t z_diff_layer_and_lift = 0;
         bool no_ramping = false;
         // from layer change?
-        if (_m_new_z_target) {
-            assert(*_m_new_z_target == m_layer->scaled_print_z());
-            if (travel.size() > 1) {
-                // get zdiff
-                coord_t layer_change_diff = m_layer->scaled_print_z() - Layer::scale_to_layer_coord(m_writer.get_unlifted_position().z());
-                // move layer_change_diff into lift & z_diff_layer_and_lift
-                z_diff_layer_and_lift += layer_change_diff;
-            }
+        if (_m_force_move_z_from && travel.size() > 1 && *_m_force_move_z_from > 0) {
+            assert(*_m_force_move_z_from < m_layer->scaled_print_z());
+            // get zdiff
+            coord_t layer_change_diff = m_layer->scaled_print_z() -
+                Layer::scale_to_layer_coord(m_writer.get_unlifted_position().z());
+            // move layer_change_diff into lift & z_diff_layer_and_lift
+            z_diff_layer_and_lift += layer_change_diff;
         }
-        if (travel.size() <= 1) {
+        if (travel.size() <= 1 || (_m_force_move_z_from && *_m_force_move_z_from <= 0)) {
             // do a strait z-move (as we can't see the previous point.
-            gcode += m_writer.travel_to_z(m_layer->unscaled_print_z(), "strait z-move, as the travel is undefined.");
+            gcode += m_writer.ensure_z(m_layer->unscaled_print_z(), "strait z-move, as the travel is undefined.");
             no_ramping = true;
         }
         // register get_extra_lift for our ramping lift (ramping lift + lift_min)
@@ -8060,8 +8059,15 @@ void GCodeGenerator::write_travel_to(std::string &gcode, Polyline& travel, std::
             assert(z_relative_travel.size() == travel.size());
         }
     } else {
-        // lift(...) has already been called
-        assert(m_writer.get_extra_lift() == 0);
+        if (_m_force_move_z_from) {
+            gcode += "; use enforce z\n";
+            assert(*_m_force_move_z_from <= 0);
+            // enforce current z
+            gcode += m_writer.ensure_z(m_layer->unscaled_print_z(), comment);
+            _m_force_move_z_from.reset();
+        }
+    //    // lift(...) has already been called
+    //    assert(m_writer.get_extra_lift() == 0);
     }
 
     const int32_t max_gcode_per_second = this->config().max_gcode_per_second.value;
@@ -8161,11 +8167,11 @@ void GCodeGenerator::write_travel_to(std::string &gcode, Polyline& travel, std::
     }
     
     // ramping travel (in a new layer) -> set lift if needed (so unlift() works)
-    if (_m_new_z_target) {
-        assert(this->writer().get_position().z() + EPSILON > unscaled(*_m_new_z_target));
-        this->writer().set_lift(this->writer().get_position().z() - unscaled(*_m_new_z_target));
+    if (_m_force_move_z_from) {
+        assert(this->writer().get_position().z() + EPSILON > m_layer->unscaled_print_z());
+        this->writer().set_lift(this->writer().get_position().z() - m_layer->unscaled_print_z());
         m_pos_layer = m_layer;
-        _m_new_z_target.reset();
+        _m_force_move_z_from.reset();
     }
     assert(!m_layer || is_approx(this->writer().get_unlifted_position().z(), m_layer->unscaled_print_z(), EPSILON) || comment.find("Wipe tower") != std::string::npos);
 }
@@ -8729,6 +8735,8 @@ std::string GCodeGenerator::toolchange(uint16_t extruder_id, coord_t print_z) {
     if (m_enable_cooling_markers) {
         gcode += ";_TOOLCHANGE " + std::to_string(extruder_id) + "\n";
     }
+    // the toolchange may have messed the X, Y & Z, so at next move also move Z.
+    _m_force_move_z_from = -1;
     return gcode;
 }
 

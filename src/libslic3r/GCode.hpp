@@ -289,7 +289,7 @@ private:
     
     void            set_extruders(const std::vector<uint16_t> &extruder_ids);
     std::string     preamble();
-    std::string change_layer(coord_t print_z);
+    std::string change_layer(coord_t from_z, coord_t to_z);
 
     std::string      visitor_gcode;
     bool             visitor_flipped; //TODO use instead of reverse() at extrude_entity
@@ -546,10 +546,11 @@ private:
     const PrintInstance*                m_last_instance {nullptr};
     std::optional<Point>                m_last_pos;
 
-    // for ramping lift: if enabled, and this is set, then you will need to move Z at the next travel.
-    // note: rampng lift and these kind of trick should eb reworked & improve when the gcode creation will be split in multiplt subsystem, these working on a chain of "command" objects. That way it should be easier to move the Z / travel accrodingly.
+    // for ramping lift: this is set, then you will need to move Z at the next travel (from this z to the current alyer).
+    // note: rampng lift and these kind of trick should be reworked & improve when the gcode creation will be split in multiplt subsystem, these working on a chain of "command" objects. That way it should be easier to move the Z / travel accrodingly.
     // the dangerous thing with it is when you cancel an object, then the Z move and the travel need to be dealt with correctly. currently, it's a pain to to do that.
-    std::optional<coord_t>              _m_new_z_target = {};
+    // note2: if 0 or negative, it just enforce the current z before the travel.
+    std::optional<coord_t>              _m_force_move_z_from = {};
     coord_t                             _m_next_lift_min{0};
 
     double                              m_current_perimeter_extrusion_width = 0.4;
