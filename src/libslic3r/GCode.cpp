@@ -3483,7 +3483,7 @@ LayerResult GCodeGenerator::process_layer(
     const coord_t previous_layer_z{m_layer != nullptr ? m_layer->scaled_print_z() : 0};
     assert(previous_layer_z == (m_layer != nullptr ? m_last_layer_z_ : 0));
     m_last_layer_z_ = print_z;
-    m_max_layer_z_ = std::max(m_max_layer_z_, m_last_layer_z_);
+    m_max_layer_z_ = std::max(m_max_layer_z_, print_z);
     m_last_height_ = height;
     m_last_too_small.polyline.clear();
     //m_already_unretracted = false;
@@ -3544,13 +3544,13 @@ LayerResult GCodeGenerator::process_layer(
         // still do the retraction
         gcode += this->retract_and_wipe();
         gcode += m_writer.reset_e();
-        m_delayed_layer_change = this->change_layer(m_last_layer_z_,print_z); //HACK for superslicer#1775
+        m_delayed_layer_change = this->change_layer(previous_layer_z, print_z); //HACK for superslicer#1775
         assert(!_m_force_move_z_from);
     } else {
         //extra lift on layer change if multiple objects
         if(single_object_instance_idx == size_t(-1) && (support_layer != nullptr || layers.size() > 1))
             set_extra_lift(m_last_layer_z_, layer.id(), print.config(), m_writer, first_extruder_id);
-        gcode += this->change_layer(m_last_layer_z_, print_z);  // this will increase m_layer_index
+        gcode += this->change_layer(previous_layer_z, print_z);  // this will increase m_layer_index
         //forget wipe from previous layer
         //gcode += "; m_wipe.reset_path(); after change_layer\n";
         assert(_m_force_move_z_from || is_approx(unscaled(print_z), m_writer.get_unlifted_position().z(), EPSILON));
@@ -4300,6 +4300,7 @@ std::string GCodeGenerator::preamble()
 
 // called by GCodeGenerator::process_layer()
 std::string GCodeGenerator::change_layer(coord_t from_z, coord_t to_z) {
+    assert(from_z < to_z);
     const double unscaled_to_print_z = unscaled(to_z);
     std::string gcode;
     if (layer_count() > 0)
@@ -4315,7 +4316,7 @@ std::string GCodeGenerator::change_layer(coord_t from_z, coord_t to_z) {
         m_pos_layer = m_layer;
     } else {
         assert(BOOL_EXTRUDER_CONFIG(travel_ramping_lift));
-        gcode += std::string(";move to next layer (") + std::to_string(m_layer_index) + ", "+  to_string_nozero(unscaled_to_print_z, 5)+") delayed by travel_ramping_lift.\n";
+        gcode += std::string(";move to next layer (") + std::to_string(m_layer_index) +  to_string_nozero(unscaled(from_z), 5)+ ", ->"+  to_string_nozero(unscaled_to_print_z, 5)+") delayed by travel_ramping_lift.\n";
         _m_force_move_z_from = from_z;
     }
 
@@ -7350,6 +7351,7 @@ void GCodeGenerator::cooldown_marker_init() {
 std::string GCodeGenerator::_travel_before_extrude(const ExtrusionPath &path, const std::string_view description_in, double speed_mm_s) {
     std::string gcode;
     std::string description{ description_in };
+    assert(!path.empty());
 
     auto [/*double*/acceleration, /*double*/travel_acceleration] = _compute_acceleration(path);
 
@@ -8756,9 +8758,10 @@ std::string GCodeGenerator::set_extruder(uint16_t extruder_id, coord_t print_z, 
     ensure_end_object_change_labels(gcode);
 
     //just for testing
-    assert(m_layer == nullptr || is_approx(this->writer().get_position().z(), unscaled(print_z), EPSILON));
+    assert(m_layer == nullptr || is_approx(this->writer().get_position().z(), unscaled(print_z), EPSILON) ||
+           _m_force_move_z_from);
 
-    // if we are running a single-extruder setup, just set the extruder and return nothing
+    // if we are running a single-extruder setup, just set the extruder and return nothing (if no_toolchange)
     if (!m_writer.multiple_extruders) {
         this->placeholder_parser().set("current_extruder", extruder_id);
 
