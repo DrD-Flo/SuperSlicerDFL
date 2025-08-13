@@ -3668,8 +3668,8 @@ LayerResult GCodeGenerator::process_layer(
         assert(!layer_tools.extruders.empty());
         if (m_writer.tool() && !layer_tools.extruders.empty() &&
             m_writer.tool()->id() != layer_tools.extruders.front()) {
-            assert(std::find(layer_tools.extruders.begin(), layer_tools.extruders.end(), m_writer.tool()->id()) == layer_tools.extruders.end());
             // last extruder don't print anything here, plan to change to another one right away.
+            // note: the extruders may not be used in this layer, and so not present in layer_tools
             std::vector<uint16_t> extruder_with_empty_first;
             extruder_with_empty_first.push_back(m_writer.tool()->id());
             extruder_with_empty_first.insert(extruder_with_empty_first.end(), layer_tools.extruders.begin(), layer_tools.extruders.end());
