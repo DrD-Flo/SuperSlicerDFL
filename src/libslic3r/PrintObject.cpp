@@ -1105,6 +1105,7 @@ void PrintObject::estimate_curled_extrusions()
         }
     }
 }
+
 void _calculate_overhanging_perimeters(
     const Layer &layer,
     LayerRegionIsland &lri,
@@ -1893,6 +1894,10 @@ ExPolygon try_fit_to_size2(ExPolygon polygon_to_check, const ExPolygon& allowedP
         }
         if ((best_point - polygon_reduced.contour.points[pos_check]).norm() < scale_(0.01)) ++pos_check;
         else polygon_reduced.contour.points.erase(polygon_reduced.contour.points.begin() + pos_check);
+    }
+    // edge case
+    if (polygon_reduced.contour.size() == 1) {
+        polygon_reduced.clear();
     }
     polygon_reduced.holes.clear();
     return polygon_reduced;
