@@ -151,10 +151,10 @@ Point Line::point_at(distf_t distance) const {
     return point;
 }
 
-double Line::distance_to_squared_abp(const Point &a, const Point &b, const Point &point, Point *nearest_point) {
+distsqrf_t Line::distance_to_squared_abp(const Point &a, const Point &b, const Point &point, Point *nearest_point) {
     const Vec2d v = ((b) - (a)).cast<double>();
     const Vec2d va = (point - (a)).cast<double>();
-    const double l2 = v.squaredNorm();
+    const distsqrf_t l2 = v.squaredNorm();
     if (l2 == 0.0) {
         // a == b case
         if (nearest_point) {
@@ -188,5 +188,4 @@ double Line::distance_to_squared_abp(const Point &a, const Point &b, const Point
     }
     return (w - va).squaredNorm();
 }
-
 } // namespace Slic3r

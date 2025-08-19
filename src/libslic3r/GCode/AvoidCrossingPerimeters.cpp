@@ -2553,6 +2553,9 @@ Polyline AvoidCrossingPerimeters::travel_to(const GCodeGenerator &gcodegen, cons
                 nearest_end = bb_coord_t.nearest_point(nearest_end);
             }
             travel_intersection_count = avoid_perimeters(m_internal, nearest_start/*startf.cast<coord_t>()*/, nearest_end/*endf.cast<coord_t>()*/, perimeter_spacing, *gcodegen.layer(), result_pl);
+            assert(result_pl.size() > 1);
+            for (size_t i = 1; i < result_pl.size(); i++)
+                assert(!result_pl.points[i - 1].coincides_with_epsilon(result_pl.points[i]));
             result_pl.points.front()  = start;
             result_pl.points.back()   = end;
         }
@@ -2575,10 +2578,16 @@ Polyline AvoidCrossingPerimeters::travel_to(const GCodeGenerator &gcodegen, cons
                 nearest_end = bb_coord_t.nearest_point(nearest_end);
             }
             travel_intersection_count = avoid_perimeters(m_external, nearest_start/*startf.cast<coord_t>()*/, nearest_end/*endf.cast<coord_t>()*/, 0, *gcodegen.layer(), result_pl);
+            assert(result_pl.size() > 1);
+            for (size_t i = 1; i < result_pl.size(); i++)
+                assert(!result_pl.points[i - 1].coincides_with_epsilon(result_pl.points[i]));
             result_pl.points.front()  = start;
             result_pl.points.back()   = end;
         }
     }
+    assert(result_pl.size() > 1);
+    for (size_t i = 1; i < result_pl.size(); i++)
+        assert(!result_pl.points[i - 1].coincides_with_epsilon(result_pl.points[i]));
 
     if(result_pl.empty()) {
         // Travel line is completely outside the bounding box.
