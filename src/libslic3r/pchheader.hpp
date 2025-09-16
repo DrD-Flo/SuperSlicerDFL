@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2018 - 2023 Vojtěch Bubník @bubnikv, Roman Beránek @zavorka
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifdef WIN32
 	#ifndef WIN32_LEAN_AND_MEAN
 		#define WIN32_LEAN_AND_MEAN
@@ -7,18 +11,16 @@
 	#endif
 #endif
 
-#include <float.h>
-#include <math.h>
-#include <stdarg.h>
-#include <stdint.h>
-#include <string.h>
 
 #include <cassert>
+#include <cfloat>
 #include <climits>
 #include <cmath>
 #include <cstddef>
-#include <cstdio>
+#include <cstdarg>
 #include <cstdlib>
+#include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <ctime>
 
@@ -65,6 +67,12 @@
 #include <boost/config.hpp>
 #include <boost/config/warning_disable.hpp>
 #include <boost/container/small_vector.hpp>
+#ifdef _WIN32
+// On MSVC, std::deque degenerates to a list of pointers, which defeats its purpose of reducing allocator load and memory fragmentation.
+// https://github.com/microsoft/STL/issues/147#issuecomment-1090148740
+// Thus it is recommended to use boost::container::deque instead.
+#include <boost/container/deque.hpp>
+#endif // _WIN32
 #include <boost/date_time/local_time/local_time.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/filesystem.hpp>
@@ -101,9 +109,10 @@
 #include <boost/thread.hpp>
 #include <boost/version.hpp>
 
-#include <tbb/parallel_for.h>
-#include <tbb/spin_mutex.h>
-#include <tbb/task_group.h>
+#include <oneapi/tbb/parallel_for.h>
+#include <oneapi/tbb/scalable_allocator.h>
+#include <oneapi/tbb/spin_mutex.h>
+#include <oneapi/tbb/task_group.h>
 
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
@@ -127,7 +136,5 @@
 
 #include "libslic3r.h"
 #include "libslic3r_version.h"
-
-#include <Shiny/Shiny.h>
 
 #include <admesh/stl.h>

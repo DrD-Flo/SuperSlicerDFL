@@ -1,12 +1,16 @@
+///|/ Copyright (c) Prusa Research 2021 - 2022 Tomáš Mészáros @tamasmeszaros, Roman Beránek @zavorka
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef EXECUTIONTBB_HPP
 #define EXECUTIONTBB_HPP
 
 #include <mutex>
 
-#include <tbb/spin_mutex.h>
-#include <tbb/parallel_for.h>
-#include <tbb/parallel_reduce.h>
-#include <tbb/task_arena.h>
+#include <oneapi/tbb/spin_mutex.h>
+#include <oneapi/tbb/parallel_for.h>
+#include <oneapi/tbb/parallel_reduce.h>
+#include <oneapi/tbb/task_arena.h>
 
 #include "Execution.hpp"
 
@@ -53,7 +57,7 @@ public:
                     I          to,
                     const T   &init,
                     MergeFn  &&mergefn,
-                    AccessFn &&access,
+                    AccessFn &&accessfn,
                     size_t     granularity = 1
                     )
     {
@@ -61,7 +65,7 @@ public:
             tbb::blocked_range{from, to, granularity}, init,
             [&](const auto &range, T subinit) {
                 T acc = subinit;
-                loop_(range, [&](auto &i) { acc = mergefn(acc, access(i)); });
+                loop_(range, [&](auto &i) { acc = mergefn(acc, accessfn(i)); });
                 return acc;
             },
             std::forward<MergeFn>(mergefn));

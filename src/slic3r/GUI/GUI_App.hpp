@@ -1,3 +1,8 @@
+///|/ Copyright (c) Prusa Research 2018 - 2023 Vojtěch Bubník @bubnikv, Oleksandra Iushchenko @YuSanka, Tomáš Mészáros @tamasmeszaros, David Kocík @kocikdav, Lukáš Matěna @lukasmatena, Enrico Turri @enricoturri1966, Filip Sykala @Jony01, Lukáš Hejl @hejllukas, Vojtěch Král @vojtechkral
+///|/ Copyright (c) 2021 Li Jiang
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef slic3r_GUI_App_hpp_
 #define slic3r_GUI_App_hpp_
 
@@ -35,6 +40,7 @@ class PresetUpdater;
 class ModelObject;
 class PrintHostJobQueue;
 class Model;
+class AppUpdater;
 
 namespace GUI{
 
@@ -48,7 +54,9 @@ class ObjectList;
 class ObjectLayers;
 class Plater;
 class NotificationManager;
+class Downloader;
 struct GUI_InitParams;
+class GalleryDialog;
 
 
 
@@ -56,12 +64,14 @@ enum FileType
 {
     FT_STL,
     FT_OBJ,
+    FT_OBJECT,
     FT_STEP,
     FT_AMF,
     FT_3MF,
     FT_GCODE,
     FT_MODEL,
     FT_PROJECT,
+    FT_FONTS,
     FT_GALLERY,
 
     FT_INI,
@@ -71,20 +81,26 @@ enum FileType
 
     FT_SL1,
 
+    FT_ZIP,
+
     FT_SIZE,
 };
 
-extern wxString file_wildcards(FileType file_type, const std::string &custom_extension = std::string{});
+extern wxString file_wildcards(FileType file_type, const std::string &custom_extension = {});
+
+wxString sla_wildcards(OutputFormat formatid, const std::string& custom_extension);
 
 enum ConfigMenuIDs {
     ConfigMenuWizard,
     ConfigMenuSnapshots,
     ConfigMenuTakeSnapshot,
-    ConfigMenuUpdate,
+    ConfigMenuUpdateConf,
+    ConfigMenuUpdateApp,
     ConfigMenuDesktopIntegration,
     ConfigMenuPreferences,
     ConfigMenuLanguage,
     ConfigMenuFlashFirmware,
+    ConfigMenuWifiConfigFile,
     ConfigMenuCnt,
     //ConfigMenuModeSimple,
     //ConfigMenuModeAdvanced,
@@ -115,6 +131,7 @@ private:
     bool            m_initialized { false };
     bool            m_post_initialized { false };
     bool            m_app_conf_exists{ false };
+    bool            m_last_app_conf_lower_version{ false };
     EAppMode        m_app_mode{ EAppMode::Editor };
     bool            m_is_recreating_gui{ false };
     bool            m_opengl_initialized{ false };
@@ -123,8 +140,11 @@ private:
     wxColour        m_color_label_sys;
     wxColour        m_color_label_default;
     wxColour        m_color_label_phony;
+    wxColour        m_color_dark_mode_label_modified;
+    wxColour        m_color_dark_mode_label_sys;
+    wxColour        m_color_dark_mode_label_default;
+    wxColour        m_color_dark_mode_label_phony;
     wxColour        m_color_window_default;
-#ifdef _WIN32
     wxColour        m_color_highlight_label_default;
     wxColour        m_color_hovered_btn_label;
     wxColour        m_color_hovered_btn;
@@ -132,7 +152,7 @@ private:
     wxColour        m_color_highlight_default;
     wxColour        m_color_selected_btn_bg;
     bool            m_force_colors_update { false };
-#endif
+    //std::vector<std::string>     m_mode_palette; //replaced by Slic3r::GUI::get_app_config()->tags()
 
     wxFont		    m_small_font;
     wxFont		    m_bold_font;
@@ -140,7 +160,7 @@ private:
 	wxFont			m_code_font;
     wxFont		    m_link_font;
 
-    int          m_em_unit; // width of a "m"-symbol in pixels for current system font
+    int             m_em_unit; // width of a "m"-symbol in pixels for current system font
                                // Note: for 100% Scale m_em_unit = 10 -> it's a good enough coefficient for a size setting of controls
 
     std::unique_ptr<wxLocale> 	  m_wxLocale;
@@ -158,7 +178,9 @@ private:
     std::unique_ptr<ImGuiWrapper> m_imgui;
     std::unique_ptr<PrintHostJobQueue> m_printhost_job_queue;
 	std::unique_ptr <OtherInstanceMessageHandler> m_other_instance_message_handler;
+    std::unique_ptr <AppUpdater> m_app_updater;
     std::unique_ptr <wxSingleInstanceChecker> m_single_instance_checker;
+    std::unique_ptr <Downloader> m_downloader;
     std::string m_instance_hash_string;
 	size_t m_instance_hash_int;
 
@@ -188,12 +210,13 @@ public:
 
     static unsigned get_colour_approx_luma(const wxColour &colour);
     static bool     dark_mode();
-    const wxColour  get_label_default_clr_system();
-    const wxColour  get_label_default_clr_modified();
-    const wxColour  get_label_default_clr_default();
-    const wxColour  get_label_default_clr_phony();
-    void            init_label_colours();
-    void            update_label_colours_from_appconfig();
+    const wxColour  get_label_default_clr_system(bool is_dark_mode);
+    const wxColour  get_label_default_clr_modified(bool is_dark_mode);
+    const wxColour  get_label_default_clr_default(bool is_dark_mode);
+    const wxColour  get_label_default_clr_phony(bool is_dark_mode);
+    const std::vector<std::string> get_mode_default_palette();
+    void            init_ui_colours();
+    void            update_ui_colours_from_appconfig();
     void            update_label_colours();
     // update color mode for window
     void            UpdateDarkUI(wxWindow *window, bool highlited = false, bool just_font = false);
@@ -203,6 +226,7 @@ public:
     void            UpdateDVCDarkUI(wxDataViewCtrl* dvc, bool highlited = false);
     // update color mode for panel including all static texts controls
     void            UpdateAllStaticTextDarkUI(wxWindow* parent);
+    void            SetWindowVariantForButton(wxButton* btn);
     void            init_fonts();
 	void            update_fonts(const MainFrame *main_frame = nullptr);
     void            set_label_clr_modified(const wxColour& clr);
@@ -210,24 +234,31 @@ public:
     void            set_label_clr_default(const wxColour& clr);
     void            set_label_clr_phony(const wxColour& clr);
 
-    const wxColour& get_label_clr_modified(){ return m_color_label_modified; }
-    const wxColour& get_label_clr_sys()     { return m_color_label_sys; }
-    const wxColour& get_label_clr_default() { return m_color_label_default; }
-    const wxColour& get_label_clr_phony()   { return m_color_label_phony; }
-    const wxColour& get_window_default_clr(){ return m_color_window_default; }
+    const wxColour &get_label_clr_modified();
+    const wxColour &get_label_clr_sys();
+    const wxColour &get_label_clr_default();
+    const wxColour &get_label_clr_phony();
+    const wxColour &get_window_default_clr() { return m_color_window_default; }
 
+    const std::string       get_html_bg_color(wxWindow* html_parent);
 
-#ifdef _WIN32
+    std::string             get_first_mode_btn_color(ConfigOptionMode mode_id) const;
+    std::string             get_last_mode_btn_color(ConfigOptionMode mode_id) const;
+#ifdef GUI_TAG_PALETTE
+    std::vector<wxColour>   get_mode_palette() const;
+    void                    set_mode_palette(const std::vector<wxColour> &palette);
+#endif
+
     const wxColour& get_label_highlight_clr()   { return m_color_highlight_label_default; }
     const wxColour& get_highlight_default_clr() { return m_color_highlight_default; }
     const wxColour& get_color_hovered_btn_label() { return m_color_hovered_btn_label; }
+    const wxColour& get_color_default_btn_label() { return m_color_default_btn_label; }
     const wxColour& get_color_hovered_btn() { return m_color_hovered_btn; }
     const wxColour& get_color_selected_btn_bg() { return m_color_selected_btn_bg; }
     void            force_colors_update();
 #ifdef _MSW_DARK_MODE
     void            force_menu_update();
 #endif //_MSW_DARK_MODE
-#endif
 
     const wxFont&   small_font()            { return m_small_font; }
     const wxFont&   bold_font()             { return m_bold_font; }
@@ -236,7 +267,9 @@ public:
     const wxFont&   link_font()             { return m_link_font; }
     int             em_unit() const         { return m_em_unit; }
     bool            tabs_as_menu() const;
-    wxSize          get_min_size() const;
+    bool            suppress_round_corners() const;
+    wxSize          get_min_size(wxWindow* display_win) const;
+    int             get_max_font_pt_size();
     float           toolbar_icon_scale(const bool is_limited = false) const;
     void            set_auto_toolbar_icon_scale(float scale) const;
     void            check_printer_presets();
@@ -248,16 +281,19 @@ public:
     void            html_dialog();
     void            bed_leveling_dialog();
     void            flow_ratio_dialog();
+    void            flow_speed_dialog();
     void            filament_temperature_dialog();
     void            bridge_tuning_dialog();
     void            over_bridge_dialog();
     void            calibration_cube_dialog();
 	void            calibration_retraction_dialog();
+    void            calibration_pressureadv_dialog();
     void            freecad_script_dialog();
     void            tiled_canvas_dialog();
     //void            support_tuning(); //have to do multiple, in a submenu
     void            load_project(wxWindow *parent, wxString& input_file) const;
     void            import_model(wxWindow *parent, wxArrayString& input_files) const;
+    void            import_zip(wxWindow* parent, wxString& input_file) const;
     void            load_gcode(wxWindow* parent, wxString& input_file) const;
 
     static bool     catch_error(std::function<void()> cb, const std::string& err);
@@ -270,7 +306,7 @@ public:
 
     Tab*            get_tab(Preset::Type type, bool only_completed = true);
     ConfigOptionMode get_mode();
-    void            save_mode(const ConfigOptionMode mode) ;
+    bool            save_mode(const ConfigOptionMode mode) ;
     void            update_mode();
 
     void            add_config_menu(wxMenuBar *menu);
@@ -293,16 +329,17 @@ public:
     wxString 		current_language_code_safe() const;
     bool            is_localized() const { return m_wxLocale->GetLocale() != "English"; }
 
-    void            open_preferences(size_t open_on_tab = 0, const std::string& highlight_option = std::string());
+    void            open_preferences(const std::string& highlight_option = std::string(), const std::string& group_name = std::string());
 
     virtual bool OnExceptionInMainLoop() override;
     // Calls wxLaunchDefaultBrowser if user confirms in dialog.
     // Add "Rememeber my choice" checkbox to question dialog, when it is forced or a "suppress_hyperlinks" option has empty value
-    bool            open_browser_with_warning_dialog(const wxString& url, wxWindow* parent = nullptr, bool force_remember_choice = true, int flags = 0);
+    bool            open_browser_with_warning_dialog(const wxString& url, wxWindow* parent = nullptr, bool allow_remember_choice = true, int flags = 0);
 #ifdef __APPLE__
     void            OSXStoreOpenFiles(const wxArrayString &files) override;
     // wxWidgets override to get an event on open files.
     void            MacOpenFiles(const wxArrayString &fileNames) override;
+    void            MacOpenURL(const wxString& url) override;
 #endif /* __APPLE */
 
     Sidebar&            sidebar();
@@ -313,13 +350,17 @@ public:
     Plater*             plater();
     const Plater*        plater() const;
     Model&      		model();
-    NotificationManager * notification_manager();
+    NotificationManager* notification_manager();
+    GalleryDialog *      gallery_dialog();
+    Downloader*          downloader();
 
     // Parameters extracted from the command line to be passed to GUI after initialization.
     GUI_InitParams* init_params { nullptr };
 
     std::unique_ptr<AppConfig> app_config;
+
     std::unique_ptr<PresetBundle> preset_bundle;
+
     std::unique_ptr<PresetUpdater> preset_updater;
     MainFrame*      mainframe{ nullptr };
     Plater*         plater_{ nullptr };
@@ -327,6 +368,7 @@ public:
     wxDialog*       not_modal_dialog = nullptr;
 
 	PresetUpdater*  get_preset_updater() { return preset_updater.get(); }
+    PrinterTechnology get_current_printer_technology() const;
 
     wxBookCtrlBase* tab_panel() const ;
     int             extruders_cnt() const;
@@ -351,6 +393,7 @@ public:
     bool            may_switch_to_SLA_preset(const wxString& caption);
     bool            run_wizard(ConfigWizard::RunReason reason, ConfigWizard::StartPage start_page = ConfigWizard::SP_WELCOME);
     void            show_desktop_integration_dialog();
+    void            show_downloader_registration_dialog();
 
 #if ENABLE_THUMBNAIL_GENERATOR_DEBUG
     // temporary and debug only -> extract thumbnails from selected gcode and save them as png files
@@ -368,8 +411,15 @@ public:
     void            associate_3mf_files();
     void            associate_stl_files();
     void            associate_gcode_files();
+    void            associate_bgcode_files();
 #endif // __WXMSW__
 
+
+    // URL download - PrusaSlicer gets system call to open prusaslicer:// URL which should contain address of download
+    void            start_download(std::string url);
+
+    void            open_wifi_config_dialog(bool forced, const wxString& drive_path = {});
+    bool            get_wifi_config_dialog_shown() const { return m_wifi_config_dialog_shown; }
 private:
     bool            on_init_inner();
 	void            init_app_config();
@@ -385,8 +435,14 @@ private:
     // Returns true if the configuration is fine. 
     // Returns true if the configuration is not compatible and the user decided to rather close the slicer instead of reconfiguring.
 	bool            check_updates(const bool verbose);
+    void            on_version_read(wxCommandEvent& evt);
+    // if the data from version file are already downloaded, shows dialogs to start download of new version of app
+    void            app_updater(bool from_user);
+    // inititate read of version file online in separate thread
+    void            app_version_check(bool from_user);
 
-    bool            m_datadir_redefined { false }; 
+    bool                    m_datadir_redefined { false }; 
+    bool                    m_wifi_config_dialog_shown { false };
 };
 
 DECLARE_APP(GUI_App)

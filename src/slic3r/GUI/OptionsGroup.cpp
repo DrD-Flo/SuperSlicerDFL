@@ -1,3 +1,15 @@
+///|/ Copyright (c) Prusa Research 2017 - 2023 Oleksandra Iushchenko @YuSanka, Vojtěch Bubník @bubnikv, Lukáš Hejl @hejllukas, Tomáš Mészáros @tamasmeszaros, David Kocík @kocikdav, Lukáš Matěna @lukasmatena, Vojtěch Král @vojtechkral, Enrico Turri @enricoturri1966
+///|/ Copyright (c) 2018 Martin Loidl @LoidlM
+///|/
+///|/ ported from lib/Slic3r/GUI/OptionsGroup.pm:
+///|/ Copyright (c) Prusa Research 2016 - 2018 Vojtěch Bubník @bubnikv, Oleksandra Iushchenko @YuSanka
+///|/ Copyright (c) Slic3r 2011 - 2015 Alessandro Ranellucci @alranel
+///|/ Copyright (c) 2013 Scott Penrose
+///|/ Copyright (c) 2012 Henrik Brix Andersen @henrikbrixandersen
+///|/ Copyright (c) 2011 Richard Goodwin
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include "OptionsGroup.hpp"
 #include "ConfigExceptions.hpp"
 #include "Plater.hpp"
@@ -22,97 +34,108 @@
 namespace Slic3r { namespace GUI {
 
 const t_field& OptionsGroup::build_field(const Option& opt) {
-    return build_field(opt.opt_id, opt.opt);
+    return build_field(OptionKeyIdx{opt.opt_key, opt.opt_idx}, opt.opt);
 }
-const t_field& OptionsGroup::build_field(const t_config_option_key& id) {
-	const ConfigOptionDef& opt = m_options.at(id).opt;
-    return build_field(id, opt);
+const t_field& OptionsGroup::build_field(const OptionKeyIdx& key_idx) {
+    const ConfigOptionDef& opt = m_options.at(key_idx).opt;
+    return build_field(key_idx, opt);
 }
 
-const t_field& OptionsGroup::build_field(const t_config_option_key& id, const ConfigOptionDef& opt) {
+const t_field& OptionsGroup::build_field(const OptionKeyIdx& key_idx, const ConfigOptionDef& opt) {
     // Check the gui_type field first, fall through
     // is the normal type.
     switch (opt.gui_type) {
+    case ConfigOptionDef::GUIType::select_close:
     case ConfigOptionDef::GUIType::select_open:
-        m_fields.emplace(id, Choice::Create<Choice>(this->ctrl_parent(), opt, id));
-        break;
-    case ConfigOptionDef::GUIType::color:
-        m_fields.emplace(id, ColourPicker::Create<ColourPicker>(this->ctrl_parent(), opt, id));
-        break;
     case ConfigOptionDef::GUIType::f_enum_open:
     case ConfigOptionDef::GUIType::i_enum_open:
-        m_fields.emplace(id, Choice::Create<Choice>(this->ctrl_parent(), opt, id));
+        m_fields.emplace(key_idx, Choice::Create<Choice>(this->ctrl_parent(), opt, key_idx));
+        break;
+    case ConfigOptionDef::GUIType::color:
+        m_fields.emplace(key_idx, ColourPicker::Create<ColourPicker>(this->ctrl_parent(), opt, key_idx));
         break;
     case ConfigOptionDef::GUIType::slider:
-        m_fields.emplace(id, SliderCtrl::Create<SliderCtrl>(this->ctrl_parent(), opt, id));
+        m_fields.emplace(key_idx, SliderCtrl::Create<SliderCtrl>(this->ctrl_parent(), opt, key_idx));
         break;
     case ConfigOptionDef::GUIType::legend: // StaticText
-        m_fields.emplace(id, StaticText::Create<StaticText>(this->ctrl_parent(), opt, id));
+        m_fields.emplace(key_idx, StaticText::Create<StaticText>(this->ctrl_parent(), opt, key_idx));
         break;
     default:
         switch (opt.type) {
             case coFloatOrPercent:
+            case coFloatsOrPercents:
             case coFloat:
             case coFloats:
-			case coPercent:
+            case coPercent:
             case coPercents:
-            case coFloatsOrPercents:
-			case coString:
-			case coStrings:
-                m_fields.emplace(id, TextCtrl::Create<TextCtrl>(this->ctrl_parent(), opt, id));
+            case coString:
+            case coStrings:
+                m_fields.emplace(key_idx, TextCtrl::Create<TextCtrl>(this->ctrl_parent(), opt, key_idx));
                 break;
             case coBools:
-                if (id.find('#') == std::string::npos) {
+                if (key_idx.idx < 0) {
                     // string field with vector serialization
-                    m_fields.emplace(id, TextCtrl::Create<TextCtrl>(this->ctrl_parent(), opt, id));
+                    m_fields.emplace(key_idx, TextCtrl::Create<TextCtrl>(this->ctrl_parent(), opt, key_idx));
                     break;
                 }
-			case coBool:
-                m_fields.emplace(id, CheckBox::Create<CheckBox>(this->ctrl_parent(), opt, id));
-				break;
+            case coBool:
+                m_fields.emplace(key_idx, CheckBox::Create<CheckBox>(this->ctrl_parent(), opt, key_idx));
+                break;
             case coInts:
-                if (id.find('#') == std::string::npos) {
+                if (key_idx.idx < 0) {
                     // string field with vector serialization
-                    m_fields.emplace(id, TextCtrl::Create<TextCtrl>(this->ctrl_parent(), opt, id));
+                    m_fields.emplace(key_idx, TextCtrl::Create<TextCtrl>(this->ctrl_parent(), opt, key_idx));
                     break;
                 }
-			case coInt:
-                m_fields.emplace(id, SpinCtrl::Create<SpinCtrl>(this->ctrl_parent(), opt, id));
-				break;
+            case coInt:
+                m_fields.emplace(key_idx, SpinCtrl::Create<SpinCtrl>(this->ctrl_parent(), opt, key_idx));
+                break;
             case coEnum:
-                m_fields.emplace(id, Choice::Create<Choice>(this->ctrl_parent(), opt, id));
-				break;
+                m_fields.emplace(key_idx, Choice::Create<Choice>(this->ctrl_parent(), opt, key_idx));
+                break;
             case coPoint:
             case coPoints:
-                m_fields.emplace(id, PointCtrl::Create<PointCtrl>(this->ctrl_parent(), opt, id));
-				break;
+                m_fields.emplace(key_idx, PointCtrl::Create<PointCtrl>(this->ctrl_parent(), opt, key_idx));
+                break;
+            case coGraph:
+            case coGraphs:
+                m_fields.emplace(key_idx, GraphButton::Create<GraphButton>(this->ctrl_parent(), opt, key_idx));
+                break;
             case coNone:  assert(false); break;
             default:
-				throw Slic3r::LogicError("This control doesn't exist till now"); break;
+                throw Slic3r::LogicError("This control doesn't exist till now"); break;
         }
     }
     // Grab a reference to fields for convenience
-    const t_field& field = m_fields[id];
-    field->m_on_change = [this](const std::string& opt_id, const boost::any& value) {
-        //! This function will be called from Field.
-        //! Call OptionGroup._on_change(...)
-        if (!m_disabled)
-            this->on_change_OG(opt_id, value);
-    };
-    field->m_on_kill_focus = [this](const std::string& opt_id) {
+    const t_field& field = m_fields[key_idx];
+	field->m_on_change = [this](const OptionKeyIdx& opt_key_idx, bool enabled, const boost::any& value) {
+			//! This function will be called from Field.
+			//! Call OptionGroup._on_change(...)
+			if (!m_disabled)
+				this->on_change_OG(opt_key_idx, enabled, value);
+	};
+    field->m_on_kill_focus = [this](const OptionKeyIdx& opt_key_idx) {
 			//! This function will be called from Field.
 			if (!m_disabled)
-				this->on_kill_focus(opt_id);
+				this->on_kill_focus(opt_key_idx);
 	};
     field->m_parent = parent();
 
-	field->m_back_to_initial_value = [this](std::string opt_id) {
+    if (edit_custom_gcode && opt.is_code) {
+        field->m_fn_edit_value = [this](const OptionKeyIdx& opt_key_idx) {
+            if (!m_disabled)
+                this->edit_custom_gcode(opt_key_idx);
+        };
+        field->set_edit_tooltip(_L("Edit Custom G-code"));
+    }
+
+	field->m_back_to_initial_value = [this](const OptionKeyIdx& opt_key_idx) {
 		if (!m_disabled)
-			this->back_to_initial_value(opt_id);
+			this->back_to_initial_value(opt_key_idx);
 	};
-	field->m_back_to_sys_value = [this](std::string opt_id) {
-		if (!this->m_disabled)
-			this->back_to_sys_value(opt_id);
+	field->m_back_to_sys_value = [this](const OptionKeyIdx& opt_key_idx) {
+		if (!m_disabled)
+			this->back_to_sys_value(opt_key_idx);
 	};
 
 	// assign function objects for callbacks, etc.
@@ -127,6 +150,38 @@ OptionsGroup::OptionsGroup(	wxWindow* _parent, const wxString& title,
                 staticbox(title!=""), extra_column(extra_clmn)
 {
     assert(Tab::fake_build || m_parent);
+}
+
+Option::Option(const ConfigOptionDef &_opt, int32_t idx /*= -1*/)
+    : opt(_opt), opt_key(_opt.opt_key), opt_idx(idx) {
+    if (!opt.tooltip.empty()) {
+        wxString tooltip;
+        if (opt.opt_key.rfind("branching", 0) == 0)
+            tooltip = _L("Unavailable for this method.") + "\n";
+        tooltip += _(opt.tooltip);
+
+        update_Slic3r_string(tooltip);
+
+        opt.tooltip = into_u8(tooltip);
+    }
+}
+
+void Line::clear()
+{
+    if (near_label_widget_win)
+        near_label_widget_win = nullptr;
+
+    if (widget_sizer) {
+        widget_sizer->Clear(true);
+        delete widget_sizer;
+        widget_sizer = nullptr;
+    }
+
+    if (extra_widget_sizer) {
+        extra_widget_sizer->Clear(true);
+        delete extra_widget_sizer;
+        extra_widget_sizer = nullptr;
+    }
 }
 
 wxWindow* OptionsGroup::ctrl_parent() const
@@ -153,7 +208,7 @@ void OptionsGroup::set_max_win_width(int max_win_width)
 
 void OptionsGroup::show_field(const t_config_option_key& opt_key, bool show/* = true*/)
 {
-    Field* field = get_field(opt_key);
+    Field* field = get_field(OptionKeyIdx::scalar(opt_key));
     if (!field) return;
     wxWindow* win = field->getWindow();
     if (!win) return;
@@ -203,7 +258,7 @@ void OptionsGroup::append_line(const Line& line)
 
 	auto option_set = line.get_options();
 	for (auto opt : option_set)
-		m_options.emplace(opt.opt_id, opt);
+        m_options.emplace(OptionKeyIdx{opt.opt_key, opt.opt_idx}, opt);
 
     //if first control don't have a label, use the line one for the tooltip
     if (!option_set.empty() && (option_set.front().opt.label.empty() || "_" == option_set.front().opt.label)) {
@@ -215,6 +270,7 @@ void OptionsGroup::append_line(const Line& line)
 	// add mode value for current line to m_options_mode
     if (!option_set.empty()){
         m_line_sizer.emplace_back();
+        // add index -1 (ie the line, before the fist item inside) to mode of the first option_set.
         m_options_mode.emplace_back();
         m_options_mode.back()[option_set[0].opt.mode].push_back(-1);
     }
@@ -259,9 +315,10 @@ void OptionsGroup::activate_line(Line& line)
 
     if (!custom_ctrl && m_use_custom_ctrl) {
         custom_ctrl = new OG_CustomCtrl(is_legend_line || !staticbox ? this->parent() : static_cast<wxWindow*>(this->stb), this);
-        if (is_legend_line)
-            sizer->Add(custom_ctrl, 0, wxEXPAND | wxLEFT, wxOSX ? 0 : 10);
-        else
+        wxGetApp().UpdateDarkUI(custom_ctrl);
+		if (is_legend_line)
+			sizer->Add(custom_ctrl, 0, wxEXPAND | wxLEFT, wxOSX ? 0 : 10);
+		else
             sizer->Add(custom_ctrl, 0, wxEXPAND | wxALL, wxOSX || !staticbox ? 0 : 5);
     }
 
@@ -286,18 +343,16 @@ void OptionsGroup::activate_line(Line& line)
 		return;
 	}
 
-    auto grid_sizer = m_grid_sizer;
-
     if (custom_ctrl)
         m_use_custom_ctrl_as_parent = true;
 
     // if we have an extra column, build it
     if (extra_column) {
         m_extra_column_item_ptrs.push_back(extra_column(this->ctrl_parent(), line));
-        grid_sizer->Add(m_extra_column_item_ptrs.back(), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 3);
-    }
+        m_grid_sizer->Add(m_extra_column_item_ptrs.back(), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 3);
+	}
 
-    // Build a label if we have it
+    // Build a (title) label if we have it
     wxStaticText* label=nullptr;
     if (title_width != 0) {
         if (custom_ctrl) {
@@ -321,12 +376,12 @@ void OptionsGroup::activate_line(Line& line)
                 label->Wrap(title_width * wxGetApp().em_unit()); // avoid a Linux/GTK bug
             }
             if (!line.near_label_widget)
-                grid_sizer->Add(label, 0, (staticbox ? 0 : wxALIGN_RIGHT | wxRIGHT) | wxALIGN_CENTER_VERTICAL, line.label.IsEmpty() ? 0 : 5);
+                m_grid_sizer->Add(label, 0, (staticbox ? 0 : wxALIGN_RIGHT | wxRIGHT) | wxALIGN_CENTER_VERTICAL, line.label.IsEmpty() ? 0 : 5);
             else if (!line.label.IsEmpty()) {
                 // If we're here, we have some widget near the label
                 // so we need a horizontal sizer to arrange these things
                 auto sizer = new wxBoxSizer(wxHORIZONTAL);
-                grid_sizer->Add(sizer, 0, wxEXPAND | (staticbox ? wxALL : wxBOTTOM | wxTOP | wxLEFT), staticbox ? 0 : 1);
+                m_grid_sizer->Add(sizer, 0, wxEXPAND | (staticbox ? wxALL : wxBOTTOM | wxTOP | wxLEFT), staticbox ? 0 : 1);
                 sizer->Add(label, 0, (staticbox ? 0 : wxALIGN_RIGHT | wxRIGHT) | wxALIGN_CENTER_VERTICAL, 5);
             }
             if (label != nullptr && line.label_tooltip != "")
@@ -340,78 +395,87 @@ void OptionsGroup::activate_line(Line& line)
         if (custom_ctrl)
             line.widget_sizer = wgt;
         else
-            grid_sizer->Add(wgt, 0, wxEXPAND | wxBOTTOM | wxTOP, (wxOSX || line.label.IsEmpty()) ? 0 : 5);
+            m_grid_sizer->Add(wgt, 0, wxEXPAND | wxBOTTOM | wxTOP, (wxOSX || line.label.IsEmpty()) ? 0 : 5);
 		return;
 	}
 
 	// If we're here, we have more than one option or a single option with sidetext
     // so we need a horizontal sizer to arrange these things
-	auto sizer = new wxBoxSizer(wxHORIZONTAL);
-    if (!custom_ctrl)
-        grid_sizer->Add(sizer, 0, wxEXPAND | (staticbox ? wxALL : wxBOTTOM | wxTOP | wxLEFT), staticbox ? 0 : 1);
+    wxBoxSizer* h_sizer{ nullptr };
+    if (!custom_ctrl) {
+        // but this sizer is currently used just for NON-custom_ctrl cases
+        h_sizer = new wxBoxSizer(wxHORIZONTAL);
+        m_grid_sizer->Add(h_sizer, 0, wxEXPAND | (staticbox ? wxALL : wxBOTTOM | wxTOP | wxLEFT), staticbox ? 0 : 1);
+    }
+
     // If we have a single option with no sidetext just add it directly to the grid sizer
     if (option_set.size() == 1 && option_set.front().opt.sidetext.size() == 0 &&
-		option_set.front().side_widget == nullptr && line.get_extra_widgets().size() == 0) {
-		const auto& option = option_set.front();
-		const auto& field = build_field(option);
+        option_set.front().side_widget == nullptr && line.get_extra_widgets().size() == 0 &&
+        !option_set.front().opt.can_be_disabled) {
+        const auto& option = option_set.front();
+        const auto& field = build_field(option);
 
         if (!custom_ctrl) {
             if (is_window_field(field))
-                sizer->Add(field->getWindow(), option.opt.full_width ? 1 : 0,
+                h_sizer->Add(field->getWindow(), option.opt.full_width ? 1 : 0,
                     wxBOTTOM | wxTOP | (option.opt.full_width ? int(wxEXPAND) : int(wxALIGN_CENTER_VERTICAL)), (wxOSX || !staticbox) ? 0 : 2);
             if (is_sizer_field(field))
-                sizer->Add(field->getSizer(), 1, (option.opt.full_width ? int(wxEXPAND) : int(wxALIGN_CENTER_VERTICAL)), 0);
+                h_sizer->Add(field->getSizer(), 1, (option.opt.full_width ? int(wxEXPAND) : int(wxALIGN_CENTER_VERTICAL)), 0);
         }
         return;
 	}
 
-    bool is_multioption_line = option_set.size() > 1;
-    m_line_sizer.back() = sizer;
-    wxSizer* sizer_tmp = sizer;
-    for (auto opt : option_set) {
-		ConfigOptionDef option = opt.opt;
-		// add label if any
-		if ((is_multioption_line || line.label.IsEmpty()) && !option.label.empty() && !custom_ctrl) {
-//!			To correct translation by context have to use wxGETTEXT_IN_CONTEXT macro from wxWidget 3.1.1
-			std::string opt_label = (option.label.empty() || option.label.back() != '_') ? option.label : option.label.substr(0, option.label.size() - 1);
-			wxString str_label = /*(opt_label == L_CONTEXT("Top", "Layers") || opt_label == L_CONTEXT("Bottom", "Layers")) ?
-								_CTX(opt_label, "Layers") :*/
-								_(opt_label);
-
-            bool no_dots = str_label.empty() || option.label.back() == '_';
-			label = new wxStaticText(this->ctrl_parent(), wxID_ANY,
-				(no_dots ? "" : (str_label + ":")), wxDefaultPosition, //wxDefaultSize);
-				(option.label_width >= 0) ? ((option.label_width != 0) ? wxSize(option.label_width*wxGetApp().em_unit(), -1) : wxDefaultSize) :
-					((label_width > 0) ? wxSize(label_width * wxGetApp().em_unit(), -1) : (wxDefaultSize))
-				, wxALIGN_RIGHT);
-            label->SetBackgroundStyle(wxBG_STYLE_PAINT);
-            label->SetFont(wxGetApp().normal_font());
-			if (option.label_width > 0 || label_width >0) {
-				label->Wrap((option.label_width > 0 ? option.label_width : label_width)* wxGetApp().em_unit()); // avoid a Linux/GTK bug
-			}
-            m_options_mode.back()[opt.opt.mode].push_back(sizer_tmp->GetItemCount());
-            sizer_tmp->Add(label, 0, wxALIGN_CENTER_VERTICAL, 0);
-        }
-
+    for (const Option& opt : option_set) {
         // add field
-        const Option& opt_ref = opt;
-        auto& field = build_field(opt_ref);
-        if (!custom_ctrl) {
+        auto& field = build_field(opt);
+
+        if (!custom_ctrl) { // TODO review if this if shoudln't be always true
+            ConfigOptionDef option = opt.opt;
+            // add label if any
+            if ((option_set.size() > 1 || line.label.IsEmpty()) && !option.label.empty()) {
+                const std::string opt_label = (option.label == "_") ? "" :
+                    (option.label.empty() || option.label.back() != '_') ?
+                                                                      option.label :
+                                                                      option.label.substr(0, option.label.size() - 1);
+                // those two parameter names require localization with context
+                const wxString str_label = _(opt_label);
+                bool no_dots = str_label.empty() || option.label.back() == '_';
+                label = new wxStaticText(this->ctrl_parent(), wxID_ANY,
+                   (no_dots ? str_label : (str_label + ": ")), wxDefaultPosition, //wxDefaultSize);
+                   (option.label_width >= 0) ? ((option.label_width != 0) ? wxSize(option.label_width*wxGetApp().em_unit(), -1) : wxDefaultSize) :
+                                             ((label_width > 0) ? wxSize(label_width * wxGetApp().em_unit(), -1) : (wxDefaultSize)),
+                                         wxALIGN_RIGHT);
+                label->SetBackgroundStyle(wxBG_STYLE_PAINT);
+                label->SetFont(wxGetApp().normal_font());
+                if (option.label_width > 0 || label_width >0) {
+                    label->Wrap((option.label_width > 0 ? option.label_width : label_width)* wxGetApp().em_unit()); // avoid a Linux/GTK bug
+                }
+                m_options_mode.back()[opt.opt.mode].push_back(h_sizer->GetItemCount());
+                h_sizer->Add(label, 0, wxALIGN_CENTER_VERTICAL, 0);
+            }
+
+            //add enable button
+            if (opt.opt.can_be_disabled) {
+                //h_sizer->Add(new wxStaticText(this->ctrl_parent(), wxID_ANY, " "), 0, wxALIGN_CENTER_VERTICAL, 0);
+                h_sizer->Add(field->create_enable_widget(this->ctrl_parent()), 0, wxALIGN_CENTER_VERTICAL, 0);
+                //h_sizer->Add(new wxStaticText(this->ctrl_parent(), wxID_ANY,"!"), 0, wxALIGN_CENTER_VERTICAL, 0);
+            }
+
             if (option_set.size() == 1 && option_set.front().opt.full_width)
             {
                 const auto v_sizer = new wxBoxSizer(wxVERTICAL);
-            m_options_mode.back()[opt.opt.mode].push_back(sizer_tmp->GetItemCount());
-                sizer_tmp->Add(v_sizer, 1, wxEXPAND);
+                m_options_mode.back()[opt.opt.mode].push_back(h_sizer->GetItemCount());
+                h_sizer->Add(v_sizer, 1, wxEXPAND);
                 is_sizer_field(field) ?
                     v_sizer->Add(field->getSizer(), 0, wxEXPAND) :
                     v_sizer->Add(field->getWindow(), 0, wxEXPAND);
                 break;
             }
 
-            m_options_mode.back()[opt.opt.mode].push_back(sizer_tmp->GetItemCount());
+            m_options_mode.back()[opt.opt.mode].push_back(h_sizer->GetItemCount());
             is_sizer_field(field) ?
-                sizer_tmp->Add(field->getSizer(), 0, wxALIGN_CENTER_VERTICAL, 0) :
-                sizer_tmp->Add(field->getWindow(), 0, wxALIGN_CENTER_VERTICAL, 0);
+                h_sizer->Add(field->getSizer(), 0, wxALIGN_CENTER_VERTICAL, 0) :
+                h_sizer->Add(field->getWindow(), 0, wxALIGN_CENTER_VERTICAL, 0);
 
             // add sidetext if any
             if ((!option.sidetext.empty() || sidetext_width > 0) && option.sidetext_width != 0){
@@ -433,39 +497,40 @@ void OptionsGroup::activate_line(Line& line)
                                                     /*wxDefaultSize*/, wxALIGN_LEFT);
                 sidetext->SetBackgroundStyle(wxBG_STYLE_PAINT);
                 sidetext->SetFont(wxGetApp().normal_font());
-                m_options_mode.back()[opt.opt.mode].push_back(sizer_tmp->GetItemCount());
-                sizer_tmp->Add(sidetext, 0, wxLEFT | wxALIGN_CENTER_VERTICAL, 4);
+                m_options_mode.back()[opt.opt.mode].push_back(h_sizer->GetItemCount());
+                h_sizer->Add(sidetext, 0, wxLEFT | wxALIGN_CENTER_VERTICAL, 4);
 
             }
 
             // add side widget if any
             if (opt.side_widget != nullptr) {
-            m_options_mode.back()[opt.opt.mode].push_back(sizer_tmp->GetItemCount());
-                sizer_tmp->Add(opt.side_widget(this->ctrl_parent())/*!.target<wxWindow>()*/, 0, wxLEFT | wxALIGN_CENTER_VERTICAL, 1);    //! requires verification
+                m_options_mode.back()[opt.opt.mode].push_back(h_sizer->GetItemCount());
+                h_sizer->Add(opt.side_widget(this->ctrl_parent())/*!.target<wxWindow>()*/, 0, wxLEFT | wxALIGN_CENTER_VERTICAL, 1);    //! requires verification
             }
 
-            if (opt.opt_id != option_set.back().opt_id) //! instead of (opt != option_set.back())
-            m_options_mode.back()[opt.opt.mode].push_back(sizer_tmp->GetItemCount());
-                sizer_tmp->AddSpacer(6);
+            if (opt.opt_key != option_set.back().opt_key || opt.opt_idx != option_set.back().opt_idx) {//! instead of (opt != option_set.back())
+                m_options_mode.back()[opt.opt.mode].push_back(h_sizer->GetItemCount());
+                h_sizer->AddSpacer(6);
+            }
         }
-	}
+    }
 
-	// add extra sizers if any
-	for (auto extra_widget : line.get_extra_widgets())
+    // add extra sizers if any
+    for (auto extra_widget : line.get_extra_widgets())
     {
         if (line.get_extra_widgets().size() == 1 && !staticbox)
         {
             // extra widget for non-staticbox option group (like for the frequently used parameters on the sidebar) should be wxALIGN_RIGHT
             const auto v_sizer = new wxBoxSizer(wxVERTICAL);
-            sizer->Add(v_sizer, option_set.size() == 1 ? 0 : 1, wxEXPAND);
+            h_sizer->Add(v_sizer, option_set.size() == 1 ? 0 : 1, wxEXPAND);
             v_sizer->Add(extra_widget(this->ctrl_parent()), 0, wxALIGN_RIGHT);
             return;
         }
 
         line.extra_widget_sizer = extra_widget(this->ctrl_parent());
         if (!custom_ctrl)
-            sizer->Add(line.extra_widget_sizer, 0, wxLEFT | wxALIGN_CENTER_VERTICAL, 4);        //! requires verification
-	}
+            h_sizer->Add(line.extra_widget_sizer, 0, wxLEFT | wxALIGN_CENTER_VERTICAL, 4);        //! requires verification
+    }
 }
 
 // create all controls for the option group from the m_lines
@@ -532,20 +597,8 @@ void OptionsGroup::clear(bool destroy_custom_ctrl)
 	m_grid_sizer = nullptr;
 	sizer = nullptr;
 
-	for (Line& line : m_lines) {
-        if (line.near_label_widget_win)
-            line.near_label_widget_win = nullptr;
-
-        if (line.widget_sizer) {
-            line.widget_sizer->Clear(true);
-            line.widget_sizer = nullptr;
-        }
-
-        if (line.extra_widget_sizer) {
-            line.extra_widget_sizer->Clear(true);
-            line.extra_widget_sizer = nullptr;
-        }
-	}
+    for (Line& line : m_lines)
+        line.clear();
 
     if (custom_ctrl) {
         for (auto const &item : m_fields) {
@@ -567,6 +620,7 @@ Line OptionsGroup::create_single_option_line(const Option& option, const std::st
 {
     wxString tooltip = _(option.opt.tooltip);
     update_Slic3r_string(tooltip);
+    // note: Line constructor already do _()
 	Line retval{ _(option.opt.label), tooltip };
 	retval.label_path = path;
     if(option.opt.label.empty()) {
@@ -580,23 +634,12 @@ Line OptionsGroup::create_single_option_line(const Option& option, const std::st
     return retval;
 }
 
-void OptionsGroup::clear_fields_except_of(const std::vector<std::string> left_fields)
-{
-    auto it = m_fields.begin();
-    while (it != m_fields.end()) {
-        if (std::find(left_fields.begin(), left_fields.end(), it->first) == left_fields.end())
-            it = m_fields.erase(it);
-        else
-            it++;
-    }
-}
-
-void OptionsGroup::on_change_OG(const t_config_option_key& opt_id, const boost::any& value) {
-    auto it = m_options.find(opt_id);
+void OptionsGroup::on_change_OG(const OptionKeyIdx& opt_key_idx, bool enabled, const boost::any& value) {
+    auto it = m_options.find(opt_key_idx);
     if (it != m_options.end() && it->second.opt.is_script && it->second.script) {
         it->second.script->call_script_function_set(it->second.opt, value);
     }else if (m_on_change != nullptr)
-		m_on_change(opt_id, value);
+        m_on_change(opt_key_idx, enabled, value);
 }
 
 void OptionsGroup::update_script_presets(bool init) {
@@ -605,110 +648,101 @@ void OptionsGroup::update_script_presets(bool init) {
             if (init || get_field(key_opt.first)) {
                 boost::any val = key_opt.second.script->call_script_function_get_value(key_opt.second.opt);
                 if (val.empty()) {
-                    MessageDialog(nullptr, "Error, can't find the script to get the value for the widget '" + key_opt.first + "'", _L("Error"), wxOK | wxICON_ERROR).ShowModal();
+                    MessageDialog(nullptr, "Error, can't find the script to get the value for the widget '" + key_opt.first.key + "'", _L("Error"), wxOK | wxICON_ERROR).ShowModal();
                 } else {
-                    this->set_value(key_opt.first, val);
+                    this->set_value(key_opt.first, val, true, false);
                 }
             } //if not, it will set at ConfigOptionsGroup::reload_config()
         }
     }
 }
-bool ConfigOptionsGroup::has_option_def(const std::string &opt_key)
+bool ConfigOptionsGroup::has_option_def(const OptionKeyIdx &opt_key_idx)
 {
-    return this->m_options.find(opt_key) != this->m_options.end();
+    return this->m_options.find(opt_key_idx) != this->m_options.end();
 }
-const Option *ConfigOptionsGroup::get_option_def(const std::string &opt_key)
+const Option *ConfigOptionsGroup::get_option_def(const OptionKeyIdx &opt_key_idx)
 {
-    auto it = this->m_options.find(opt_key);
+    auto it = this->m_options.find(opt_key_idx);
     return it == m_options.end() ? nullptr : &it->second;
 }
 
-bool ConfigOptionsGroup::has_option(const std::string& opt_key, int opt_index /*= -1*/)
+bool ConfigOptionsGroup::has_option(const t_config_option_key& opt_key, int opt_index /*= -1*/)
 {
     if (!m_config->has(opt_key)) {
-        std::cerr << "No " << opt_key << " in ConfigOptionsGroup config.\n";
+        BOOST_LOG_TRIVIAL(error) << "No " << opt_key << " in ConfigOptionsGroup config.";
     }
 
-    std::string opt_id = opt_index == -1 ? opt_key : opt_key + "#" + std::to_string(opt_index);
-    return m_opt_map.find(opt_id) != m_opt_map.end();
+    return m_opt_set.find(OptionKeyIdx{opt_key, opt_index}) != m_opt_set.end();
 }
 
-Option ConfigOptionsGroup::create_option_from_def(const std::string &opt_key, int opt_index /*= -1*/)
+Option ConfigOptionsGroup::create_option_from_def(const t_config_option_key &opt_key, int32_t opt_index /*= -1*/)
 {
     if (!m_config->has(opt_key)) {
-        std::cerr << "No " << opt_key << " in ConfigOptionsGroup config.\n";
+        BOOST_LOG_TRIVIAL(error) << "No " << opt_key << " in ConfigOptionsGroup config.";
     }
+    //m_opt_set.emplace(opt_key, opt_index);
+    m_opt_set.insert(OptionKeyIdx{opt_key, opt_index});
 
-    std::string                 opt_id = opt_index == -1 ? opt_key : opt_key + "#" + std::to_string(opt_index);
-    std::pair<std::string, int> pair(opt_key, opt_index);
-    m_opt_map.emplace(opt_id, pair);
-
-    return Option(*m_config->def()->get(opt_key), opt_id);
+    return Option(*m_config->def()->get(opt_key), opt_index);
 }
 
-void ConfigOptionsGroup::register_to_search(const std::string& opt_key, const ConfigOptionDef& option_def, int opt_index /*= -1*/, bool reset)
-{ // fill group and category values just for options from Settings Tab
-    std::string opt_id = opt_index == -1 ? opt_key : opt_key + "#" + std::to_string(opt_index);
-    wxGetApp().sidebar().get_searcher().add_key(opt_id, static_cast<Preset::Type>(this->config_type()), this->title, this->config_category(), option_def, reset);
-}
-
-
-void ConfigOptionsGroup::on_change_OG(const t_config_option_key& opt_id, const boost::any& value)
+void ConfigOptionsGroup::register_to_search(const t_config_option_key& opt_key, const ConfigOptionDef& option_def, int32_t opt_index /*= -1*/, bool reset)
 {
-	if (!m_opt_map.empty())
-	{
-		auto it = m_opt_map.find(opt_id);
-		if (it == m_opt_map.end())
-		{
-			OptionsGroup::on_change_OG(opt_id, value);
-			return;
-		}
-
-		auto 				itOption  = it->second;
-		const std::string  &opt_key   = itOption.first;
-		int 			    opt_index = itOption.second;
-
-		this->change_opt_value(opt_key, value, opt_index);
-	}
-
-	OptionsGroup::on_change_OG(opt_id, value);
+    // fill group and category values just for options from Settings Tab
+    wxGetApp().sidebar().get_searcher().add_key(OptionKeyIdx{opt_key, opt_index}, static_cast<Preset::Type>(this->config_type()), this->title, this->config_category(), option_def, reset);
 }
 
-void ConfigOptionsGroup::back_to_initial_value(const std::string& opt_key)
-{
-	if (m_get_initial_config == nullptr)
-		return;
-	back_to_config_value(m_get_initial_config(), opt_key);
+void ConfigOptionsGroup::on_change_OG(const OptionKeyIdx &opt_key_idx, bool enabled, const boost::any &value) {
+    auto it = m_opt_set.find(opt_key_idx);
+    if(it != m_opt_set.end()) {
+        // in m_opt_set > real opt (not a script & can call change_opt_value)
+        this->change_opt_value(opt_key_idx.key, enabled, value, opt_key_idx.idx);
+    }
+    OptionsGroup::on_change_OG(opt_key_idx, enabled, value);
 }
 
-void ConfigOptionsGroup::back_to_sys_value(const std::string& opt_key)
-{
-	if (m_get_sys_config == nullptr)
-		return;
-	if (!have_sys_config())
-		return;
-	back_to_config_value(m_get_sys_config(), opt_key);
+void ConfigOptionsGroup::back_to_initial_value(const OptionKeyIdx &opt_key_idx) {
+    if (m_get_initial_config == nullptr)
+        return;
+    back_to_config_value(m_get_initial_config(), opt_key_idx);
 }
 
-void ConfigOptionsGroup::back_to_config_value(const DynamicPrintConfig& config, const std::string& opt_key)
+void ConfigOptionsGroup::back_to_sys_value(const OptionKeyIdx &opt_key_idx) {
+    if (m_get_sys_config == nullptr)
+        return;
+    if (!have_sys_config())
+        return;
+    back_to_config_value(m_get_sys_config(), opt_key_idx);
+}
+
+void ConfigOptionsGroup::back_to_config_value(const DynamicPrintConfig& config, const OptionKeyIdx& opt_key_idx)
 {
-	boost::any value;
-    auto it_opt = m_options.find(opt_key);
-    auto it_opt_map = m_opt_map.find(opt_key);
-	if (opt_key == "extruders_count") {
-		auto   *nozzle_diameter = dynamic_cast<const ConfigOptionFloats*>(config.option("nozzle_diameter"));
-		value = int(nozzle_diameter->values.size());
-	} else if (opt_key == "milling_count") {
-		auto   *milling_diameter = dynamic_cast<const ConfigOptionFloats*>(config.option("milling_diameter"));
-		value = int(milling_diameter->values.size());
-	} else if (it_opt != m_options.end() && it_opt->second.opt.is_script) {
+    boost::any value;
+    bool enabled = true;
+    auto it_opt = m_options.find(opt_key_idx);
+    auto it_opt_set = m_opt_set.find(opt_key_idx);
+    const int opt_index = opt_key_idx.idx;
+    if (opt_key_idx.key == "bed_shape") {
+        for (const std::string &key : {"bed_custom_texture", "bed_custom_model"}) {
+            const ConfigOptionString *option = config.option<ConfigOptionString>(key);
+            assert(option);
+            this->change_opt_value(key, option->is_enabled(), option->value);
+        }
+    }
+    if (opt_key_idx.key == "extruders_count") {
+        auto *nozzle_diameter = dynamic_cast<const ConfigOptionFloats *>(config.option("nozzle_diameter"));
+        value = int(nozzle_diameter->size());
+    } else if (opt_key_idx.key == "milling_count") {
+        auto *milling_diameter = dynamic_cast<const ConfigOptionFloats *>(config.option("milling_diameter"));
+        value = int(milling_diameter->size());
+    } else if (it_opt != m_options.end() && it_opt->second.opt.is_script) {
         // when a scripted key is reset, reset its deps
         // call the reset function if it exits
         if (!it_opt->second.script->call_script_function_reset(it_opt->second.opt)) {
             // Fucntion doesn't exists, reset the fields from the 'depends'
             // reset in all tabs
             // first set_key_value
-            PrinterTechnology printer_technology = wxGetApp().preset_bundle->printers.get_edited_preset().printer_technology();
+            PrinterTechnology printer_technology = wxGetApp().get_current_printer_technology();
             std::vector<Tab*> tab_list = wxGetApp().tabs_list;
             std::set<size_t> modified_tabs_idx;
             for (const std::string& dep_key : it_opt->second.opt.depends_on) {
@@ -734,10 +768,11 @@ void ConfigOptionsGroup::back_to_config_value(const DynamicPrintConfig& config, 
                     const DynamicPrintConfig& initial_conf = tab->m_presets->get_selected_preset().config;
                     DynamicPrintConfig& edited_conf = tab->m_presets->get_edited_preset().config;
                     if (initial_conf.has(dep_key) && edited_conf.has(dep_key)) {
-                        ConfigOption* conf_opt = initial_conf.option(dep_key)->clone();
+                        const ConfigOption* conf_opt = initial_conf.option(dep_key);
+                        assert(conf_opt->is_scalar());
                         // update the field
-                        tab->set_value(dep_key, initial_conf.option(dep_key)->get_any());
-                        tab->on_value_change(dep_key, conf_opt->get_any());
+                        tab->set_value(OptionKeyIdx::scalar(dep_key), conf_opt->get_any(), conf_opt->is_enabled());
+                        tab->on_value_change(OptionKeyIdx::scalar(dep_key), conf_opt->get_any());
                     }
                 }
             }
@@ -747,43 +782,42 @@ void ConfigOptionsGroup::back_to_config_value(const DynamicPrintConfig& config, 
             }
         }
         return;
-    } else if (it_opt_map == m_opt_map.end() ||
-		    // This option doesn't have corresponded field
-             is_option_without_field(opt_key) ) {
-        value = config.option(opt_key)->get_any();
-        this->change_opt_value(opt_key, value);
+    } else if (it_opt_set == m_opt_set.end() ||
+               // This option doesn't have corresponded field
+             is_option_without_field(opt_key_idx.key) ) {
+        const ConfigOption* option = config.option(opt_key_idx.key);
+        assert(option);
+        assert(opt_key_idx.idx < 0);
+        this->change_opt_value(opt_key_idx.key, option->is_enabled(), option->get_any(), opt_key_idx.idx);
+        OptionsGroup::on_change_OG(opt_key_idx, option->is_enabled(), value);
         return;
     } else {
-		auto opt_id = it_opt_map->first;
-		std::string opt_short_key = m_opt_map.at(opt_id).first;
-		int opt_index = m_opt_map.at(opt_id).second;
-        value = config.option(opt_short_key)->get_any(opt_index);
-	}
+        const ConfigOption* option = config.option(opt_key_idx.key);
+        assert(option);
+        value = option->get_any(opt_key_idx.idx);
+        enabled = option->is_enabled(opt_key_idx.idx);
+    }
 
-    if(set_value(opt_key, value))
-        on_change_OG(opt_key, get_value(opt_key));
+    if (this->set_value(opt_key_idx, value, enabled, false)) {
+        // assert(config.option(opt_short_key)); // extruder_count: not a real config item
+        on_change_OG(opt_key_idx, config.has(opt_key_idx.key) ? config.option(opt_key_idx.key)->is_enabled(opt_key_idx.idx) : true, get_value(opt_key_idx));
+    }
 }
 
-void ConfigOptionsGroup::on_kill_focus(const std::string& opt_key)
+void ConfigOptionsGroup::on_kill_focus(const OptionKeyIdx& opt_key)
 {
-    if (m_fill_empty_value)
-        m_fill_empty_value(opt_key);
-    else
-	    reload_config();
+    //not used: Deprecated
+    //if (m_fill_empty_value)
+    //    m_fill_empty_value(opt_key);
+    //else
+    reload_config();
 }
 
-void ConfigOptionsGroup::reload_config()
-{
-	for (auto &kvp : m_opt_map) {
-		// Name of the option field (name of the configuration key, possibly suffixed with '#' and the index of a scalar inside a vector.
-		const std::string &opt_id    = kvp.first;
-		// option key (may be scalar or vector)
-		const std::string &opt_key   = kvp.second.first;
-		// index in the vector option, zero for scalars
-		int 			   opt_index = kvp.second.second;
-		const ConfigOptionDef &option = m_options.at(opt_id).opt;
-        this->set_value(opt_id, m_config->option(opt_key)->get_any(opt_index));
-	}
+void ConfigOptionsGroup::reload_config() {
+    for (auto &opt_key_idx : m_opt_set) {
+        const ConfigOption *option = m_config->option(opt_key_idx.key);
+        this->set_value(opt_key_idx, option->get_any(opt_key_idx.idx), option->is_enabled(opt_key_idx.idx), false);
+    }
     update_script_presets();
 }
 
@@ -903,7 +937,6 @@ void ConfigOptionsGroup::msw_rescale()
                 // check if window is ScalableButton
                 ScalableButton* sc_btn = dynamic_cast<ScalableButton*>(win);
                 if (sc_btn) {
-                    sc_btn->msw_rescale();
                     sc_btn->SetSize(sc_btn->GetBestSize());
                     return;
                 }
@@ -948,7 +981,7 @@ void ConfigOptionsGroup::sys_color_changed()
                 wxWindow* win = item->GetWindow();
                 // check if window is ScalableButton
                 if (ScalableButton* sc_btn = dynamic_cast<ScalableButton*>(win)) {
-                    sc_btn->msw_rescale();
+                    sc_btn->sys_color_changed();
                     return;
                 }
                 wxGetApp().UpdateDarkUI(win, dynamic_cast<wxButton*>(win) != nullptr);
@@ -963,9 +996,9 @@ void ConfigOptionsGroup::sys_color_changed()
             update(line.extra_widget_sizer);
     }
 
-	// update undo buttons : rescale bitmaps
-	for (const auto& field : m_fields)
-		field.second->sys_color_changed();
+    // update undo buttons : rescale bitmaps
+    for (const auto &field : m_fields)
+        field.second->sys_color_changed();
 }
 
 void ConfigOptionsGroup::refresh()
@@ -974,48 +1007,35 @@ void ConfigOptionsGroup::refresh()
         custom_ctrl->Refresh();
 }
 
-Field* ConfigOptionsGroup::get_fieldc(const t_config_option_key& opt_key, int opt_index)
-{
-	Field* field = get_field(opt_key);
-	if (field != nullptr)
-		return field;
-	std::string opt_id = "";
-	for (t_opt_map::iterator it = m_opt_map.begin(); it != m_opt_map.end(); ++it) {
-		if (opt_key == m_opt_map.at(it->first).first && opt_index == m_opt_map.at(it->first).second) {
-			opt_id = it->first;
-			break;
-		}
-	}
-	return opt_id.empty() ? nullptr : get_field(opt_id);
-}
+std::pair<OG_CustomCtrl *, bool *> ConfigOptionsGroup::get_custom_ctrl_with_blinking_ptr(
+    const t_config_option_key &opt_key, int32_t opt_index /* = -1*/) {
+    Field *field = get_field({opt_key, opt_index});
 
-std::pair<OG_CustomCtrl*, bool*> ConfigOptionsGroup::get_custom_ctrl_with_blinking_ptr(const t_config_option_key& opt_key, int opt_index/* = -1*/)
-{
-	Field* field = get_fieldc(opt_key, opt_index);
+    if (field)
+        return {custom_ctrl, field->get_blink_ptr()};
 
-	if (field)
-		return {custom_ctrl, field->get_blink_ptr()};
+    for (Line &line : m_lines)
+        for (const Option &opt : line.get_options())
+            if (opt.opt_key == opt_key && opt.opt_idx == opt_index && line.widget)
+                return {custom_ctrl, line.get_blink_ptr()};
 
-	for (Line& line : m_lines)
-		for (const Option& opt : line.get_options())
-			if (opt.opt_id == opt_key && line.widget)
-				return { custom_ctrl, line.get_blink_ptr() };
-
-	return { nullptr, nullptr };
+    return {nullptr, nullptr};
 }
 
 // Change an option on m_config, possibly call ModelConfig::touch().
-void ConfigOptionsGroup::change_opt_value(const t_config_option_key& opt_key, const boost::any& value, int opt_index /*= 0*/)
+void ConfigOptionsGroup::change_opt_value(const t_config_option_key& opt_key, bool enable, const boost::any& value, int opt_index /*= -1*/)
 {
     if (m_config_mutable) {
         ConfigOption *opt = m_config_mutable->option(opt_key);
         assert(opt);
-        if(opt)
+        if (opt) {
             opt->set_any(value, opt_index);
+            opt->set_enabled(enable, opt_index);
+        }
         assert(!m_modelconfig);
     } else {
         assert(m_modelconfig);
-        m_modelconfig->set_any(opt_key, value, opt_index);
+        m_modelconfig->set_any(opt_key, enable, value, opt_index);
     }
 }
 
@@ -1024,7 +1044,7 @@ wxString OptionsGroup::get_url(const std::string& path_end)
     if (path_end.empty())
         return wxEmptyString;
 
-    wxString language = get_app_config()->get("translation_language");
+    wxString language = wxGetApp().current_language_code_safe();
     wxString lang_marker = language.IsEmpty() ? "en" : language.BeforeFirst('_');
 
     return wxString( SLIC3R_DOC_URL /*"https://help.prusa3d.com/"*/) + lang_marker + wxString("/article/" + path_end);
@@ -1035,17 +1055,19 @@ bool OptionsGroup::launch_browser(const std::string& path_end)
     return wxGetApp().open_browser_with_warning_dialog(OptionsGroup::get_url(path_end), wxGetApp().mainframe->m_tabpanel);
 }
 
-static const std::vector<std::string> option_without_field = {
+// list of options, which doesn't have a related filed
+static const std::set<t_config_option_key> options_without_field = {
+    "compatible_printers",
+    "compatible_prints",
     "bed_shape",
     "filament_ramming_parameters",
+    "extruder_extrusion_multiplier_speed",
     "gcode_substitutions",
-    "compatible_prints",
-    "compatible_printers"
 };
 
-bool OptionsGroup::is_option_without_field(const std::string& opt_key)
+bool OptionsGroup::is_option_without_field(const t_config_option_key& opt_key)
 {
-    return  std::find(option_without_field.begin(), option_without_field.end(), opt_key) != option_without_field.end();
+    return  options_without_field.find(opt_key) != options_without_field.end();
 }
 
 
@@ -1072,34 +1094,62 @@ void ogStaticText::SetText(const wxString& value, bool wrap/* = true*/)
 
 void ogStaticText::SetPathEnd(const std::string& link)
 {
+#ifndef __linux__
+
+    Bind(wxEVT_ENTER_WINDOW, [this, link](wxMouseEvent& event) {
+        SetToolTip(OptionsGroup::get_url(get_app_config()->get("suppress_hyperlinks") != "disable" ? link : std::string()));
+        FocusText(true);
+        event.Skip();
+    });
+    Bind(wxEVT_LEAVE_WINDOW, [this](wxMouseEvent& event) { FocusText(false); event.Skip(); });
+
     Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent& event) {
         if (HasCapture())
             return;
         this->CaptureMouse();
         event.Skip();
-    } );
+    });
     Bind(wxEVT_LEFT_UP, [link, this](wxMouseEvent& event) {
         if (!HasCapture())
             return;
         ReleaseMouse();
         OptionsGroup::launch_browser(link);
         event.Skip();
-    } );
-    Bind(wxEVT_ENTER_WINDOW, [this, link](wxMouseEvent& event) {
-        SetToolTip(OptionsGroup::get_url(get_app_config()->get("suppress_hyperlinks") != "1" ? link : std::string()));
-        FocusText(true); 
-        event.Skip(); 
     });
-    Bind(wxEVT_LEAVE_WINDOW, [this](wxMouseEvent& event) { FocusText(false); event.Skip(); });
+
+#else
+
+    // Workaround: On Linux wxStaticText doesn't receive wxEVT_ENTER(LEAVE)_WINDOW events,
+    // so implement this behaviour trough wxEVT_MOTION events for this control and it's parent
+    Bind(wxEVT_MOTION, [link, this](wxMouseEvent& event) {
+        SetToolTip(OptionsGroup::get_url(get_app_config()->get("suppress_hyperlinks") != "disable" ? link : std::string()));
+        FocusText(true);
+        event.Skip();
+    });
+    GetParent()->Bind(wxEVT_MOTION, [this](wxMouseEvent& event) {
+        FocusText(false);
+        event.Skip();
+    });
+
+    // On Linux a mouse capturing causes a totally application freeze
+    Bind(wxEVT_LEFT_UP, [link, this](wxMouseEvent& event) {
+        OptionsGroup::launch_browser(link);
+        event.Skip();
+    });
+
+#endif
 }
 
 void ogStaticText::FocusText(bool focus)
 {
-    if (get_app_config()->get("suppress_hyperlinks") == "1")
+    if (get_app_config()->get("suppress_hyperlinks") == "disable")
         return;
 
     SetFont(focus ? Slic3r::GUI::wxGetApp().link_font() :
-                    Slic3r::GUI::wxGetApp().normal_font());
+        Slic3r::GUI::wxGetApp().normal_font());
+#ifdef __linux__
+    this->GetContainingSizer()->Layout();
+#endif
     Refresh();
 }
 

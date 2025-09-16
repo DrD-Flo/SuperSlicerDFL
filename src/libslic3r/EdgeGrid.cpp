@@ -1,7 +1,12 @@
+///|/ Copyright (c) Prusa Research 2016 - 2022 Vojtěch Bubník @bubnikv, Lukáš Matěna @lukasmatena
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include <algorithm>
-#include <vector>
-#include <float.h>
+#include <cassert>
+#include <cfloat>
 #include <unordered_map>
+#include <vector>
 
 #include <png.h>
 
@@ -21,7 +26,6 @@
 #undef NDEBUG
 #endif
 
-#include <assert.h>
 
 namespace Slic3r {
 
@@ -134,11 +138,6 @@ void EdgeGrid::Grid::create(const ExPolygons &expolygons, coord_t resolution)
 	}
 
 	create_from_m_contours(resolution);
-}
-
-void EdgeGrid::Grid::create(const ExPolygonCollection &expolygons, coord_t resolution)
-{
-	create(expolygons.expolygons, resolution);
 }
 
 // m_contours has been initialized. Now fill in the edge grid.
