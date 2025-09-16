@@ -1,0 +1,41 @@
+name: C/C++ Release candidate arm macos
+
+on:
+  push:
+    branches:
+      - macos-image-build-test
+
+jobs:
+  build:
+
+    runs-on: macos-14
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        ref: 'macos-image-build-test'
+    - name: install autoconf
+      run: brew install autoconf
+    - name: check autoconf version
+      run: autoconf --version
+    - name: update automake for mpfr
+      run: |
+        curl -O -L http://ftpmirror.gnu.org/automake/automake-1.16.5.tar.gz
+        tar -xzf automake-1.16.5.tar.gz
+        cd automake-*
+        ./configure
+        make
+        sudo make install
+        automake --version
+    - name: build deps & slicer
+      run: ./BuildMacOS.sh -adsi
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4.0.0
+      with:
+        name: DFL_arm_macos.dmg
+        path: build/SuperSlicer.dmg
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4.0.0
+      with:
+        name: DFL_arm_macos.tar
+        path: build/SuperSlicer.tar

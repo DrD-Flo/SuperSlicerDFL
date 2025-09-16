@@ -1,0 +1,34 @@
+name: C/C++ Release candidate macos
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+
+    runs-on: macos-13
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: build deps & slicer
+      run: ./BuildMacOS.sh
+    - name: copy zstd
+      run: cp /usr/local/opt/zstd/lib/libzstd.1.dylib ./build/pack/SuperSlicer/SuperSlicer.app/Contents/MacOS/libzstd.1.dylib
+    - name: relink zstd
+      run: install_name_tool -change /usr/local/opt/zstd/lib/libzstd.1.dylib  @executable_path/libzstd.1.dylib ./build/pack/SuperSlicer/SuperSlicer.app/Contents/MacOS/SuperSlicer
+    - name: create the dmg
+      run: |
+        hdiutil create -ov -fs HFS+ -volname SuperSlicer -srcfolder "build/pack/SuperSlicer" temp.dmg
+        hdiutil convert temp.dmg -format UDZO -o SuperSlicer.dmg
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4.0.0
+      with:
+        name: DFL_macos.app
+        path: build/pack/SuperSlicer/SuperSlicer.app
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4.0.0
+      with:
+        name: DFL_macos.dmg
+        path: SuperSlicer.dmg
