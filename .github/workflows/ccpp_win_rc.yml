@@ -5,6 +5,8 @@ on:
     branches:
       - rc
       - debug_win
+      - main
+      -2.7.61.9
 
 jobs:
   build_dep:

@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - rc
+      - main
+      - 2.7.61.9
 
 jobs:
   build_dep:
