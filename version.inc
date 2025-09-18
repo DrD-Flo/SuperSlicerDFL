@@ -4,7 +4,7 @@
 # name of the slicer
 set(SLIC3R_APP_NAME "SuperSlicer")
 # Key fo the slicer, must only contains ascii chars and no spaces (be valid in all filesystems)
-set(SLIC3R_APP_KEY "SuperSlicerDFL")
+set(SLIC3R_APP_KEY "SuperSlicer")
 # exe name of the slicer, should be lowercase and valid in all os
 set(SLIC3R_APP_CMD "superslicer")
 # id for windows registry

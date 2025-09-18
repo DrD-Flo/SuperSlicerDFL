@@ -58,9 +58,9 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: rc_${{ github.event.repository.name }}-macOS-arm.dmg
-        path: build/${{ github.event.repository.name }}-macOS-arm.dmg
+        path: build/SuperSlicer-macOS-arm.dmg
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: rc_${{ github.event.repository.name }}-macOS-arm.tgz
-        path: build/${{ github.event.repository.name }}-macOS-arm.tgz
+        path: build/SuperSlicer-macOS-arm.tgz
