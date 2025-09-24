@@ -220,14 +220,14 @@ echo "done"
 
 if [[ -n "$VERSION_DATE" ]]
 then
-	echo -n "[2/8] Changing date in version ... "
+    echo -n "[2/8] Changing date in version ... "
     # change date in version
     sed "s/+UNKNOWN/-$(date '+%F')/" version.inc > version.date.inc
-	echo "done"
+    echo "done"
 else
-	echo -n "[2/8] Changing date in version: remove UNKNOWN ... "
+    echo -n "[2/8] Changing date in version: remove UNKNOWN ... "
     sed "s/+UNKNOWN//" version.inc > version.date.inc
-	echo "done"
+    echo "done"
 fi
 
 if [[ -n "$BUILD_DEPS" ]]
@@ -253,7 +253,7 @@ then
     then
         BUILD_ARGS="${BUILD_ARGS} -DCMAKE_BUILD_TYPE=Debug"
     fi
-	pushd deps/build > /dev/null
+    pushd deps/build > /dev/null
     # cmake deps
     if [[ "$BUILD_ARCH" == "$BUILD_ARCH_x86" ]]
     then
@@ -270,9 +270,9 @@ then
         echo -e "\n ... fail\n"
         exit 1 # terminate and indicate error
     fi
-
+    
     echo -e "[4/8] Building dependencies ...\n"
-	if [[ "$BUILD_ARCH" == "$BUILD_ARCH_x86" ]]
+    if [[ "$BUILD_ARCH" == "$BUILD_ARCH_x86" ]]
     then
         # build each dep separatly, seems like it fails less to compile this way.
         ls .
@@ -321,7 +321,7 @@ then
         echo -e "[4/8] Building dep_Catch2 ...\n"
         make dep_Catch2 -j$NCORES
     fi
-	
+
     # make deps
     make -j$NCORES
     if [ $? -eq 0 ]
