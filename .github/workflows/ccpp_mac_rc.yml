@@ -62,6 +62,7 @@ jobs:
       with:
         cmake-version: "3.31.x"
     - name: Use cmake
+      run: cmake --version
     - name: dep cache
       id: cache-action
       uses: actions/cache@v3
