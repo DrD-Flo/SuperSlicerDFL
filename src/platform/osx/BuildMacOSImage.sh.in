@@ -68,6 +68,9 @@ done
         mkdir pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/_CodeSignature
         mkdir pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/Frameworks
         mkdir pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/MacOS
+        
+        mkdir pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/Configuration # create empty configuration folder
+        touch pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/Configuration/.keep # add placeholder file so config folder gets copied to dmg
 
         # copy Resources
         cp -Rf ../resources/ pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/Resources
