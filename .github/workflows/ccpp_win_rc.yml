@@ -6,7 +6,7 @@ on:
       - rc
       - debug_win
       - main
-      - 2.7.61.9
+      - 2.7.61.9_merge
 
 jobs:
   build_dep:
