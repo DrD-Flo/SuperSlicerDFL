@@ -39,7 +39,7 @@ jobs:
     - uses: ilammy/msvc-dev-cmd@v1
     - name: update submodule profiles
       working-directory: ./resources/profiles
-      run: git submodule update --init
+      run: git submodule update --remote --init
     - name: change date in version
       shell: powershell
       run: |
@@ -87,13 +87,9 @@ jobs:
     - name: copy dll
       working-directory: ./build
       run: msbuild /m /P:Configuration=Release src\slic3rDllsCopy.vcxproj
-    - name: create directory and copy into it
-      working-directory: ./build
-      run: ls
-    - name: create directory and copy into it
+    - name: create package directory
       working-directory: ./build
       shell: powershell
-        #todo: add the opengl folder
       run: mkdir package
     - name: copy from release
       working-directory: ./build
@@ -107,7 +103,7 @@ jobs:
       working-directory: ./build
       shell: cmd
       run: |
-        xcopy /RCYIE Slic3r_win_build\local-settings.bat package\${{ github.event.repository.name }}_local-settings.bat
+        xcopy /RCYIE Slic3r_win_build\local-settings.bat package\SuperSlicer_local-settings.bat
         xcopy /RCYIE Slic3r_win_build\mesa package\
     - name: copy new resources
       working-directory: ./build
@@ -115,6 +111,12 @@ jobs:
       run: |
         xcopy /RCYIE ..\resources package\resources
         del /S /Q package\resources\localization\*.so
+    - name: create configuration folder
+      working-directory: ./build
+      shell: cmd
+      run: |
+        mkdir package\configuration
+        echo. > package\configuration\.keep
     - name: copy dll & exe
       working-directory: ./build
       shell: cmd
