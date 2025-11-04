@@ -243,7 +243,7 @@ then
         mkdir deps/build
     fi
     echo -e " \n[3/8] Configuring dependencies ... \n"
-    BUILD_ARGS=""
+    BUILD_ARGS="-DOPENSSL_ARCH"
     if [[ -n "$BUILD_ARCH" ]]
     then
         BUILD_ARGS="${BUILD_ARGS}  -DCMAKE_OSX_ARCHITECTURES:STRING=${BUILD_ARCH}"

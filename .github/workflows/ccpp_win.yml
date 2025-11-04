@@ -15,13 +15,17 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: ilammy/msvc-dev-cmd@v1
+    - uses: shogo82148/actions-setup-perl@v1
+      with:
+        perl-version: "5.42"
+        distribution: strawberry
     - name: mkdir in deps
       run: mkdir deps/build
     - name: dep cache
       id: cache-action
       uses: actions/cache@v3
       with:
-        key: win_2.7
+        key: win_2.7.63
         path: deps/build/destdir
     - if: steps.cache-action.outputs.cache-hit != 'true'
       name: build deps if new cache
@@ -40,6 +44,10 @@ jobs:
     - name: update submodule profiles
       working-directory: ./resources/profiles
       run: git submodule update --init
+    - uses: shogo82148/actions-setup-perl@v1
+      with:
+        perl-version: "5.42"
+        distribution: strawberry
     - name: change date in version
       shell: powershell
       run: |
@@ -49,7 +57,7 @@ jobs:
       id: cache-action
       uses: actions/cache@v3
       with:
-        key: win_2.7
+        key: win_2.7.63
         path: deps/build/destdir
     - run: dir deps
     - run: dir deps/build
