@@ -1467,9 +1467,8 @@ static inline std::tuple<Polygons, Polygons, Polygons, float> detect_overhangs(
     #ifdef SLIC3R_DEBUG
                 ExPolygons enforcers_united = union_ex(enforcer_polygons_src);
     #endif // SLIC3R_DEBUG
-                enforcer_polygons = diff(intersection(layer.lslices(), enforcer_polygons_src),
-                    // Inflate just a tiny bit to avoid intersection of the overhang areas with the object.
-                    expand(lower_layer_polygons, 0.05f * no_interface_offset, SUPPORT_SURFACES_OFFSET_PARAMETERS));
+                //note: don't diff with inflated lower_layer_polygons, or the slopes will be unsupported.
+                enforcer_polygons = intersection(layer.lslices(), enforcer_polygons_src);
     #ifdef SLIC3R_DEBUG
                 SVG::export_expolygons(debug_out_path("support-top-contacts-enforcers-run%d-layer%d-z%f.svg", iRun, layer_id, layer.print_z),
                     { { layer.lslices(),                               { "layer.lslices",              "gray",   0.2f } },
@@ -2298,6 +2297,15 @@ void PrintObjectSupportMaterial::trim_top_contacts_by_bottom_contacts(
         });
 }
 
+size_t safe_ceil_fraction(coord_t distance, coord_t increment){
+    // -EPSILON to avoid ceil() going one up because of float issues, we can also use -0.1
+    size_t count = size_t(ceil((coordf_t(distance) - EPSILON) / coordf_t(increment)));
+    // note: commit 6c95d3 use this method (using unscaled float z instead of scaled int z):
+    // = size_t(ceil(double(int64_t(scale_d(distance) + 0.1)) / double(int64_t(scale_d(increment) + 0.1))));
+    assert(count > 0);
+    return count;
+}
+
 SupportGeneratorLayersPtr PrintObjectSupportMaterial::raft_and_intermediate_support_layers(
     const PrintObject   &object,
     const SupportGeneratorLayersPtr   &bottom_contacts,
@@ -2373,9 +2381,18 @@ SupportGeneratorLayersPtr PrintObjectSupportMaterial::raft_and_intermediate_supp
     for (size_t idx_extreme = idx_extreme_first; idx_extreme < extremes.size(); ++ idx_extreme) {
         SupportGeneratorLayer *extr2 = extremes[idx_extreme];
         coord_t extr2z = extr2->scaled_extreme_z();
-        if (extr2z == Layer::scale_to_layer_coord(m_slicing_params->first_print_layer_height)) {
+        if (extr2z < Layer::scale_to_layer_coord(m_slicing_params->first_print_layer_height)) {
+            // This is a (top) layer that should be printed at first layer height, or removed.
+            assert(extr2->layer_type == SupporLayerType::TopContact);
+            assert(extr2->scaled_bottom_z() == 0);
+            assert(extr2->unscaled_print_z() >= m_slicing_params->first_print_layer_height - EPSILON);
+            extr2->set_scaled_height(extr2->scaled_print_z());
+            extr2->set_scaled_height_block(extr2->scaled_print_z());
+            continue;
+        } else if (extr2z == Layer::scale_to_layer_coord(m_slicing_params->first_print_layer_height)) {
             // This is a bottom of a synchronized (or soluble) top contact layer, its height has been decided in this->top_contact_layers().
             assert(extr2->layer_type == SupporLayerType::TopContact);
+            assert(extr2->scaled_height() > 0);
             assert(extr2->unscaled_bottom_z() == m_slicing_params->first_print_layer_height);
             assert(extr2->unscaled_print_z() >= m_slicing_params->first_print_layer_height + unscaled(m_support_params._support_layer_height_min) - EPSILON);
             if (intermediate_layers.empty() ||
@@ -2451,10 +2468,11 @@ SupportGeneratorLayersPtr PrintObjectSupportMaterial::raft_and_intermediate_supp
                 intermediate_layers.push_back(&layer_new);
             }
         } else {
+            assert(dist >= EPSILON);
             // Insert intermediate layers.
             //compute the layers height
             size_t      n_layers_bot = 0;
-            size_t      n_layers_middle = size_t(ceil((coordf_t(dist) - EPSILON) / coordf_t(support_layer_height)));
+            size_t      n_layers_middle = safe_ceil_fraction(dist, support_layer_height);
             size_t      n_layers_top = 0;
             size_t      n_layers_total = 0;
             coordf_t    step_interface = coordf_t(support_interface_layer_height);
@@ -2470,8 +2488,8 @@ SupportGeneratorLayersPtr PrintObjectSupportMaterial::raft_and_intermediate_supp
                 n_layers_bot = std::max(size_t(0), n_layers_bot - 1); //the first bot layer is already in the extreme list.
                 coord_t height_bot_interface = (support_interface_layer_height * n_layers_bot);
                 if (dist <= height_top_interface + height_bot_interface - EPSILON) {
-                    // not enough height for a not-interface layer (-EPSILON to avoid ceil() going one up because of float issues)
-                    n_layers_top = size_t(ceil((coordf_t(dist) - EPSILON) / coordf_t(support_interface_layer_height)));
+                    // not enough height for a not-interface layer
+                    n_layers_top = safe_ceil_fraction(dist, support_interface_layer_height);
                     step_interface = coordf_t(dist) / coordf_t(n_layers_top);
                     n_layers_middle = 0;
                     if (n_layers_bot > 0) {
@@ -2481,7 +2499,7 @@ SupportGeneratorLayersPtr PrintObjectSupportMaterial::raft_and_intermediate_supp
                     n_layers_total = n_layers_bot + n_layers_middle + n_layers_top;
                 } else {
                     //enough place of at least one normal support layer (-EPSILON to avoid ceil() going one up because of float issues)
-                    n_layers_middle = size_t(ceil((coordf_t(dist - height_top_interface - height_bot_interface) - EPSILON) / coordf_t(support_layer_height)));
+                    n_layers_middle = safe_ceil_fraction(dist - height_top_interface - height_bot_interface, support_layer_height);
                     n_layers_total = n_layers_bot + n_layers_middle + n_layers_top;
                     //compute the avg
                     step = coordf_t(dist) / coordf_t(n_layers_total);
@@ -2522,6 +2540,7 @@ SupportGeneratorLayersPtr PrintObjectSupportMaterial::raft_and_intermediate_supp
                 dist = extr2z - layer_new.scaled_print_z();
                 if (dist <= 0)
                     continue;
+                assert(dist >= SCALED_EPSILON);
                 // Continue printing the other layers up to extr2z.
                 n_layers_total--;
                 if (n_layers_bot > 0) {
@@ -2540,8 +2559,8 @@ SupportGeneratorLayersPtr PrintObjectSupportMaterial::raft_and_intermediate_supp
                     coord_t height_top_interface = support_interface_layer_height * n_layers_top;
                     coord_t height_bot_interface =  support_interface_layer_height * n_layers_bot;
                     if (dist <= height_top_interface + height_bot_interface) {
-                        // not enough height for a not-interface layer (-EPSILON to avoid ceil() going one up because of float issues)
-                        n_layers_top = size_t(ceil((coordf_t(dist) - EPSILON) / coordf_t(support_interface_layer_height)));
+                        // not enough height for a not-interface layer
+                        n_layers_top = safe_ceil_fraction(dist, support_interface_layer_height);
                         step_interface = dist / coordf_t(n_layers_top);
                         n_layers_middle = 0;
                         if (n_layers_bot > 0) {
@@ -2550,8 +2569,8 @@ SupportGeneratorLayersPtr PrintObjectSupportMaterial::raft_and_intermediate_supp
                         }
                         n_layers_total = n_layers_bot + n_layers_middle + n_layers_top;
                     } else {
-                        //enough place of at least one normal support layer (-EPSILON to avoid ceil() going one up because of float issues)
-                        n_layers_middle = size_t(ceil((coordf_t(dist - height_top_interface - height_bot_interface) - EPSILON) / coordf_t(support_layer_height)));
+                        //enough place of at least one normal support layer
+                        n_layers_middle = safe_ceil_fraction(dist - height_top_interface - height_bot_interface, support_layer_height);
                         n_layers_total = n_layers_bot + n_layers_middle + n_layers_top;
                         //compute the avg
                         step = dist / coordf_t(n_layers_total);

@@ -238,8 +238,10 @@ std::string GCodeWriter::write_pressure_advance(double pa) {
         gcode = std::string("SET_PRESSURE_ADVANCE ADVANCE=") + to_string_nozero(pa, 4);
         if (this->config.tool_name.size() > tool_id && !this->config.tool_name.get_at(tool_id).empty()) {
             gcode += std::string(" EXTRUDER=") + this->config.tool_name.get_at(tool_id);
-        } else if (tool_id > 0) {
-            gcode += std::string(" EXTRUDER=extruder") + std::to_string(tool_id);
+            } else if(tool_id > 0){
+                gcode += std::string(" EXTRUDER=extruder") + std::to_string(tool_id);
+            } else {
+                gcode += std::string(" EXTRUDER=extruder");
         }
     } else {
         // if (FLAVOR_IS(gcfMarlinFirmware) || FLAVOR_IS(gcfMarlinLegacy))
@@ -639,7 +641,16 @@ std::string GCodeWriter::travel_arc_to_xy(const Vec2d& point, const Vec2d& cente
     assert(std::abs(center_offset.x()) < 12000000.);
     assert(std::abs(center_offset.y()) < 12000000.);
     assert(std::abs(center_offset.x()) >= EPSILON * 10 || std::abs(center_offset.y()) >= EPSILON * 10);
-    
+
+    //check that the move is long enough: if not enough precision, the arc can be weird or in opposite.
+    GCodeG2G3Formatter w(this->config.gcode_precision_xyz.value, this->config.gcode_precision_e.value, is_ccw);
+    int delta = std::abs(w.quantize_int(this->m_pos.x()) - w.quantize_int(point.x())) +
+        std::abs(w.quantize_int(this->m_pos.y()) - w.quantize_int(point.y()));
+    bool has_long_enough_move = delta > 10;
+    if (!has_long_enough_move) {
+        // use strait move
+        return travel_to_xy(point, speed, comment);
+    }
 
     double travel_speed = this->config.travel_speed.value;
     if ((speed > 0) & (speed < travel_speed))
@@ -647,8 +658,6 @@ std::string GCodeWriter::travel_arc_to_xy(const Vec2d& point, const Vec2d& cente
 
     m_pos.x()             = point.x();
     m_pos.y()             = point.y();
-
-    GCodeG2G3Formatter w(this->config.gcode_precision_xyz.value, this->config.gcode_precision_e.value, is_ccw);
     bool has_x_y = w.emit_xy(point, m_pos_str_x, m_pos_str_y);
     if (!has_x_y) {
         //if point too close to the other, then do not write it, it's useless.
@@ -867,6 +876,16 @@ std::string GCodeWriter::extrude_arc_to_xy(const Vec2d& point, const Vec2d& cent
     assert(std::abs(center_offset.x()) < 12000000.);
     assert(std::abs(center_offset.y()) < 12000000.);
     assert(std::abs(center_offset.x()) >= EPSILON * 10 || std::abs(center_offset.y()) >= EPSILON * 10);
+    
+    //check that the move is long enough: if not enough precision, the arc can be weird or in opposite.
+    GCodeG2G3Formatter w(this->config.gcode_precision_xyz.value, this->config.gcode_precision_e.value, is_ccw);
+    int delta = std::abs(w.quantize_int(this->m_pos.x()) - w.quantize_int(point.x())) +
+        std::abs(w.quantize_int(this->m_pos.y()) - w.quantize_int(point.y()));
+    bool has_long_enough_move = delta > 10;
+    if (!has_long_enough_move) {
+        // use strait move
+        return extrude_to_xy(point, dE, comment);
+    }
 
     m_pos.x()             = point.x();
     m_pos.y()             = point.y();
@@ -874,7 +893,6 @@ std::string GCodeWriter::extrude_arc_to_xy(const Vec2d& point, const Vec2d& cent
     ////note: delta_e is the quantized delta.
     //bool is_extrude  = std::abs(delta_e) > 0.00000001;
 
-    GCodeG2G3Formatter w(this->config.gcode_precision_xyz.value, this->config.gcode_precision_e.value, is_ccw);
     bool has_x_y = w.emit_xy(point, m_pos_str_x, m_pos_str_y);
     if (!has_x_y) {
         //if point too close to the other, then do not write it, it's useless.
@@ -900,7 +918,7 @@ std::string GCodeWriter::extrude_to_xyz(const Vec3d &point, const double dE, con
     assert(std::abs(point.y()) < 120000.);
     assert(std::abs(point.z()) < 120000.);
     assert(dE == dE);
-    assert(point.z() >= m_pos.z() - EPSILON);
+    //assert(point.z() >= m_pos.z() - EPSILON);
     m_pos = point;
     m_lifted = 0;
     // auto [/*double*/ delta_e, /*double*/ e_to_write]  = this->m_tool->extrude(dE + this->m_de_left);
@@ -945,12 +963,21 @@ std::string GCodeWriter::extrude_arc_to_xyz(const Vec3d& point, const Vec2d& cen
     assert(std::abs(center_offset.x()) < 12000000.);
     assert(std::abs(center_offset.y()) < 12000000.);
     assert(std::abs(center_offset.x()) >= EPSILON * 10 || std::abs(center_offset.y()) >= EPSILON * 10);
+    
+    //check that the move is long enough: if not enough precision, the arc can be weird or in opposite.
+    GCodeG2G3Formatter w(this->config.gcode_precision_xyz.value, this->config.gcode_precision_e.value, is_ccw);
+    int delta = std::abs(w.quantize_int(this->m_pos.x()) - w.quantize_int(point.x())) +
+        std::abs(w.quantize_int(this->m_pos.y()) - w.quantize_int(point.y()));
+    bool has_long_enough_move = delta > 10;
+    if (!has_long_enough_move) {
+        // use strait move
+        return extrude_to_xyz(point, dE, comment);
+    }
 
     m_pos = point;
     //auto [/*double*/ delta_e, /*double*/ e_to_write]  = this->m_tool->extrude(dE + this->m_de_left);
     //bool is_extrude  = std::abs(delta_e) > 0.00000001;
 
-    GCodeG2G3Formatter w(this->config.gcode_precision_xyz.value, this->config.gcode_precision_e.value, is_ccw);
     bool has_x_y = w.emit_xy(Vec2d(point.x(), point.y()), m_pos_str_x, m_pos_str_y);
     bool has_z = w.emit_z(point.z() + this->config.z_offset.value, m_pos_str_z);
     if (!has_x_y && !has_z) {

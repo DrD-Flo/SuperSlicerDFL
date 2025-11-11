@@ -20,10 +20,10 @@ include(GenerateExportHeader)
 generate_export_header(OCCTWrapper)
 
 find_package(OpenCASCADE REQUIRED)
-if (OpenCASCADE_VERSION VERSION_LESS 7.6.2)
-    message(FATAL_ERROR "OpenCASCADE v7 >= v7.6.2 must be used")
+if (OpenCASCADE_VERSION VERSION_LESS 7.6.1)
+    message(FATAL_ERROR "OpenCASCADE v7 >= v7.6.1 must be used")
 elseif (OpenCASCADE_VERSION VERSION_GREATER_EQUAL 8.0.0)
-    message(FATAL_ERROR "OpenCASCADE v7 >= v7.6.2 must be used")
+    message(FATAL_ERROR "OpenCASCADE v7 >= v7.6.1 must be used")
 endif ()
 
 if (OpenCASCADE_VERSION VERSION_LESS 7.8.0)
@@ -93,6 +93,8 @@ slic3r_remap_configs("${OCCT_LIBS}" RelWithDebInfo Release)
 target_include_directories(OCCTWrapper PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_include_directories(OCCTWrapper PUBLIC ${OpenCASCADE_INCLUDE_DIR})
 target_link_libraries(OCCTWrapper ${OCCT_LIBS})
+target_link_libraries(OCCTWrapper libslic3r admesh)
+
 
 include(GNUInstallDirs)
 

@@ -119,6 +119,7 @@ if (WIN32)
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/platform/msw/Slic3r.rc.in ${CMAKE_CURRENT_BINARY_DIR}/${SLIC3R_APP_KEY}.rc @ONLY)
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/platform/msw/gcodeviewer.rc.in ${CMAKE_CURRENT_BINARY_DIR}/${SLIC3R_APP_KEY}-gcodeviewer.rc @ONLY)
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/platform/msw/PrusaSlicer.manifest.in ${CMAKE_CURRENT_BINARY_DIR}/${SLIC3R_APP_KEY}.manifest @ONLY)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/platform/msw/winInstaller.wxs.in ${CMAKE_CURRENT_BINARY_DIR}/winInstaller.wxs @ONLY)
 endif ()
 if (APPLE)
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/platform/osx/Info.plist.in ${CMAKE_CURRENT_BINARY_DIR}/Info.plist @ONLY)
@@ -288,11 +289,11 @@ else ()
     else ()
         set(BIN_RESOURCES_DIR "${CMAKE_CURRENT_BINARY_DIR}/../resources")
     endif ()
-     add_custom_command(TARGET Slic3r POST_BUILD
-        # COMMAND ln -sfn "${SLIC3R_RESOURCES_DIR}" "${BIN_RESOURCES_DIR}" # make[3]: stat: src/Slic3r: Too many levels of symbolic links
-		 COMMAND cp -r "${SLIC3R_RESOURCES_DIR}" "${BIN_RESOURCES_DIR}"
-         COMMENT "Symlinking the resources directory into the build tree"
-         VERBATIM)
+    add_custom_command(TARGET Slic3r POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E remove_directory "${BIN_RESOURCES_DIR}"
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory "${SLIC3R_RESOURCES_DIR}" "${BIN_RESOURCES_DIR}"
+        COMMENT "Copying the resources directory into the build tree"
+        VERBATIM)
 endif ()
 
 # Slic3r binary install target
