@@ -6993,10 +6993,10 @@ std::string GCodeGenerator::_extrude(ExtrusionPath &path, const std::string_view
                             _extrude_line_cut_corner(gcode, Line(current_pos, segment.point), e_per_mm, comment, last_pos, path.width());
                         }
                     } else {
-                    const distf_t line_length = angle * std::abs(radius);
+                        const distf_t line_length = angle * std::abs(radius);
                         gcode += m_writer.extrude_arc_to_xy(this->point_to_gcode(segment.point), center_offset,
                                                             e_per_mm * unscaled(line_length), segment.ccw(), comment);
-                }
+                    }
                 }
                 last_pos    = current_pos;
                 current_pos = segment.point;

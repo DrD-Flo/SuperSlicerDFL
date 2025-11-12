@@ -1126,19 +1126,21 @@ namespace SupportMaterialInternal {
                 (!only_flow || is_approx(ep.height(), ep.width(), ep.height()/100))) {
                 float exp = 0.5f * (float)scale_(ep.width()) + expansion_scaled;
                 if (ep.is_closed() && ep.size() >= 3) {
-                        // This is a complete loop.
-                        // Add the outer contour first.
-                        assert(ep.polyline.front() == ep.polyline.back());
-                        Polygon polygon(ep.polyline.to_polyline().points);
-                        assert(polygon.front() != polygon.back());
-                        if (polygon.area() < 0)
-                            polygon.reverse();
+                    // This is a complete loop.
+                    // Add the outer contour first.
+                    assert(ep.polyline.front() == ep.polyline.back());
+                    Polygon polygon(ep.polyline.to_polyline().points);
+                    assert(polygon.front() != polygon.back());
+                    if (polygon.area() < 0) {
+                        polygon.reverse();
+                    }
                     Polygons contours;
                     polygons_append(contours, offset(polygon, exp, SUPPORT_SURFACES_OFFSET_PARAMETERS));
-                        Polygons holes = offset(polygon, - exp, SUPPORT_SURFACES_OFFSET_PARAMETERS);
-                        polygons_reverse(holes);
-                    polygons_append(contours, holes);
-                    append(out, to_expolygons(contours));
+                    Polygons holes = offset(polygon, - exp, SUPPORT_SURFACES_OFFSET_PARAMETERS);
+                    //polygons_reverse(holes);
+                    //polygons_append(contours, holes);
+                    //append(out, to_expolygons(contours));
+                    append(out, diff_ex(contours, holes));
                 } else if (ep.size() >= 2) {
                     assert(ep.polyline.front() != ep.polyline.back());
                     // Offset the polyline.
@@ -2385,7 +2387,7 @@ SupportGeneratorLayersPtr PrintObjectSupportMaterial::raft_and_intermediate_supp
             // This is a (top) layer that should be printed at first layer height, or removed.
             assert(extr2->layer_type == SupporLayerType::TopContact);
             assert(extr2->scaled_bottom_z() == 0);
-            assert(extr2->unscaled_print_z() >= m_slicing_params->first_print_layer_height - EPSILON);
+            assert(extr2->scaled_print_z() >= Layer::scale_to_layer_coord(m_slicing_params->first_print_layer_height));
             extr2->set_scaled_height(extr2->scaled_print_z());
             extr2->set_scaled_height_block(extr2->scaled_print_z());
             continue;
@@ -2538,9 +2540,10 @@ SupportGeneratorLayersPtr PrintObjectSupportMaterial::raft_and_intermediate_supp
                 assert(layer_new.scaled_height() > 0);
                 intermediate_layers.push_back(&layer_new);
                 dist = extr2z - layer_new.scaled_print_z();
-                if (dist <= 0)
+                assert(dist >= SCALED_EPSILON || dist == 0);
+                if (dist < SCALED_EPSILON) {
                     continue;
-                assert(dist >= SCALED_EPSILON);
+                }
                 // Continue printing the other layers up to extr2z.
                 n_layers_total--;
                 if (n_layers_bot > 0) {
@@ -2866,8 +2869,6 @@ void PrintObjectSupportMaterial::trim_support_layers_by_object(
         [this, &object, &nonempty_layers, gap_extra_above, gap_extra_below, gap_xy](const tbb::blocked_range<size_t>& range) {
             size_t idx_object_layer_overlapping = size_t(-1);
             for (size_t idx_layer = range.begin(); idx_layer < range.end(); ++ idx_layer) {
-        static int iInst=0;
-        ::Slic3r::SVG svg(debug_out_path("%d_%d_support_trim.svg", idx_layer, iInst++).c_str());
                 SupportGeneratorLayer &support_layer = *nonempty_layers[idx_layer];
                 // BOOST_LOG_TRIVIAL(trace) << "Support generator - trim_support_layers_by_object - trimmming non-empty layer " << idx_layer << " of " << nonempty_layers.size();
                 assert(! support_layer.polygons.empty() && support_layer.scaled_print_z() > Layer::scale_to_layer_coord(m_slicing_params->raft_contact_top_z));
@@ -2883,7 +2884,6 @@ void PrintObjectSupportMaterial::trim_support_layers_by_object(
                     const Layer &object_layer = *object.layers()[i];
                     if (object_layer.scaled_bottom_z() >= support_layer.scaled_print_z() + gap_extra_above)
                         break;
-                    svg.draw(to_polylines(object_layer.lslices()), "orange", scale_t(0.09));
                     append(expolygons_trimming, offset_ex(object_layer.lslices(), (coordf_t)gap_xy, SUPPORT_SURFACES_OFFSET_PARAMETERS));
                 }
                 if (!m_slicing_params->soluble_interface) {
@@ -2898,7 +2898,6 @@ void PrintObjectSupportMaterial::trim_support_layers_by_object(
                             if (object_layer.scaled_print_z() - bridging_height >= support_layer.scaled_print_z() + gap_extra_above)
                                 break;
                             some_region_overlaps = true;
-                            svg.draw(to_polylines(to_expolygons(region->fill_surfaces().filter_by_type(stPosBottom | stDensSolid | stModBridge))), "yellow", scale_t(0.07));
                             append(expolygons_trimming, 
                                 offset_ex(to_expolygons(region->fill_surfaces().filter_by_type(stPosBottom | stDensSolid | stModBridge)), 
                                        gap_xy, SUPPORT_SURFACES_OFFSET_PARAMETERS));
@@ -2921,13 +2920,13 @@ void PrintObjectSupportMaterial::trim_support_layers_by_object(
                                         }
                                     }
                                     if (!too_high) {
-                                    SupportMaterialInternal::collect_bridging_perimeter_areas(
+                                        SupportMaterialInternal::collect_bridging_perimeter_areas(
                                             region_island_ptr->extrusion(LayerRegionIsland::PERIMETERS).entities(),
                                             gap_xy,
                                             /*only_flow=*/false, expolygons_trimming);
+                                    }
                                 }
                             }
-                        }
                         }
                         if (! some_region_overlaps)
                             break;
@@ -2937,15 +2936,9 @@ void PrintObjectSupportMaterial::trim_support_layers_by_object(
                 // perimeter's width. $support contains the full shape of support
                 // material, thus including the width of its foremost extrusion.
                 // We leave a gap equal to a full extrusion width.
-    
-        svg.draw(to_polylines(expolygons_trimming), "red", scale_t(0.05));
-        svg.draw(to_polylines(support_layer.polygons), "blue", scale_(0.03));
-    
                 ensure_valid(expolygons_trimming, this->m_support_params.resolution);
                 support_layer.polygons = diff(support_layer.polygons, union_ex(expolygons_trimming));
                 ensure_valid(support_layer.polygons, this->m_support_params.resolution);
-        svg.draw(to_polylines(support_layer.polygons), "green", scale_(0.01));
-        svg.Close();
             }
         });
     BOOST_LOG_TRIVIAL(debug) << "PrintObjectSupportMaterial::trim_support_layers_by_object() in parallel - end";

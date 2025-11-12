@@ -3643,7 +3643,7 @@ ProcessSurfaceResult PerimeterGenerator::process_arachne(const Parameters &param
         for (Arachne::ExtrusionLine &extrusion : perimeter) {
             if (extrusion.is_zero_length())
                 continue;
-            assert(extrusion.is_closed ^ (extrusion.junctions.front().p == extrusion.junctions.back().p));
+            assert(!(extrusion.is_closed ^ (extrusion.junctions.front().p == extrusion.junctions.back().p)));
             for (Slic3r::Arachne::ExtrusionJunction &junction : extrusion.junctions) {
                 Point pt = junction.p;
                 assert(unscaled(pt.x()) < 10000 && unscaled(pt.x()) > -10000);
