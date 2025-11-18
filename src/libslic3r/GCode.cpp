@@ -3713,7 +3713,8 @@ LayerResult GCodeGenerator::process_layer(
     for (const uint16_t extruder_id : layer_tools.extruders)
     {
         if (m_wipe_tower_current_layer) {
-            uint16_t old_extruder_id = uint16_t(m_writer.tool() != nullptr ? m_writer.tool()->id() : -1);
+            assert(m_writer.tool());
+            uint16_t old_extruder_id = uint16_t(m_writer.tool() != nullptr ? m_writer.tool()->id() : 0);
             ExtrusionEntityCollection wt_extrusions = m_wipe_tower_current_layer->tool_change(&layer, old_extruder_id, extruder_id);
             if (extruder_id == layer_tools.extruders.back()) {
                 m_wipe_tower_current_layer->finish_layer(wt_extrusions, extruder_id, true);
