@@ -248,6 +248,13 @@ Points SkeletalTrapezoidation::discretize(const VD::edge_type& vd_edge, const st
         Point   left_point    = Geometry::VoronoiUtils::get_source_point(*left_cell, segments.begin(), segments.end());
         Point   right_point   = Geometry::VoronoiUtils::get_source_point(*right_cell, segments.begin(), segments.end());
         coord_t d             = (right_point - left_point).cast<int64_t>().norm();
+
+        // Handle degenerate case where left and right points are the same
+        if (d == 0) {
+            assert(false); // if triggered, please examinate what to do: prevent or repair.
+            return Points({ start }); // return degenerate value, trigger a warning log
+        }
+
         Point   middle        = (left_point + right_point) / 2;
         Point   x_axis_dir    = perp(Point(right_point - left_point));
         coord_t x_axis_length = x_axis_dir.cast<int64_t>().norm();
