@@ -642,7 +642,7 @@ void SkeletalTrapezoidation::filterCentral(coord_t max_length)
 {
     for (edge_t& edge : graph.edges)
     {
-        if (isEndOfCentral(edge) && edge.to->isLocalMaximum() && !edge.to->isLocalMaximum())
+        if (isEndOfCentral(edge) && edge.from->isLocalMaximum() && !edge.to->isLocalMaximum())
         {
             filterCentral(edge.twin, 0, max_length);
         }
@@ -1583,8 +1583,8 @@ SkeletalTrapezoidation::edge_t* SkeletalTrapezoidation::getQuadMaxRedgeTo(edge_t
             ret = edge;
         }
     }
-
-    if (!ret->next && ret->to->data.distance_to_boundary - scaled<coord_t>(0.005) < ret->from->data.distance_to_boundary)
+    assert(ret);
+    if (ret && !ret->next && ret->to->data.distance_to_boundary - scaled<coord_t>(0.005) < ret->from->data.distance_to_boundary)
     {
         ret = ret->prev;
     }
