@@ -3354,20 +3354,18 @@ namespace Slic3r {
     {
         assert(is_decimal_separator_point());
         std::string out = "";
-        char buffer[1024];
 
         unsigned int count = 0;
         for (const ModelObject* object : model.objects) {
             ++count;
             const std::vector<double>& layer_height_profile = object->layer_height_profile.get();
             if (layer_height_profile.size() >= 4 && layer_height_profile.size() % 2 == 0) {
-                sprintf(buffer, "object_id=%d|", count);
-                out += buffer;
+                out += "object_id=" + std::to_string(count) + "|";
 
                 // Store the layer height profile as a single semicolon separated list.
                 for (size_t i = 0; i < layer_height_profile.size(); ++i) {
-                    sprintf(buffer, (i == 0) ? "%f" : ";%f", layer_height_profile[i]);
-                    out += buffer;
+                    if (i > 0) out += ";";
+                    out += std::to_string(layer_height_profile[i]);
                 }
                 
                 out += "\n";
