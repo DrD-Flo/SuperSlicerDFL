@@ -3298,6 +3298,9 @@ ProcessSurfaceResult PerimeterGenerator::process_arachne(const Parameters &param
     ExPolygons last = (ext_displacement != 0)
         ? offset_ex(surface.expolygon.simplify_p(scaled_resolution),  -ext_displacement)
         : union_ex(surface.expolygon.simplify_p(scaled_resolution));
+    // bb for checking out-of-bounds points.
+    BoundingBox srf_bb;
+    for (ExPolygon &expo : last) srf_bb.merge(expo.contour.points);
 
     //increase surface for milling_post-process
     if (this->mill_extra_size > SCALED_EPSILON) {
@@ -3565,17 +3568,16 @@ ProcessSurfaceResult PerimeterGenerator::process_arachne(const Parameters &param
     
     // hack to fix points that go to the moon. https://github.com/supermerill/SuperSlicer/issues/4032
     // get max dist possible
-    BoundingBox bb;
-    for (ExPolygon &expo : last) bb.merge(expo.contour.points);
-    const coordf_t max_dist = bb.min.distance_to_square(bb.max);
+    const distsqrf_t max_dist_sqr = srf_bb.min.distance_to_square(srf_bb.max);
     //detect astray points and delete them
     for (Arachne::VariableWidthLines &perimeter : perimeters) {
         this->throw_if_canceled();
         for (auto it_extrusion = perimeter.begin(); it_extrusion != perimeter.end();) {
-            Point last_point = bb.min;
-            for (auto it_junction = it_extrusion->junctions.begin(); it_junction != it_extrusion->junctions.end();) {
-                coordf_t dist = it_junction->p.distance_to_square(last_point);
-                if (dist > max_dist) {
+            assert(!it_extrusion->junctions.empty());
+            Point last_point = it_extrusion->junctions.front().p;
+            for (auto it_junction = it_extrusion->junctions.begin()+1; it_junction != it_extrusion->junctions.end();) {
+                distsqrf_t dist_sqr = it_junction->p.distance_to_square(last_point);
+                if (dist_sqr > max_dist_sqr) {
                     it_junction = it_extrusion->junctions.erase(it_junction);
                 } else {
                     last_point = it_junction->p;
@@ -3593,22 +3595,23 @@ ProcessSurfaceResult PerimeterGenerator::process_arachne(const Parameters &param
     loop_number = int(perimeters.size());
 
 #ifdef ARACHNE_DEBUG
-        {
-            static int iRun = 0;
-            export_perimeters_to_svg(debug_out_path("arachne-perimeters-%d-%d.svg", layer_id, iRun++), to_polygons(last), perimeters, union_ex(wallToolPaths.getInnerContour()));
-        }
+    {
+        static int iRun = 0;
+        export_perimeters_to_svg(debug_out_path("arachne-perimeters-%d-%d.svg", layer_id, iRun++), to_polygons(last), perimeters, union_ex(wallToolPaths.getInnerContour()));
+    }
 #endif
 
+#if _DEBUG
     // All closed ExtrusionLine should have the same the first and the last point.
-    // But in rare cases, Arachne produce ExtrusionLine marked as closed but without
-    // equal the first and the last point.
-    assert([&perimeters = std::as_const(perimeters)]() -> bool {
-        for (const Arachne::VariableWidthLines& perimeter : perimeters)
-            for (const Arachne::ExtrusionLine& el : perimeter)
-                if (el.is_closed && el.junctions.front().p != el.junctions.back().p)
-                    return false;
-        return true;
-    }());
+    for (Arachne::VariableWidthLines &perimeter : perimeters) {
+        for (Arachne::ExtrusionLine &el : perimeter) {
+            if (el.is_closed && el.junctions.front().p != el.junctions.back().p) {
+                assert(false);
+                el.is_closed = false;
+            }
+        }
+    }
+#endif
 
     //build perimeter_boundary
     bool has_tw = false;
