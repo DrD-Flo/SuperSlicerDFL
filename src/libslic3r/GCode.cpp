@@ -1018,12 +1018,13 @@ namespace DoExport {
                 // the minimum min_mm3_per_mm will be computed from the minimum extrusion in the print
                 // get the minimum cross-section used in the print
                 std::set<double> mm3_per_mm;
-                for (auto object : print.objects()) {
+                // get objects from tool_ordering instead of print: because if we're using complete_object, we only have to check one object, and not all.
+                for (const PrintObject* object : tool_ordering.objects()) {
                     for (size_t region_id = 0; region_id < object->num_printing_regions(); ++region_id) {
-                        const PrintRegion &region = object->printing_region(region_id);
                         for (auto layer : object->layers()) {
                             const LayerRegion *layerm = layer->regions()[region_id];
                             const LayerTools *tools_for_layer = tool_ordering.tools_for_layer(layer->print_z);
+                            assert(layerm && tools_for_layer);
                             if (tools_for_layer->perimeter_extruder(layerm->region().config()) == extruder_id &&
                                 compute_min_mm3_per_mm.is_compatible(
                                     {ExtrusionRole::Perimeter, ExtrusionRole::ExternalPerimeter,
