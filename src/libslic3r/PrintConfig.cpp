@@ -10176,15 +10176,15 @@ void _deserialize_maybe_from_prusa(const std::map<t_config_option_key, std::stri
             const t_config_option_key &opt_key = key;
             const std::string &opt_value = pair.second;
             if (!pair.first.empty()) {
-                if (!def->has(opt_key) ||
-                    (check_prusa && prusa_import_to_review_keys.find(opt_key) != prusa_import_to_review_keys.end())) {
+                if (!def->has(pair.first) ||
+                    (check_prusa && prusa_import_to_review_keys.find(pair.first) != prusa_import_to_review_keys.end())) {
                     unknown_keys[key] = {key, opt_value/*should be old value, before handle_legacy*/}; 
                 } else {
-                    config.set_deserialize(opt_key, opt_value, config_substitutions);
+                    config.set_deserialize(pair.first, opt_value, config_substitutions);
                     if (auto it = settings.find(key); config_substitutions.rule == ForwardCompatibilitySubstitutionRule::Enable && it != settings.end() && it->second != opt_value) {
-                        const ConfigOptionDef *optdef = def->get(opt_key);
+                        const ConfigOptionDef *optdef = def->get(pair.first);
                         if (optdef != nullptr) {
-                            ConfigSubstitution substitution(optdef, settings.at(key), ConfigOptionUniquePtr(config.option(opt_key)->clone()));
+                            ConfigSubstitution substitution(optdef, settings.at(key), ConfigOptionUniquePtr(config.option(pair.first)->clone()));
                             substitution.old_name = key;
                             config_substitutions.add(std::move(substitution));
                         } else {
