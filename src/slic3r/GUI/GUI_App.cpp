@@ -1059,7 +1059,7 @@ void choose_app_dir(GUI_App &app) {
             same_version.push_back(&installed);
         } else {
             old_versions.push_back(&installed);
-            if (boost::filesystem::exists(installed.exe_path) && boost::filesystem::equivalent(binary_file().parent_path(), installed.exe_path)) {
+            if (boost::filesystem::exists(installed.exe_path) && boost::filesystem::equivalent(install_path(), installed.exe_path)) {
                 same_exe_path.push_back(&installed);
             }
         }
@@ -1130,7 +1130,7 @@ void choose_app_dir(GUI_App &app) {
     for (int i = 1; already_used_name.find(my_default_installation.installed_name) != already_used_name.end(); ++i) {
         my_default_installation.installed_name = format("%1%_(%2%)", SLIC3R_BUILD_ID, i);
     }
-    my_default_installation.exe_path = binary_file().parent_path();
+    my_default_installation.exe_path = install_path();
     my_default_installation.other_keys["exe_path_relative"] = "0";
     my_default_installation.config_path = my_default_installation.installed_name;
     my_default_installation.other_keys["config_path_relative"] = "1";
