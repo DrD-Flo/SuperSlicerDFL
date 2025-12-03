@@ -1162,30 +1162,28 @@ void choose_app_dir(GUI_App &app) {
             if (it_is_legacy != old_versions[choice]->other_keys.end() && it_is_legacy->second == "1") {
                 boost::filesystem::path dir(app.app_config->get_root_data_dir());
                 assert(dir == old_versions[choice]->get_config_path(app.app_config->get_root_data_dir()));
+                auto copy_or_create =
+                    [&dir, &path](std::string_view dir_name) {
+                    if (boost::filesystem::exists(dir / dir_name))
+                        boost::filesystem::copy(dir / dir_name, path / dir_name,
+                                                boost::filesystem::copy_options::update_existing |
+                                                    boost::filesystem::copy_options::recursive);
+                    else
+                        boost::filesystem::create_directory(path / dir_name);
+                    };
                 boost::filesystem::copy(dir / (SLIC3R_APP_KEY ".ini"), path / (SLIC3R_APP_KEY ".ini"),
                                       boost::filesystem::copy_options::update_existing);
-                boost::filesystem::copy(dir / "cache", path / "cache",
-                                      boost::filesystem::copy_options::update_existing | boost::filesystem::copy_options::recursive);
-                boost::filesystem::copy(dir / "filament", path / "filament",
-                                      boost::filesystem::copy_options::update_existing | boost::filesystem::copy_options::recursive);
-                boost::filesystem::copy(dir / "physical_printer", path / "physical_printer",
-                                      boost::filesystem::copy_options::update_existing | boost::filesystem::copy_options::recursive);
-                boost::filesystem::copy(dir / "print", path / "print",
-                                      boost::filesystem::copy_options::update_existing | boost::filesystem::copy_options::recursive);
-                boost::filesystem::copy(dir / "printer", path / "printer",
-                                      boost::filesystem::copy_options::update_existing | boost::filesystem::copy_options::recursive);
-                boost::filesystem::copy(dir / "shapes", path / "shapes",
-                                      boost::filesystem::copy_options::update_existing | boost::filesystem::copy_options::recursive);
-                boost::filesystem::copy(dir / "sla_material", path / "sla_material",
-                                      boost::filesystem::copy_options::update_existing | boost::filesystem::copy_options::recursive);
-                boost::filesystem::copy(dir / "sla_print", path / "sla_print",
-                                      boost::filesystem::copy_options::update_existing | boost::filesystem::copy_options::recursive);
-                boost::filesystem::copy(dir / "snapshots", path / "snapshots",
-                                      boost::filesystem::copy_options::update_existing | boost::filesystem::copy_options::recursive);
-                boost::filesystem::copy(dir / "ui_layout", path / "ui_layout",
-                                      boost::filesystem::copy_options::update_existing | boost::filesystem::copy_options::recursive);
-                boost::filesystem::copy(dir / "vendor", path / "vendor",
-                                      boost::filesystem::copy_options::update_existing | boost::filesystem::copy_options::recursive);
+                copy_or_create("cache");
+                copy_or_create("filament");
+                copy_or_create("physical_printer");
+                copy_or_create("print");
+                copy_or_create("printer");
+                copy_or_create("shapes");
+                copy_or_create("sla_material");
+                copy_or_create("sla_print");
+                copy_or_create("snapshots");
+                copy_or_create("ui_layout");
+                copy_or_create("vendor");
             } else {
                 boost::filesystem::copy(old_versions[choice]->get_config_path(app.app_config->get_root_data_dir()), path,
                                       boost::filesystem::copy_options::update_existing | boost::filesystem::copy_options::recursive);
