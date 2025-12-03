@@ -1315,11 +1315,14 @@ Point ArcPolyline::get_point_from_end(distf_t distance) const {
 
 void ArcPolyline::set_front(const Point &p) {
     assert(!m_path.empty());
-    if (m_path.size() > 1 && m_path.front().point != p) {
-        m_path[1].radius = 0.f;
-        m_path[1].orientation = Geometry::ArcWelder::Orientation::Unknown;
+    if (m_path.size() > 1 && m_path.front().point != p &&
+        (m_path[1].radius != 0.f || m_path[1].orientation != Geometry::ArcWelder::Orientation::Unknown)) {
         // should have been discretized before
         assert(false);
+        // set strait
+        m_path[1].radius = 0.f;
+        m_path[1].orientation = Geometry::ArcWelder::Orientation::Unknown;
+        m_only_strait = not_arc(*this);
     }
     m_path.front().point = p;
     assert(is_valid());
@@ -1327,11 +1330,14 @@ void ArcPolyline::set_front(const Point &p) {
 
 void ArcPolyline::set_back(const Point &p) {
     assert(!m_path.empty());
-    if (m_path.size() > 1 && m_path.front().point != p) {
-        m_path.back().radius = 0.f;
-        m_path.back().orientation = Geometry::ArcWelder::Orientation::Unknown;
+    if (m_path.size() > 1 && m_path.front().point != p &&
+        (m_path.back().radius != 0.f || m_path.back().orientation != Geometry::ArcWelder::Orientation::Unknown)) {
         // should have been discretized before
         assert(false);
+        //set it
+        m_path.back().radius = 0.f;
+        m_path.back().orientation = Geometry::ArcWelder::Orientation::Unknown;
+        m_only_strait = not_arc(*this);
     }
     m_path.back().point = p;
     assert(is_valid());
