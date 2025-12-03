@@ -3239,17 +3239,16 @@ ProcessSurfaceResult PerimeterGenerator::process_arachne(const Parameters &param
     
     // hack to fix points that go to the moon. https://github.com/supermerill/SuperSlicer/issues/4032
     // get max dist possible
-    BoundingBox bb;
-    for (ExPolygon &expo : last) bb.merge(expo.contour.points);
-    const coordf_t max_dist = bb.min.distance_to_square(bb.max);
+    const distsqrf_t max_dist_sqr = srf_bb.min.distance_to_square(srf_bb.max);
     //detect astray points and delete them
     for (Arachne::VariableWidthLines &perimeter : perimeters) {
         this->throw_if_canceled();
         for (auto it_extrusion = perimeter.begin(); it_extrusion != perimeter.end();) {
-            Point last_point = bb.min;
-            for (auto it_junction = it_extrusion->junctions.begin(); it_junction != it_extrusion->junctions.end();) {
-                coordf_t dist = it_junction->p.distance_to_square(last_point);
-                if (dist > max_dist) {
+            assert(!it_extrusion->junctions.empty());
+            Point last_point = it_extrusion->junctions.front().p;
+            for (auto it_junction = it_extrusion->junctions.begin()+1; it_junction != it_extrusion->junctions.end();) {
+                distsqrf_t dist_sqr = it_junction->p.distance_to_square(last_point);
+                if (dist_sqr > max_dist_sqr) {
                     it_junction = it_extrusion->junctions.erase(it_junction);
                 } else {
                     last_point = it_junction->p;
@@ -3290,22 +3289,17 @@ ProcessSurfaceResult PerimeterGenerator::process_arachne(const Parameters &param
     }
 #endif
 
+#if _DEBUG
     // All closed ExtrusionLine should have the same the first and the last point.
-    // But in rare cases, Arachne produce ExtrusionLine marked as closed but without
-    // equal the first and the last point.
     for (Arachne::VariableWidthLines &perimeter : perimeters) {
         for (Arachne::ExtrusionLine &el : perimeter) {
             if (el.is_closed && el.junctions.front().p != el.junctions.back().p) {
-                if (el.junctions.front().p.distance_to_square(el.junctions.back().p) <= SCALED_EPSILON) {
-                    Point new_pt = (el.junctions.front().p + el.junctions.back().p) / 2;
-                    el.junctions.front().p = new_pt;
-                    el.junctions.back().p = new_pt;
-                } else {
-                    el.junctions.emplace_back(el.junctions.front().p, el.junctions.front().w, el.junctions.front().perimeter_index);
-                }
+                assert(false);
+                el.is_closed = false;
             }
         }
     }
+#endif
 
     int start_perimeter = int(perimeters.size()) - 1;
     int end_perimeter = -1;
