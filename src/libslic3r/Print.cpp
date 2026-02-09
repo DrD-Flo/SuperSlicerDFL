@@ -1383,6 +1383,7 @@ void Print::process()
         m_wipe_tower_data.position = { m_default_object_config.wipe_tower_x, m_default_object_config.wipe_tower_y };
         m_wipe_tower_data.rotation_angle = m_default_object_config.wipe_tower_rotation_angle;
     }
+    this->set_status(printstep_2_percent[PrintStep::psCheckConflict], _u8L("Checking line conflicts"));
     auto conflictRes = ConflictChecker::find_inter_of_lines_in_diff_objs(objects(), m_wipe_tower_data);
 
     m_conflict_result = conflictRes;
