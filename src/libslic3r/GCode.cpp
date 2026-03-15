@@ -7036,6 +7036,7 @@ void GCodeGenerator::extrude_perimeters(const ExtrudeArgs &print_args, const Lay
     if (region_island.has_extrusion(LayerRegionIsland::GAP_FILLS)) {
         const ExtrusionEntityCollection &eec = region_island.extrusion(LayerRegionIsland::GAP_FILLS);
         if (shall_print_this_extrusion_collection(print_args, &eec, *m_region)) {
+            to_extrude.clear(); // don't forget to clear before reuse
             if (first) {
                 first = false;
                 // Apply region-specific settings
