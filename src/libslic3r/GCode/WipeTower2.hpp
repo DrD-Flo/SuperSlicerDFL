@@ -221,6 +221,7 @@ public:
     std::vector<const Layer *> layers;
 
     // this layer extrusion information
+    size_t wipetower_layer_idx = 0;
     coord_t extrusion_z;
     coord_t extrusion_height;
     std::vector<coord_t> uninitialized_z;
@@ -240,6 +241,7 @@ public:
     bool perimeter_done = false;
 
     bool y_down = true;
+    Point last_point;
 
     struct Toolchange
     {
@@ -301,7 +303,7 @@ protected:
                          const double de_retraction_new_tool);
     void toolchange_Change(ExtrusionEntityCollection &collection, const uint16_t new_tool);
 
-    bool print_perimeter(ExtrusionEntityCollection &collection);
+    bool print_perimeter(ExtrusionEntityCollection &collection, bool for_toolchange = false);
 
     coord_t compute_y(coord_t raw_y);
 

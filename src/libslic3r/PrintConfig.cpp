@@ -5658,14 +5658,16 @@ void PrintConfigDef::init_fff_params()
     def->is_vector_extruder = true;
     def->set_default_value(new ConfigOptionFloats { 0. });
 
-    def = this->add("retract_restart_wipe_toolchange", coBools);
+    def = this->add("retract_restart_wipe_toolchange", coPercents);
     def->label = L("Wipe the unretraction");
     def->full_label = L("Wipe the unretraction (Toolchange)");
-    def->tooltip = L("When unretraction is triggered after changing tool in a wipe tower, the unretraction is made into a wipe move"
-                     " instead of a static unretraction on top of the wipe tower.");
+    def->tooltip = L("When unretraction is triggered after changing tool in a wipe tower, the last part of the "
+                     "unretraction is made into a wipe move instead of a static unretraction on top of the wipe "
+                     "tower. This percentage is the perdcetage of the unretraction that is made into a wipe move");
+    def->sidetext = L("%");
     def->mode = comExpert | comSuSi;
     def->is_vector_extruder = true;
-    def->set_default_value(new ConfigOptionBools { true });
+    def->set_default_value(new ConfigOptionPercents { 20. });
 
     def = this->add("retract_speed", coFloats);
     def->label = L("Retraction Speed");

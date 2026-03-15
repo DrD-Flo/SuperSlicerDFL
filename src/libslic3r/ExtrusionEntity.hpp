@@ -187,13 +187,24 @@ class ExtrusionPropertyModifier : public ExtrusionProperty
 public:
     // enforce a blind travel to the first point of the extrusion, even if the processor think it don't move
     bool enforce_travel = false;
+    bool enforce_retraction = false;
+    bool enforce_unlift = false;
     bool disable_retraction = false;
     bool disable_lift = false;
+    bool toolchange_retraction = false;
 
     ExtrusionPropertyModifier() {}
 
     ExtrusionPropertyModifier &set_enforce_travel(bool enforce = true) {
         enforce_travel = enforce;
+        return *this;
+    }
+    ExtrusionPropertyModifier &set_enforce_retraction(bool enforce = true) {
+        enforce_retraction = enforce;
+        return *this;
+    }
+    ExtrusionPropertyModifier &set_enforce_unlift(bool enforce = true) {
+        enforce_unlift = enforce;
         return *this;
     }
     ExtrusionPropertyModifier &set_disable_retraction(bool disable = true) {
@@ -202,6 +213,10 @@ public:
     }
     ExtrusionPropertyModifier &set_disable_lift(bool disable = true) {
         disable_lift = disable;
+        return *this;
+    }
+    ExtrusionPropertyModifier &set_toolchange_retraction(bool is = true) {
+        toolchange_retraction = is;
         return *this;
     }
 
@@ -246,6 +261,8 @@ public:
         RESTORE_SPEED_RATIO,
         FLUSH_PLANNER_QUEUE,
         EXTRUSION, // only e move, by extra_data mm
+        RETRACT, // only e move, by extra_data mm, but taggued retract/unretract
+        //WIPE_RETRACT_LIFT, //trigger auto-wipe, retract & lift, like before a travel
         PAUSE, // pause (G4) for extra_data miliseconds (int)
         //SET_TEMP, // for extra_data °C should be done via ExtrusionPropertySpeed.temperature
         WAIT_FOR_TEMP, // wait for current temperature, given by ExtrusionPropertySpeed
@@ -392,25 +409,38 @@ public:
 // only cary an ExtrusionProperty
 class ExtrusionNop : public ExtrusionEntity
 {
+    ExtrusionRole m_role = ExtrusionRole::None;
 public:
     static Point NOT_A_POINT;
-    // role?
+    // this can have a position, to move the head.
+    Point position = NOT_A_POINT;
     ExtrusionNop() : ExtrusionEntity(true) {}
-    ExtrusionNop(const ExtrusionNop& other) : ExtrusionEntity(other) {}
-    ExtrusionNop(ExtrusionNop&& other) : ExtrusionEntity(std::move(other)) {}
+    ExtrusionNop(const ExtrusionNop& other) : ExtrusionEntity(other), m_role(other.m_role), position(other.position) {}
+    ExtrusionNop(ExtrusionNop&& other) : ExtrusionEntity(std::move(other)), m_role(other.m_role), position(std::move(other.position)) {}
     ExtrusionNop(const ExtrusionProperty &attr) : ExtrusionEntity(true) { this->add_property(attr); }
-    ExtrusionNop& operator=(const ExtrusionNop &rhs) { ExtrusionEntity::operator=(rhs); return *this; }
-    ExtrusionNop& operator=(ExtrusionNop &rhs) { ExtrusionEntity::operator=(rhs); return *this; }
+    ExtrusionNop &operator=(const ExtrusionNop &rhs) {
+        ExtrusionEntity::operator=(rhs);
+        this->m_role = rhs.m_role;
+        this->position = rhs.position;
+        return *this;
+    }
+    ExtrusionNop &operator=(ExtrusionNop &rhs) {
+        ExtrusionEntity::operator=(rhs);
+        this->m_role = rhs.m_role;
+        this->position = rhs.position;
+        return *this;
+    }
     //ExtrusionNop(std::unique_ptr<ExtrusionProperty> sptr_attr) : ExtrusionEntity(true) { this->add_property(std::move(sptr_attr)); }
-    ExtrusionRole role() const override {return ExtrusionRole::None; }
-    bool has_role(ExtrusionRole) const override { return false; }
+    ExtrusionRole role() const override { return m_role; }
+    void set_role(ExtrusionRole new_role) { m_role = new_role; }
+    bool has_role(ExtrusionRole test_role) const override { return (m_role & test_role) == test_role; }
     ExtrusionEntity *clone() const override { return new ExtrusionNop(*this); }
     // Create a new object, initialize it with this object using the move semantics.
     virtual ExtrusionEntity* clone_move() { return new ExtrusionNop(std::move(*this)); }
     void reverse() override {}
-    const Point &first_point() const override { return NOT_A_POINT; }
-    const Point& last_point() const override { return NOT_A_POINT; }
-    const Point& middle_point() const override { return NOT_A_POINT; }
+    const Point &first_point() const override { return position; }
+    const Point& last_point() const override { return position; }
+    const Point& middle_point() const override { return position; }
     void polygons_covered_by_width(Polygons &out, const float scaled_epsilon) const override {}
     void polygons_covered_by_spacing(Polygons &out, const float spacing_ratio, const float scaled_epsilon) const override {}
     Polygons polygons_covered_by_width(const float scaled_epsilon = 0.f) const override { return {}; }
