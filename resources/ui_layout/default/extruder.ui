@@ -64,6 +64,7 @@ group:General wipe
 	end_line
 group:Retraction when tool is disabled (advanced settings for multi-extruder setups)
 	setting:label$Minimum retraction:idx:retract_length_toolchange
+	setting:label$Extra unretraction:idx:retract_restart_toolchange_on_perimeter
 	setting:label$Extra unretraction:idx:retract_restart_extra_toolchange
 	setting:idx:retract_restart_wipe_toolchange
 group:Preview

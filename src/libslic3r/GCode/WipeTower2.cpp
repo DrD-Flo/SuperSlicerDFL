@@ -1417,14 +1417,39 @@ void WipeTowerLayer::toolchange_Wipe(ExtrusionEntityCollection &collection,
                 speed = int(floor(m_config->retract_speed.get_at(tool_id) + 0.5));
             }
             ExtrusionNop path_move = ExtrusionNop();
-            path_move.position = unretract_lines.front();
+            if (m_config->retract_restart_toolchange_on_perimeter.get_at(tool_id)) {
+                assert(total_length(tower_perimeters) > 0);
+                coord_t dist = wipetower_layer_idx * scale_t(5);
+                dist = dist % coord_t(total_length(tower_perimeters));
+                for (size_t i = 0; i < tower_perimeters.size(); i++) {
+                    if (dist >= coord_t(tower_perimeters[i].length())) {
+                        dist -= coord_t(tower_perimeters[i].length());
+                    } else {
+                        Polyline temp = tower_perimeters[i];
+                        temp.split_at(distf_t(dist));
+                        path_move.position = temp.back();
+                        break;
+                    }
+                }
+                assert(path_move.position != ExtrusionNop::NOT_A_POINT);
+                if (path_move.position != ExtrusionNop::NOT_A_POINT) {
+                    // shouldn't happen
+                    path_move.position = tower_perimeters.front().front();
+                }
+            } else {
+                path_move.position = unretract_lines.front();
+            }
             path_move.set_role(ExtrusionRole::Travel);
             path_move.add_property(ExtrusionPropertyModifier().set_disable_retraction());
             collection.append(std::move(path_move));
             ExtrusionNop path_pre_unretract = ExtrusionNop();
             path_pre_unretract.set_role(ExtrusionRole::WipeTowerWipe);
             path_pre_unretract.add_property(ExtrusionPropertySpeed(speed));
-            path_pre_unretract.add_property(ExtrusionPropertyModifier().set_enforce_unlift());
+            if (m_config->retract_restart_toolchange_on_perimeter.get_at(tool_id)) {
+                path_pre_unretract.add_property(ExtrusionPropertyModifier().set_disable_lift().set_enforce_unlift());
+            } else {
+                path_pre_unretract.add_property(ExtrusionPropertyModifier().set_enforce_unlift());
+            }
             path_pre_unretract.add_property(ExtrusionPropertyCustomGcode("; unretract new tool (static part)"));
             path_pre_unretract.add_property(
                 ExtrusionPropertySpecialCommand(ExtrusionPropertySpecialCommand::Code::RETRACT,pre_uwipe_unretract_e));

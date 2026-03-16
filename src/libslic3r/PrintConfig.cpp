@@ -5669,6 +5669,15 @@ void PrintConfigDef::init_fff_params()
     def->is_vector_extruder = true;
     def->set_default_value(new ConfigOptionPercents { 20. });
 
+    def = this->add("retract_restart_toolchange_on_perimeter", coBools);
+    def->label = L("Unretract on perimeter");
+    def->full_label = L("Wipe the unretraction (Toolchange)");
+    def->tooltip = L("When unretraction is triggered after changing tool in a wipe tower, the first bit is done on "
+                     "the perimeter instead than in the air next to it. This may prevent too much oozing while unretracting.");
+    def->mode = comExpert | comSuSi;
+    def->is_vector_extruder = true;
+    def->set_default_value(new ConfigOptionBools { true });
+
     def = this->add("retract_speed", coFloats);
     def->label = L("Retraction Speed");
     def->full_label = L("Retraction Speed");
@@ -7926,6 +7935,7 @@ void PrintConfigDef::init_extruder_option_keys()
         "retract_lift_top",
         "retract_restart_extra",
         "retract_restart_extra_toolchange",
+        "retract_restart_toolchange_on_perimeter",
         "retract_restart_wipe_toolchange",
         "retract_speed",
         "seam_gap",
@@ -7964,6 +7974,7 @@ void PrintConfigDef::init_extruder_option_keys()
         "retract_lift_top",
         "retract_restart_extra",
         "retract_restart_extra_toolchange",
+        "retract_restart_toolchange_on_perimeter",
         "retract_restart_wipe_toolchange",
         "retract_speed",
         "seam_gap",
@@ -7998,6 +8009,7 @@ void PrintConfigDef::init_extruder_option_keys()
         "retract_lift_below",
         "retract_restart_extra",
         "retract_restart_extra_toolchange",
+        "retract_restart_toolchange_on_perimeter",
         "retract_restart_wipe_toolchange",
         "retract_speed",
         "seam_gap",
@@ -10629,6 +10641,7 @@ std::unordered_set<std::string> prusa_export_to_remove_keys = {
 "retract_lift_first_layer",
 "retract_lift_top",
 "retract_lift_before_travel",
+"retract_restart_toolchange_on_perimeter",
 "retract_restart_wipe_toolchange",
 "seam_angle_cost",
 "seam_gap",
