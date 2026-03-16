@@ -6541,7 +6541,12 @@ void GCodeGenerator::use(const ExtrusionNop &command) {
         }
         this->write_travel_to(travel_gcode, polyline, comment);
         if (m_modifier_override.empty() || !m_modifier_override.back().second->enforce_unlift) {
-            travel_gcode += m_writer.unlift();
+            //ensure we're at the right z
+            std::string z_gcode = m_writer.unlift();
+            if (z_gcode.empty()) {
+                travel_gcode += ensure_z();
+            }
+            travel_gcode += z_gcode;
         }
         visitor_gcode = travel_gcode + visitor_gcode;
     }
