@@ -2415,7 +2415,13 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
                 //final_extruder_id = initial_extruder_id;
                 coord_t z_start = 0, z_end = height_step_range;
                 std::set<const PrintObject*> separate_islands_done;
-                coord_t last_wipe_tower_z = 0;
+                coord_t previous_wipe_tower_z = 0;
+                coord_t end_wipe_tower_z = 0;
+                for (auto &z_to_wt_layer : m_wipe_tower_layers) {
+                    if (!z_to_wt_layer.second->m_toolchanges.empty()) {
+                        end_wipe_tower_z = std::max(end_wipe_tower_z, z_to_wt_layer.first);
+                    }
+                }
                 bool is_layers = true;
                 while (is_layers && (print.config().parallel_objects_step_max_z.value == 0 || z_start + EPSILON < print.config().parallel_objects_step_max_z.value)) {
                     if (print.config().parallel_objects_step_max_z.value > 0) {
@@ -2471,32 +2477,89 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
 
                         if (!layers_to_print_range.empty() && it_tool_ordering->first_extruder() != uint16_t(-1)) {
                             for (ObjectsLayerToPrint &layer_group : layers_to_print_range) {
+                                bool print_in_parallel_mode = false;
+                                //std::cout<<"\nprinting group with:\n";
+                                //for (ObjectLayerToPrint &obj_layer : layer_group) {
+                                //    std::cout << " - " << obj_layer.layer()->unscaled_print_z() << " ; "
+                                //              << (obj_layer.allow_wipe_tower ? "withWP" : "")<< " with islands";
+                                //    if (obj_layer.object_layer) {
+                                //        std::cout << " with obj islands";
+                                //        for (auto lsi_ptr : obj_layer.islands) {
+                                //            if (obj_layer.object_layer == lsi_ptr->layer()) {
+                                //                for (size_t i = 0; i < lsi_ptr->layer()->islands().size(); i++) {
+                                //                    if (lsi_ptr->layer()->islands()[i].get() == lsi_ptr) {
+                                //                        std::cout << " " << i;
+                                //                        break;
+                                //                    }
+                                //                }
+                                //            } else {
+                                //                assert(obj_layer.support_layer == lsi_ptr->layer());
+                                //            }
+                                //        }
+                                //        std::cout << " / " << obj_layer.object_layer->islands().size();
+                                //    }
+                                //    if(obj_layer.support_layer) {
+                                //        std::cout<< " with supp islands";
+                                //        for (auto lsi_ptr : obj_layer.islands) {
+                                //            if (obj_layer.support_layer == lsi_ptr->layer()) {
+                                //                for (size_t i = 0; i < lsi_ptr->layer()->islands().size(); i++) {
+                                //                    if (lsi_ptr->layer()->islands()[i].get() == lsi_ptr) {
+                                //                        std::cout << " " << i;
+                                //                        break;
+                                //                    }
+                                //                }
+                                //            } else {
+                                //                assert(obj_layer.object_layer == lsi_ptr->layer());
+                                //            }
+                                //        }
+                                //        std::cout << " / " << obj_layer.support_layer->islands().size();
+                                //    }
+                                //    std::cout << " obj:" << obj_layer.layer()->object()->id().id;
+                                //    std::cout << ":\n";
+                                //}
                                 assert(!layer_group.empty());
                                 this->set_origin(unscale((*it_print_object_instance)->shift));
 
-                                if (last_wipe_tower_z + height_step_range <
-                                        layer_group.back().layer()->scaled_print_z() ||
-                                    layer_group.front().allow_wipe_tower) {
+                                if (has_wipe_tower && ((previous_wipe_tower_z + height_step_range <
+                                        layer_group.back().layer()->scaled_print_z() && end_wipe_tower_z > previous_wipe_tower_z) ||
+                                    layer_group.front().allow_wipe_tower)) {
+                                    //std::cout << "WT: " << (previous_wipe_tower_z + height_step_range) << " < "
+                                    //          << layer_group.back().layer()->scaled_print_z() << " && "
+                                    //          << end_wipe_tower_z << " > " << previous_wipe_tower_z
+                                    //          << ") || " << layer_group.front().allow_wipe_tower
+                                    //          << "\n";
+                                    if (layer_group.front().allow_wipe_tower) {
+                                        for (ObjectLayerToPrint &obj_layer : layer_group) {
+                                            assert(obj_layer.allow_wipe_tower);
+                                            assert(obj_layer.layer()->scaled_print_z() == layer_group.back().layer()->scaled_print_z());
+                                        }
+                                    }
                                     // print wipetower until max layer_group.front() + height_step_range
-                                    ObjectsLayerToPrint wt_layers_to_print;
-                                    for (auto &z_to_wt_layer: m_wipe_tower_layers) {
+                                    // ObjectsLayerToPrint wt_layers_to_print;
+                                    std::vector<std::pair<coord_t, ObjectsLayerToPrint>> wt_layers_to_print;
+                                    for (auto &z_to_wt_layer : m_wipe_tower_layers) {
                                         const std::shared_ptr<WipeTowerLayer> &wt_layer = z_to_wt_layer.second;
-                                        assert(wt_layer->extrusion_z > last_wipe_tower_z || wt_layer->perimeter_done);
+                                        assert(wt_layer->extrusion_z > previous_wipe_tower_z || wt_layer->perimeter_done);
                                         if (wt_layer->extrusion_z >= layer_group.back().layer()->scaled_print_z()) {
                                             break;
                                         } else if (!wt_layer->perimeter_done && wt_layer->m_toolchanges.empty()) {
                                             assert(!wt_layer->layers.empty());
                                             // print it
-                                            wt_layers_to_print.emplace_back();
+                                            wt_layers_to_print.emplace_back(wt_layer->extrusion_z,
+                                                                            ObjectsLayerToPrint());
+                                            wt_layers_to_print.back().second.emplace_back();
                                             // go to the layer, but don't print anything.
-                                            wt_layers_to_print.back().islands.insert(nullptr);
-                                            wt_layers_to_print.back().object_layer = wt_layer->layers.front();
+                                            wt_layers_to_print.back().second.front().islands.insert(nullptr);
+                                            wt_layers_to_print.back().second.front().object_layer = wt_layer->layers
+                                                                                                        .front();
                                             for (const Layer *layer : wt_layer->layers) {
                                                 // use the best layer z
                                                 if (std::abs(layer->scaled_print_z() - wt_layer->extrusion_z) <
-                                                    std::abs(wt_layers_to_print.back().object_layer->scaled_print_z() -
+                                                    std::abs(wt_layers_to_print.back()
+                                                                 .second.front()
+                                                                 .object_layer->scaled_print_z() -
                                                              wt_layer->extrusion_z)) {
-                                                    wt_layers_to_print.back().object_layer = layer;
+                                                    wt_layers_to_print.back().second.front().object_layer = layer;
                                                     if (std::abs(layer->scaled_print_z() - wt_layer->extrusion_z) ==
                                                         0) {
                                                         break;
@@ -2504,38 +2567,189 @@ void GCodeGenerator::_do_export(Print& print_mod, GCodeOutputStream &file, Thumb
                                                 }
                                             }
                                         } else {
-                                            assert(wt_layer->perimeter_done || wt_layer->extrusion_z >= layer_group.front().layer()->scaled_print_z());
+                                            assert(wt_layer->perimeter_done ||
+                                                   wt_layer->extrusion_z >=
+                                                       layer_group.front().layer()->scaled_print_z());
                                         }
                                     }
-                                    assert(!wt_layers_to_print.empty() || layer_group.front().allow_wipe_tower);
-                                    if (!wt_layers_to_print.empty()) {
-                                        ToolOrdering custom_tool_ordering(object, wt_layers_to_print, this->last_extruder(initial_extruder_id));
-                                        this->process_layers(print, status_monitor, custom_tool_ordering,
-                                                             wt_layers_to_print,
-                                                             *it_print_object_instance - object.instances().data(),
-                                                             preamble_to_put_start_layer, file);
+                                    if (layer_group.front().allow_wipe_tower) {
+                                        assert(wt_layers_to_print.empty() ||
+                                               wt_layers_to_print.back().first <
+                                                   layer_group.front().layer()->scaled_print_z());
+                                    } else {
+                                        assert(wt_layers_to_print.empty() ||
+                                               wt_layers_to_print.back().first <
+                                                   layer_group.back().layer()->scaled_print_z());
                                     }
-                                }
-
-                                size_t finished_objects = 1 +
-                                    (it_print_object_instance - print_object_instances_ordering.begin());
-                                if (finished_objects > 1)
-                                    _move_to_print_object(preamble_to_put_start_layer, print, finished_objects,
-                                                          this->last_extruder(initial_extruder_id));
-
-                                assert(!object.instances().empty());
-                                assert(*it_print_object_instance >= &*object.instances().begin() &&
-                                       *it_print_object_instance <= &*(object.instances().end() - 1));
-                                ToolOrdering custom_tool_ordering(object, layer_group, this->last_extruder(initial_extruder_id));
-                                for (ObjectLayerToPrint &layer: layer_group) {
-                                    for (const LayerSliceIsland *island : layer.islands) {
-                                        assert(printed_island.find(island) == printed_island.end());
-                                        printed_island.insert(island);
+                                    if (layer_group.front().allow_wipe_tower) {
+                                        //merge the group islands, as they are now printed at the same time.
+                                        for (size_t merge_id = layer_group.size() - 1; merge_id > 0 ; merge_id--) {
+                                            if (layer_group[merge_id].object_layer) {
+                                                for (size_t data_id = 0; data_id < merge_id; data_id++) {
+                                                    if (layer_group[merge_id].object_layer == layer_group[data_id].object_layer) {
+                                                        layer_group[data_id].islands.insert(layer_group[merge_id].islands.begin(),
+                                                                                      layer_group[merge_id].islands.end());
+                                                        if (layer_group[merge_id].support_layer) {
+                                                            assert(!layer_group[data_id].support_layer);
+                                                            layer_group[data_id].support_layer = layer_group[merge_id].support_layer;
+                                                        }
+                                                        layer_group.erase(layer_group.begin() + merge_id);
+                                                        break;
+                                                    } else if(!layer_group[data_id].object_layer && layer_group[data_id].support_layer->object() == layer_group[merge_id].object_layer->object()) {
+                                                        layer_group[data_id].islands.insert(layer_group[merge_id].islands.begin(),
+                                                                                      layer_group[merge_id].islands.end());
+                                                        layer_group[data_id].object_layer = layer_group[merge_id].object_layer;
+                                                        layer_group.erase(layer_group.begin() + merge_id);
+                                                        break;
+                                                    }
+                                                }
+                                            } else if (!layer_group[merge_id].object_layer) {
+                                                for (size_t data_id = 0; data_id < merge_id; data_id++) {
+                                                    if (layer_group[data_id].support_layer == layer_group[merge_id].support_layer) {
+                                                        layer_group[data_id].islands.insert(layer_group[merge_id].islands.begin(),
+                                                                                      layer_group[merge_id].islands.end());
+                                                        if (layer_group[merge_id].object_layer) {
+                                                            assert(!layer_group[data_id].object_layer);
+                                                            layer_group[data_id].object_layer = layer_group[merge_id].object_layer;
+                                                        }
+                                                        layer_group.erase(layer_group.begin() + merge_id);
+                                                        break;
+                                                    } else if(!layer_group[data_id].support_layer && layer_group[data_id].object_layer->object() == layer_group[merge_id].support_layer->object()) {
+                                                        layer_group[data_id].islands.insert(layer_group[merge_id].islands.begin(),
+                                                                                      layer_group[merge_id].islands.end());
+                                                        layer_group[data_id].support_layer = layer_group[merge_id].support_layer;
+                                                        layer_group.erase(layer_group.begin() + merge_id);
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        //std::cout<<"print_in_parallel_mode\n";
+                                        wt_layers_to_print.emplace_back(layer_group.front().layer()->scaled_print_z(),
+                                                                        layer_group);
+                                        print_in_parallel_mode = true;
                                     }
+                                    // if (!wt_layers_to_print.empty()) {
+                                    // ToolOrdering custom_tool_ordering(object, wt_layers_to_print,
+                                    // this->last_extruder(initial_extruder_id));
+                                    //std::cout<<"PROCESS IN // list with:\n";
+                                    //for (auto &pair : wt_layers_to_print) {
+                                    //    std::cout << "*GROUP"<< " :\n";
+                                    //    for (ObjectLayerToPrint &obj_layer : pair.second) {
+                                    //        std::cout << " - " << obj_layer.layer()->unscaled_print_z() << " ; "
+                                    //                  << (obj_layer.allow_wipe_tower ? "withWP" : "")
+                                    //                  << " with islands";
+                                    //        if(obj_layer.islands.size() == 1 && *obj_layer.islands.begin() == nullptr) {
+                                    //            std::cout << " WT island";
+                                    //        } else {
+                                    //            if (obj_layer.object_layer) {
+                                    //                std::cout << " with obj islands";
+                                    //                for (auto lsi_ptr : obj_layer.islands) {
+                                    //                    if (obj_layer.object_layer == lsi_ptr->layer()) {
+                                    //                        for (size_t i = 0; i < lsi_ptr->layer()->islands().size();
+                                    //                             i++) {
+                                    //                            if (lsi_ptr->layer()->islands()[i].get() == lsi_ptr) {
+                                    //                                std::cout << " " << i;
+                                    //                                break;
+                                    //                            }
+                                    //                        }
+                                    //                    } else {
+                                    //                        assert(obj_layer.support_layer == lsi_ptr->layer());
+                                    //                    }
+                                    //                }
+                                    //                std::cout << " / " << obj_layer.object_layer->islands().size();
+                                    //            }
+                                    //            if (obj_layer.support_layer) {
+                                    //                std::cout << " with supp islands";
+                                    //                for (auto lsi_ptr : obj_layer.islands) {
+                                    //                    if (obj_layer.support_layer == lsi_ptr->layer()) {
+                                    //                        for (size_t i = 0; i < lsi_ptr->layer()->islands().size();
+                                    //                             i++) {
+                                    //                            if (lsi_ptr->layer()->islands()[i].get() == lsi_ptr) {
+                                    //                                std::cout << " " << i;
+                                    //                                break;
+                                    //                            }
+                                    //                        }
+                                    //                    } else {
+                                    //                        assert(obj_layer.object_layer == lsi_ptr->layer());
+                                    //                    }
+                                    //                }
+                                    //                std::cout << " / " << obj_layer.support_layer->islands().size();
+                                    //            }
+                                    //        }
+                                    //        std::cout << " obj:" << obj_layer.layer()->object()->id().id;
+                                    //        std::cout << ":\n";
+                                    //    }
+                                    //}
+                                    this->process_layers(print, status_monitor, print.tool_orderings().back(),
+                                                         print_object_instances_ordering, wt_layers_to_print,
+                                                         preamble_to_put_start_layer, file);
+                                    previous_wipe_tower_z = wt_layers_to_print.back().first;
                                 }
-                                this->process_layers(print, status_monitor, custom_tool_ordering/**it_tool_ordering*/, layer_group,
-                                                     *it_print_object_instance - object.instances().data(),
-                                                     preamble_to_put_start_layer, file);
+                                if (!print_in_parallel_mode) {
+                                    // sequential
+
+                                    size_t finished_objects = 1 +
+                                        (it_print_object_instance - print_object_instances_ordering.begin());
+                                    if (finished_objects > 1)
+                                        _move_to_print_object(preamble_to_put_start_layer, print, finished_objects,
+                                                              this->last_extruder(initial_extruder_id));
+
+                                    assert(!object.instances().empty());
+                                    assert(*it_print_object_instance >= &*object.instances().begin() &&
+                                           *it_print_object_instance <= &*(object.instances().end() - 1));
+                                    ToolOrdering custom_tool_ordering(object, layer_group,
+                                                                      this->last_extruder(initial_extruder_id));
+                                    for (ObjectLayerToPrint &layer : layer_group) {
+                                        for (const LayerSliceIsland *island : layer.islands) {
+                                            assert(printed_island.find(island) == printed_island.end());
+                                            printed_island.insert(island);
+                                        }
+                                    }
+                                //std::cout<<"PROCESS IN ->-> group with:\n";
+                                //for (ObjectLayerToPrint &obj_layer : layer_group) {
+                                //    std::cout << " - " << obj_layer.layer()->unscaled_print_z() << " ; "
+                                //              << (obj_layer.allow_wipe_tower ? "withWP" : "") ;
+                                //    if (obj_layer.object_layer) {
+                                //        std::cout << " with obj islands";
+                                //        for (auto lsi_ptr : obj_layer.islands) {
+                                //            if (obj_layer.object_layer == lsi_ptr->layer()) {
+                                //                for (size_t i = 0; i < lsi_ptr->layer()->islands().size(); i++) {
+                                //                    if (lsi_ptr->layer()->islands()[i].get() == lsi_ptr) {
+                                //                        std::cout << " " << i;
+                                //                        break;
+                                //                    }
+                                //                }
+                                //            } else {
+                                //                assert(obj_layer.support_layer == lsi_ptr->layer());
+                                //            }
+                                //        }
+                                //        std::cout << " / " << obj_layer.object_layer->islands().size();
+                                //    }
+                                //    if(obj_layer.support_layer) {
+                                //        std::cout<< " with supp islands";
+                                //        for (auto lsi_ptr : obj_layer.islands) {
+                                //            if (obj_layer.support_layer == lsi_ptr->layer()) {
+                                //                for (size_t i = 0; i < lsi_ptr->layer()->islands().size(); i++) {
+                                //                    if (lsi_ptr->layer()->islands()[i].get() == lsi_ptr) {
+                                //                        std::cout << " " << i;
+                                //                        break;
+                                //                    }
+                                //                }
+                                //            } else {
+                                //                assert(obj_layer.object_layer == lsi_ptr->layer());
+                                //            }
+                                //        }
+                                //        std::cout << " / " << obj_layer.support_layer->islands().size();
+                                //    }
+                                //    std::cout << " obj:" << obj_layer.layer()->object()->id().id;
+                                //    std::cout << ":\n";
+                                //}
+                                    this->process_layers(print, status_monitor,
+                                                         custom_tool_ordering /**it_tool_ordering*/, layer_group,
+                                                         *it_print_object_instance - object.instances().data(),
+                                                         preamble_to_put_start_layer, file);
+                                }
                                 is_layers = true;
                                 // update "current exturder" for the next ToolOrdering
                             }
@@ -4205,6 +4419,7 @@ LayerResult GCodeGenerator::process_layer(
             finish_wipe_tower_until = std::max(finish_wipe_tower_until, l.finish_wipe_tower_until);
         }
         if (!ignore_wipetower) {
+            assert(single_object_instance_idx == size_t(-1));
             // find our WipeTowerLayer
             auto search_wtl = m_wipe_tower_layers.find(layer.scaled_print_z());
             assert(search_wtl != m_wipe_tower_layers.end());
@@ -4533,6 +4748,7 @@ void GCodeGenerator::process_layer_single_object(
                 std::vector<size_t> idxs_islands;
                 if (layer_to_print.islands.empty()) {
                     idxs_islands = std::vector<size_t>(support_layer.islands().size());
+                    std::iota (std::begin(idxs_islands), std::end(idxs_islands), 0);
                 } else {
                     for (size_t i = 0; i < support_layer.islands().size(); i++) {
                         if (layer_to_print.islands.find(support_layer.islands()[i].get()) != layer_to_print.islands.end()) {
@@ -4561,20 +4777,18 @@ void GCodeGenerator::process_layer_single_object(
                     const LayerSliceIslandPtr &layer_island_ptr = support_layer.islands()[idxs_islands[nearest_idx]];
 
                     ExtrusionEntitiesPtr entities;
-                    for (const LayerSliceIslandPtr &island : support_layer.islands()) {
-                        for (const LayerRegionIslandPtr &region_island : island->regions_islands()) {
-                            if (region_island->has_extrusion(LayerRegionIsland::SUPPORT)) {
-                                for (ExtrusionEntity *ee : region_island->extrusion(LayerRegionIsland::SUPPORT)) {
-                                    assert(ee->role() == ExtrusionRole::SupportMaterial);
-                                }
-                                append(entities, region_island->extrusion(LayerRegionIsland::SUPPORT).entities());
+                    for (const LayerRegionIslandPtr &region_island : layer_island_ptr->regions_islands()) {
+                        if (region_island->has_extrusion(LayerRegionIsland::SUPPORT)) {
+                            for (ExtrusionEntity *ee : region_island->extrusion(LayerRegionIsland::SUPPORT)) {
+                                assert(ee->role() == ExtrusionRole::SupportMaterial);
                             }
-                            if (region_island->has_extrusion(LayerRegionIsland::SUPPORT_INTERFACE)) {
-                                for (ExtrusionEntity *ee : region_island->extrusion(LayerRegionIsland::SUPPORT_INTERFACE)) {
-                                    assert(ee->role() == ExtrusionRole::SupportMaterialInterface);
-                                }
-                                append(entities, region_island->extrusion(LayerRegionIsland::SUPPORT_INTERFACE).entities());
+                            append(entities, region_island->extrusion(LayerRegionIsland::SUPPORT).entities());
+                        }
+                        if (region_island->has_extrusion(LayerRegionIsland::SUPPORT_INTERFACE)) {
+                            for (ExtrusionEntity *ee : region_island->extrusion(LayerRegionIsland::SUPPORT_INTERFACE)) {
+                                assert(ee->role() == ExtrusionRole::SupportMaterialInterface);
                             }
+                            append(entities, region_island->extrusion(LayerRegionIsland::SUPPORT_INTERFACE).entities());
                         }
                     }
                     if (m_layer != nullptr && m_layer->scaled_bottom_z() <= 0 &&
