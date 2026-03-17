@@ -9098,7 +9098,9 @@ std::string GCodeGenerator::_before_extrude(const ExtrusionPath &path, const std
     // compensate retraction
     if (m_delayed_layer_change.empty()) {
         gcode += m_writer.unlift();//this->unretract();
+#ifdef _DEBUGINFO
         assert(is_approx(m_writer.get_position().z(), m_layer->unscaled_print_z(), EPSILON) || m_loop_vase_mode || m_need_z_reset_after_path_3D || path.role().is_wipetower());
+#endif
     } else {
         //check if an unlift happens
         std::string unlift = m_writer.unlift();
@@ -9691,7 +9693,9 @@ void GCodeGenerator::write_travel_to(std::string &gcode, Polyline& travel, std::
     if (target_z < Layer::scale_to_layer_coord(m_writer.get_position().z())) {
         gcode += m_writer.travel_to_z(unscaled(target_z), "3D move");
     }
+#ifdef _DEBUGINFO
     assert(!m_layer || m_need_z_reset_after_path_3D || is_approx(this->writer().get_unlifted_position().z(), unscaled(target_z), EPSILON) || comment.find("Wipe tower") != std::string::npos || m_loop_vase_mode);
+#endif
 }
 
 // generate a travel in xyz
@@ -9701,7 +9705,7 @@ std::string GCodeGenerator::generate_travel_gcode(
 ) {
     std::string gcode;
 
-    const unsigned acceleration =(unsigned)(m_config.travel_acceleration.value + 0.5);
+    const unsigned acceleration =(unsigned)(get_travel_acceleration(m_config) + 0.5);
 
     if (travel.empty()) {
         return "";
