@@ -91,6 +91,7 @@
 #include "CalibrationTempDialog.hpp"
 #include "CalibrationRetractionDialog.hpp"
 #include "CalibrationPressureAdvDialog.hpp"
+#include "ConfigWizard.hpp"
 #include "ConfigSnapshotDialog.hpp"
 #include "CreateMMUTiledCanvas.hpp"
 #include "FreeCADDialog.hpp"
@@ -4019,7 +4020,8 @@ bool GUI_App::run_wizard(ConfigWizard::RunReason reason, ConfigWizard::StartPage
             return false;
     }
 #endif
-    // if nothing installed, show the installatino dialog first
+#ifndef ALLOW_PRUSA_FIRST
+    // if nothing installed, show the installation dialog first
     bool is_synch = this->preset_updater->is_synch;
     if (bypass_bundle_install == RVBM_ALWAYS ||
         (bypass_bundle_install == RVBM_IF_EMPTY && this->preset_updater->count_installed() == 0)) {
@@ -4032,6 +4034,44 @@ bool GUI_App::run_wizard(ConfigWizard::RunReason reason, ConfigWizard::StartPage
             [&](bool is_ok) { if (is_ok) run_wizard(reason, start_page, RunVendorBundleManage::RVBM_NEVER); });
         return false;
     }
+#else //ALLOW_PRUSA_FIRST
+    if (this->preset_updater->count_installed() == 0 && bypass_bundle_install != RVBM_NEVER) {
+        this->preset_updater->reload_all_vendors();
+        // don't run the bundle manager but just install the vendor version
+        this->preset_updater->sync_async([this, reason, start_page](int update_count) {
+            bool found;
+            std::lock_guard<std::recursive_mutex> guard(this->preset_updater->all_vendors_mutex);
+            for (const auto &[id, vendor] : this->preset_updater->all_vendors) {
+                if (vendor.profile.id == ALLOW_PRUSA_FIRST) {
+                    found = true;
+                    if (vendor.best != nullptr) {
+                        this->preset_updater->install_vendor(ALLOW_PRUSA_FIRST, *vendor.best,
+                                                             [this, reason, start_page](const std::string &error_msg) {
+                                                                 run_wizard(reason, start_page,
+                                                                            RunVendorBundleManage::RVBM_NEVER);
+                                                             });
+                    } else {
+                        //TODO: failsafe
+                        for (auto &vendor_loc : vendor.available_profiles) {
+                            if (vendor_loc.local_file.find(Slic3r::resources_dir()) != std::string::npos) {
+                                this->preset_updater->install_vendor(ALLOW_PRUSA_FIRST, vendor_loc,
+                                                                     [this, reason,
+                                                                      start_page](const std::string &error_msg) {
+                                                                         run_wizard(reason, start_page,
+                                                                                    RunVendorBundleManage::RVBM_NEVER);
+                                                                     });
+                                break;
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+            assert(found);
+        });
+        return false;
+    }
+#endif
 
     ConfigWizard *wizard = nullptr;
     {
