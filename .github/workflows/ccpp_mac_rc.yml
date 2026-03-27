@@ -6,6 +6,7 @@ on:
       - rc
       - main
       - 2.7.61.9
+      - 2.7.61.10_merge
 
 jobs:
   build_dep:
