@@ -742,6 +742,22 @@ void ArcPolyline::append(ArcPolyline &&src) {
     assert(m_path.back().point == pt_back);
 }
 
+void ArcPolyline::append(const Geometry::ArcWelder::Segment &arc)
+{
+    assert(arc.radius == 0 || !this->empty());
+    assert(arc.radius != 0 || arc.orientation == Geometry::ArcWelder::Orientation::Unknown);
+    this->m_path.push_back(arc);
+    if (arc.radius != 0) {
+        this->m_only_strait = false;
+    }
+#ifdef _DEBUG
+    if (this->m_path.size() > 1) {
+        this->m_path.back().length = Geometry::ArcWelder::segment_length<coordf_t>(this->m_path[this->m_path.size() - 2], this->m_path.back());
+    }
+#endif
+    assert(is_valid());
+}
+
 void ArcPolyline::translate(const Vector &vector)
 {
     for (auto &seg : m_path)
@@ -902,6 +918,8 @@ void ArcPolyline::clip_end(coordf_t dist)
 
 void ArcPolyline::split_at(coordf_t distance, ArcPolyline &p1, ArcPolyline &p2) const
 {
+    assert(p1.empty());
+    assert(p2.empty());
     if (m_path.empty()) return;
     assert(distance > SCALED_EPSILON);
     if (distance < SCALED_EPSILON) return;
@@ -930,6 +948,10 @@ void ArcPolyline::split_at(coordf_t distance, ArcPolyline &p1, ArcPolyline &p2) 
             } else {
                 p1.m_path.push_back(current);
                 distance -= sqrt(lsqr);
+                if (distance < SCALED_EPSILON) {
+                    p2.m_path.push_back(current);
+                    distance = 0;
+                }
             }
         } else {
 #ifdef _DEBUG
@@ -986,15 +1008,20 @@ void ArcPolyline::split_at(coordf_t distance, ArcPolyline &p1, ArcPolyline &p2) 
             } else {
                 p1.m_path.push_back(current);
                 distance -= len;
+                if (distance < SCALED_EPSILON) {
+                    p2.m_path.push_back(current);
+                    distance = 0;
+                }
             }
         }
         //increment
         ++idx;
     }
     assert(!p2.empty());
-    assert(p1.m_path.back().point == p2.m_path[0].point);
+    assert(p1.m_path.back().point == p2.m_path.front().point);
     //now fill p2
     while (idx < m_path.size()) {
+        assert(!p2.m_path.back().point.coincides_with_epsilon(m_path[idx].point));
         p2.m_path.push_back(m_path[idx]);
         // increment
         ++idx;
