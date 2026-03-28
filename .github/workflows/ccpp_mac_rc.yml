@@ -15,21 +15,30 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Select Xcode 15
+    - name: Pin SDKROOT (prefer macOS 14.x SDK)
+      shell: bash
       run: |
-        ls -1 /Applications | grep -E '^Xcode_'
-        if [ -d "/Applications/Xcode_15.0.app" ]; then
-          sudo xcode-select -s /Applications/Xcode_15.0.app/Contents/Developer
-        elif [ -d "/Applications/Xcode_15.4.app" ]; then
-          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+        echo "Xcode path: $(xcode-select -p)"
+        xcodebuild -version
+
+        echo "Available SDKs:"
+        ls -1 /Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs || true
+
+        # Prefer a 14.x SDK if present (matches your local “MacOSX14.x.sdk” approach)
+        if [ -d "/Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.4.sdk" ]; then
+          SDKROOT="/Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.4.sdk"
+        elif [ -d "/Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.2.sdk" ]; then
+          SDKROOT="/Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.2.sdk"
         else
-          echo "Xcode 15.x not found on this runner."
-          exit 1
+          SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
         fi
 
-        xcodebuild -version
-        xcode-select -p
-        clang --version
+        echo "SDKROOT=$SDKROOT" >> "$GITHUB_ENV"
+        echo "CMAKE_OSX_SYSROOT=$SDKROOT" >> "$GITHUB_ENV"
+
+        # Optional but recommended: keep this consistent with the SDK you picked.
+        echo "MACOSX_DEPLOYMENT_TARGET=14.0" >> "$GITHUB_ENV"
+        echo "CMAKE_OSX_DEPLOYMENT_TARGET=14.0" >> "$GITHUB_ENV"
     - name: Show runner info
       run: |
         echo "Runner architecture:"
@@ -89,21 +98,30 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Select Xcode 15
+    - name: Pin SDKROOT (prefer macOS 14.x SDK)
+      shell: bash
       run: |
-        ls -1 /Applications | grep -E '^Xcode_'
-        if [ -d "/Applications/Xcode_15.0.app" ]; then
-          sudo xcode-select -s /Applications/Xcode_15.0.app/Contents/Developer
-        elif [ -d "/Applications/Xcode_15.4.app" ]; then
-          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+        echo "Xcode path: $(xcode-select -p)"
+        xcodebuild -version
+
+        echo "Available SDKs:"
+        ls -1 /Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs || true
+
+        # Prefer a 14.x SDK if present (matches your local “MacOSX14.x.sdk” approach)
+        if [ -d "/Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.4.sdk" ]; then
+          SDKROOT="/Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.4.sdk"
+        elif [ -d "/Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.2.sdk" ]; then
+          SDKROOT="/Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.2.sdk"
         else
-          echo "Xcode 15.x not found on this runner."
-          exit 1
+          SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
         fi
 
-        xcodebuild -version
-        xcode-select -p
-        clang --version
+        echo "SDKROOT=$SDKROOT" >> "$GITHUB_ENV"
+        echo "CMAKE_OSX_SYSROOT=$SDKROOT" >> "$GITHUB_ENV"
+
+        # Optional but recommended: keep this consistent with the SDK you picked.
+        echo "MACOSX_DEPLOYMENT_TARGET=14.0" >> "$GITHUB_ENV"
+        echo "CMAKE_OSX_DEPLOYMENT_TARGET=14.0" >> "$GITHUB_ENV"
     - name: Show runner info
       run: |
         echo "Runner architecture:"
