@@ -1,4 +1,4 @@
-name: C/C++ Release candidate macos
+name: C/C++ Release candidate macos intel
 
 on:
   push:
@@ -7,38 +7,66 @@ on:
       - main
       - 2.7.61.9
       - 2.7.61.10_merge
+  workflow_dispatch:
 
 jobs:
   build_dep:
     runs-on: macos-15-intel
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
+
+    - name: Show runner info
+      run: |
+        echo "Runner architecture:"
+        uname -m
+        echo "macOS version:"
+        sw_vers
+        echo "Xcode path:"
+        xcode-select -p
+        echo "Available SDK:"
+        xcrun --show-sdk-path || true
+        echo "CMake version before setup:"
+        cmake --version || true
+
+    - name: Setup cmake
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: "3.31.x"
+
+    - name: Use cmake
+      run: cmake --version
+
     - name: Install Autoconf
       run: |
         brew update
         brew install autoconf
-    - name: check autoconf version
+
+    - name: Check autoconf version
       run: autoconf --version
-    - name: update automake for mpfr
+
+    - name: Update automake for mpfr
       run: |
-        curl -O -L http://ftpmirror.gnu.org/automake/automake-1.16.5.tar.gz
+        curl -L -o automake-1.16.5.tar.gz https://github.com/supermerill/SuperSlicer_deps/releases/download/automake/automake-1.16.5.tar.gz
         tar -xzf automake-1.16.5.tar.gz
-        cd automake-*
+        cd automake-1.16.5
         ./configure
-        make
+        make -j"$(sysctl -n hw.ncpu)"
         sudo make install
         automake --version
-    - name: mkdir in deps
-      run: mkdir deps/build
-    - name: dep cache
+
+    - name: Prepare deps build directory
+      run: mkdir -p deps/build
+
+    - name: Restore dep cache
       id: cache-action
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         key: macos_intel_2.7
         path: deps/build/destdir
+
     - if: steps.cache-action.outputs.cache-hit != 'true'
-      name: build deps if new cache
+      name: Build deps if new cache
       run: ./BuildMacOS.sh -xd
 
   build:
@@ -46,22 +74,45 @@ jobs:
     needs: build_dep
 
     steps:
-    - uses: actions/checkout@v3
-    - name: dep cache
+    - uses: actions/checkout@v4
+
+    - name: Show runner info
+      run: |
+        echo "Runner architecture:"
+        uname -m
+        echo "macOS version:"
+        sw_vers
+        echo "Xcode path:"
+        xcode-select -p
+        echo "Available SDK:"
+        xcrun --show-sdk-path || true
+
+    - name: Setup cmake
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: "3.31.x"
+
+    - name: Use cmake
+      run: cmake --version
+
+    - name: Restore dep cache
       id: cache-action
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         key: macos_intel_2.7
         path: deps/build/destdir
-    - name: build slicer
+
+    - name: Build slicer
       run: ./BuildMacOS.sh -xsi
-    - name: Upload artifact
+
+    - name: Upload tgz artifact
       uses: actions/upload-artifact@v4
       with:
-        name: rc_${{ github.event.repository.name }}-macOS.tgz
+        name: rc_${{ github.event.repository.name }}-macOS-intel.tgz
         path: build/${{ github.event.repository.name }}-macOS-intel.tgz
-    - name: Upload artifact
+
+    - name: Upload dmg artifact
       uses: actions/upload-artifact@v4
       with:
-        name: rc_${{ github.event.repository.name }}-macOS.dmg
+        name: rc_${{ github.event.repository.name }}-macOS-intel.dmg
         path: build/${{ github.event.repository.name }}-macOS-intel.dmg
