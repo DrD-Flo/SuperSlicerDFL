@@ -10,7 +10,7 @@ on:
 
 jobs:
   build_dep:
-    runs-on: macos-14
+    runs-on: macos-14f
 
     steps:
     - uses: actions/checkout@v3
@@ -39,7 +39,7 @@ jobs:
         path: deps/build/destdir
     - if: steps.cache-action.outputs.cache-hit != 'true'
       name: build deps if new cache
-      run: ./BuildMacOS.sh -d
+      run: ./BuildMacOS.sh -xd
 
   build:
     runs-on: macos-14
@@ -54,7 +54,7 @@ jobs:
         key: macos_intel_2.7
         path: deps/build/destdir
     - name: build slicer
-      run: ./BuildMacOS.sh -si
+      run: ./BuildMacOS.sh -xsi
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
