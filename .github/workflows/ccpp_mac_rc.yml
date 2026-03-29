@@ -1,4 +1,4 @@
-name: C/C++ Release candidate macos intel
+name: C/C++ Release candidate macos
 
 on:
   push:
@@ -6,159 +6,79 @@ on:
       - rc
       - main
       - 2.7.61.9
+      - mac-build-fix-testing
       - 2.7.61.10_merge
-  workflow_dispatch:
 
 jobs:
   build_dep:
-    runs-on: macos-15-intel
+    runs-on: macos-13
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Pin SDKROOT (prefer macOS 14.x SDK)
-      shell: bash
-      run: |
-        echo "Xcode path: $(xcode-select -p)"
-        xcodebuild -version
-
-        echo "Available SDKs:"
-        ls -1 /Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs || true
-
-        # Prefer a 14.x SDK if present (matches your local “MacOSX14.x.sdk” approach)
-        if [ -d "/Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.4.sdk" ]; then
-          SDKROOT="/Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.4.sdk"
-        elif [ -d "/Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.2.sdk" ]; then
-          SDKROOT="/Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.2.sdk"
-        else
-          SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
-        fi
-
-        echo "SDKROOT=$SDKROOT" >> "$GITHUB_ENV"
-        echo "CMAKE_OSX_SYSROOT=$SDKROOT" >> "$GITHUB_ENV"
-
-        # Optional but recommended: keep this consistent with the SDK you picked.
-        echo "MACOSX_DEPLOYMENT_TARGET=14.0" >> "$GITHUB_ENV"
-        echo "CMAKE_OSX_DEPLOYMENT_TARGET=14.0" >> "$GITHUB_ENV"
-    - name: Show runner info
-      run: |
-        echo "Runner architecture:"
-        uname -m
-        echo "macOS version:"
-        sw_vers
-        echo "Xcode path:"
-        xcode-select -p
-        echo "Available SDK:"
-        xcrun --show-sdk-path || true
-        echo "CMake version before setup:"
-        cmake --version || true
-
+    - uses: actions/checkout@v3
+    - name: New cmake
+      run: cmake --version
     - name: Setup cmake
       uses: jwlawson/actions-setup-cmake@v2
       with:
         cmake-version: "3.31.x"
-
     - name: Use cmake
       run: cmake --version
-
     - name: Install Autoconf
       run: |
         brew update
         brew install autoconf
-
-    - name: Check autoconf version
+    - name: check autoconf version
       run: autoconf --version
-
-    - name: Update automake for mpfr
+    - name: update automake for mpfr
       run: |
-        curl -L -o automake-1.16.5.tar.gz https://github.com/supermerill/SuperSlicer_deps/releases/download/automake/automake-1.16.5.tar.gz
+        curl -O -L https://github.com/supermerill/SuperSlicer_deps/releases/download/automake/automake-1.16.5.tar.gz
         tar -xzf automake-1.16.5.tar.gz
-        cd automake-1.16.5
+        cd automake-*
         ./configure
-        make -j"$(sysctl -n hw.ncpu)"
+        make
         sudo make install
         automake --version
-
-    - name: Prepare deps build directory
-      run: mkdir -p deps/build
-
-    - name: Restore dep cache
+    - name: mkdir in deps
+      run: mkdir deps/build
+    - name: dep cache
       id: cache-action
-      uses: actions/cache@v4
+      uses: actions/cache@v3
       with:
         key: macos_intel_2.7
         path: deps/build/destdir
-
     - if: steps.cache-action.outputs.cache-hit != 'true'
-      name: Build deps if new cache
-      run: ./BuildMacOS.sh -xd
+      name: build deps if new cache
+      run: ./BuildMacOS.sh -d
 
   build:
-    runs-on: macos-15-intel
+    runs-on: macos-13
     needs: build_dep
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Pin SDKROOT (prefer macOS 14.x SDK)
-      shell: bash
-      run: |
-        echo "Xcode path: $(xcode-select -p)"
-        xcodebuild -version
-
-        echo "Available SDKs:"
-        ls -1 /Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs || true
-
-        # Prefer a 14.x SDK if present (matches your local “MacOSX14.x.sdk” approach)
-        if [ -d "/Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.4.sdk" ]; then
-          SDKROOT="/Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.4.sdk"
-        elif [ -d "/Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.2.sdk" ]; then
-          SDKROOT="/Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.2.sdk"
-        else
-          SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
-        fi
-
-        echo "SDKROOT=$SDKROOT" >> "$GITHUB_ENV"
-        echo "CMAKE_OSX_SYSROOT=$SDKROOT" >> "$GITHUB_ENV"
-
-        # Optional but recommended: keep this consistent with the SDK you picked.
-        echo "MACOSX_DEPLOYMENT_TARGET=14.0" >> "$GITHUB_ENV"
-        echo "CMAKE_OSX_DEPLOYMENT_TARGET=14.0" >> "$GITHUB_ENV"
-    - name: Show runner info
-      run: |
-        echo "Runner architecture:"
-        uname -m
-        echo "macOS version:"
-        sw_vers
-        echo "Xcode path:"
-        xcode-select -p
-        echo "Available SDK:"
-        xcrun --show-sdk-path || true
-
+    - uses: actions/checkout@v3
+    - name: New cmake
+      run: cmake --version
     - name: Setup cmake
       uses: jwlawson/actions-setup-cmake@v2
       with:
         cmake-version: "3.31.x"
-
     - name: Use cmake
       run: cmake --version
-
-    - name: Restore dep cache
+    - name: dep cache
       id: cache-action
-      uses: actions/cache@v4
+      uses: actions/cache@v3
       with:
         key: macos_intel_2.7
         path: deps/build/destdir
-
-    - name: Build slicer
-      run: ./BuildMacOS.sh -xsi
-
-    - name: Upload tgz artifact
+    - name: build slicer
+      run: ./BuildMacOS.sh -si
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: rc_${{ github.event.repository.name }}-macOS-intel.tgz
-        path: build/${{ github.event.repository.name }}-macOS-intel.tgz
-
-    - name: Upload dmg artifact
+        name: rc_${{ github.event.repository.name }}-macOS.tgz
+        path: build/SuperSlicer-macOS-intel.tgz
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: rc_${{ github.event.repository.name }}-macOS-intel.dmg
-        path: build/${{ github.event.repository.name }}-macOS-intel.dmg
+        name: rc_${{ github.event.repository.name }}-macOS.dmg
+        path: build/SuperSlicer-macOS-intel.dmg
