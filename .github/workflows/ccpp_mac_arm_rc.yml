@@ -7,7 +7,7 @@ on:
       - main
       - 2.7.61.9
       - mac-build-fix-testing
-      - 2.7.61.10_merge
+      # - 2.7.61.10_merge
 
 jobs:
   build_dep:

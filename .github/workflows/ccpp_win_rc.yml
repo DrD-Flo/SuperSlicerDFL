@@ -7,7 +7,7 @@ on:
       - debug_win
       - main
       - 2.7.61.9_merge
-      - 2.7.61.10_merge
+      # - 2.7.61.10_merge
 
 jobs:
   build_dep:
