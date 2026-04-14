@@ -434,6 +434,7 @@ private:
     bool                                m_need_layer_collision_already_printed = false;
     std::vector<std::pair<ArcPolylines, coord_t>>  m_layer_collision_already_printed_2_width;
     void init_layer_for_collision_check(const Layer *object_layer);
+    void add_travel_obstacle(const ObjectsLayerToPrint &layer_group);
     public:
     /* Origin of print coordinates expressed in unscaled G-code coordinates.
        This affects the input arguments supplied to the extrude*() and travel_to()
@@ -484,7 +485,11 @@ private:
     AvoidCrossingPerimeters             m_avoid_crossing_perimeters;
     JPSPathFinder                       m_avoid_crossing_curled_overhangs;
     RetractWhenCrossingPerimeters       m_retract_when_crossing_perimeters;
+    // m_travel_obstacle_tracker works on this layer's extrusions.
     GCode::TravelObstacleTracker        m_travel_obstacle_tracker;
+    // m_travel_obstacles track tall objects for sequential printing.
+    // contains the expolygon & the height of it
+    std::map<coord_t, std::pair<ExPolygons, BoundingBox>>  m_z_to_obstacles;
     bool                                m_enable_loop_clipping;
     // If enabled, the G-code generator will put following comments at the ends
     // of the G-code lines: _EXTRUDE_SET_SPEED, _WIPE, _BRIDGE_FAN_START, _BRIDGE_FAN_END, _BRIDGE_INTERNAL_FAN_START, _BRIDGE_INTERNAL_FAN_END
@@ -495,7 +500,9 @@ private:
     bool                                m_enable_extrusion_role_markers;
     int                                 m_check_markers = 0;
     // HACK to avoid multiple Z move.
+    // FIXME: force a lift?
     std::string                         m_delayed_layer_change;
+    coord_t                             m_delayed_layer_change_current_print_z;
     // Keeps track of the last extrusion role passed to the processor
     GCodeExtrusionRole                  m_last_processor_extrusion_role;
     // For Progress bar indicator, in sequential mode (complete objects)
