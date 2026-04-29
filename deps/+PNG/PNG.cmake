@@ -25,7 +25,9 @@ if(APPLE AND IS_CROSS_COMPILE)
 else ()
 
     if (APPLE)
-        set(_patch_cmd ${_patch_cmd} && ${PATCH_CMD} ${CMAKE_CURRENT_LIST_DIR}/PNG.patch)
+        # PNG source is downloaded as a ZIP (no git repo), so git apply won't work.
+        # Use patch -p1 instead.
+        set(_patch_cmd ${_patch_cmd} && patch -p1 -i ${CMAKE_CURRENT_LIST_DIR}/PNG.patch)
     endif ()
 
     add_cmake_project(PNG 
