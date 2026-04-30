@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2019 - 2023 Vojtěch Bubník @bubnikv, Lukáš Hejl @hejllukas, Tomáš Mészáros @tamasmeszaros
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include "clipper/clipper_z.hpp"
 
 #include "libslic3r.h"
@@ -58,7 +62,7 @@ std::vector<float> contour_distance(const EdgeGrid::Grid &grid, const size_t idx
 				this->idx_point_start = aidx_point_start;
 				this->pt       = apt_start.cast<double>() + SCALED_EPSILON * dir;
 				dir *= radius;
-				this->pt_start = this->pt.cast<coord_t>();
+				this->pt_start = Point::round(this->pt);
 				// Trim the vector by the grid's bounding box.
 				const BoundingBox &bbox = this->grid.bbox();
 				double t = 1.;
@@ -73,7 +77,7 @@ std::vector<float> contour_distance(const EdgeGrid::Grid &grid, const size_t idx
 				this->dir      = dir;
 				if (t < 1.)
 					dir *= t;
-				this->pt_end   = (this->pt + dir).cast<coord_t>();
+				this->pt_end   = Point::round(this->pt + dir);
 				this->t_min    = 1.;
 				assert(this->grid.bbox().contains(this->pt_start) && this->grid.bbox().contains(this->pt_end));
 			}
@@ -317,7 +321,7 @@ std::vector<float> contour_distance2(const EdgeGrid::Grid &grid, const size_t id
 					    	// Simple case: Just measure the shortest distance.
 							this->distance = dist;
 #ifdef CONTOUR_DISTANCE_DEBUG_SVG
-							this->closest_point = foot.cast<coord_t>();
+							this->closest_point = Point::round(foot);
 #endif /* CONTOUR_DISTANCE_DEBUG_SVG */
 							this->found    = true;
 					    }
@@ -432,7 +436,7 @@ Points resample_polygon(const Points &contour, double dist, std::vector<Resample
     		for (size_t i = 1; i < n; ++ i) {
 				double interpolation_parameter = double(i) / n;
     			Vec2d new_pt = pt_prev + v * interpolation_parameter;
-    			out.emplace_back(new_pt.cast<coord_t>());
+    			out.push_back(Point::round(new_pt));
 				resampled_point_parameters.emplace_back(idx_this, true, l_step);
 			}
     		out.emplace_back(pt);
@@ -598,7 +602,8 @@ ExPolygon elephant_foot_compensation(const ExPolygon &input_expoly, double min_c
 		}
 
 		ExPolygons out_vec = variable_offset_inner_ex(resampled, deltas, 2.);
-		if (out_vec.size() == 1)
+		if (out_vec.size() == 1 && out_vec.front().holes.size() == resampled.holes.size())
+			// No contour of the original compensated expolygon was lost.
 			out = std::move(out_vec.front());
 		else {
 			// Something went wrong, don't compensate.
@@ -611,6 +616,7 @@ ExPolygon elephant_foot_compensation(const ExPolygon &input_expoly, double min_c
 					  { { out_vec },		{ "gray", "black", "blue", coord_t(scale_(0.02)), 0.5f, "black", coord_t(scale_(0.05)) } } });
 			}
 #endif /* TESTS_EXPORT_SVGS */
+			// It may be that the source expolygons contained non-manifold vertices, for which the variable offset may not produce the same number of contours or holes.
 			assert(out_vec.size() == 1);
 		}
 	}

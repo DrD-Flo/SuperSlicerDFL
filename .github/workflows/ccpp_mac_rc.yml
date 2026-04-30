@@ -1,34 +1,79 @@
 name: C/C++ Release candidate macos
 
 on:
-  push:
-    branches:
-      - master
+  workflow_dispatch:
+  workflow_call:
 
 jobs:
-  build:
-
-    runs-on: macos-13
+  build_dep:
+    runs-on: macos-15-intel
 
     steps:
     - uses: actions/checkout@v3
-    - name: build deps & slicer
-      run: ./BuildMacOS.sh
-    - name: copy zstd
-      run: cp /usr/local/opt/zstd/lib/libzstd.1.dylib ./build/pack/SuperSlicer/SuperSlicer.app/Contents/MacOS/libzstd.1.dylib
-    - name: relink zstd
-      run: install_name_tool -change /usr/local/opt/zstd/lib/libzstd.1.dylib  @executable_path/libzstd.1.dylib ./build/pack/SuperSlicer/SuperSlicer.app/Contents/MacOS/SuperSlicer
-    - name: create the dmg
+    - name: New cmake
+      run: cmake --version
+    - name: Setup cmake
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: "3.31.x"
+    - name: Use cmake
+      run: cmake --version
+    - name: Install Autoconf
       run: |
-        hdiutil create -ov -fs HFS+ -volname SuperSlicer -srcfolder "build/pack/SuperSlicer" temp.dmg
-        hdiutil convert temp.dmg -format UDZO -o SuperSlicer.dmg
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4.0.0
+        brew update
+        brew install autoconf
+    - name: check autoconf version
+      run: autoconf --version
+    - name: update automake for mpfr
+      run: |
+        curl -O -L https://github.com/supermerill/SuperSlicer_deps/releases/download/automake/automake-1.16.5.tar.gz
+        tar -xzf automake-1.16.5.tar.gz
+        cd automake-*
+        ./configure
+        make
+        sudo make install
+        automake --version
+    - name: mkdir in deps
+      run: mkdir deps/build
+    - name: dep cache
+      id: cache-action
+      uses: actions/cache@v3
       with:
-        name: DFL_macos.app
-        path: build/pack/SuperSlicer/SuperSlicer.app
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4.0.0
+        key: macos_intel_2.7
+        path: deps/build/destdir
+    - if: steps.cache-action.outputs.cache-hit != 'true'
+      name: build deps if new cache
+      run: ./BuildMacOS.sh -d
+
+  build:
+    runs-on: macos-15-intel
+    needs: build_dep
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: New cmake
+      run: cmake --version
+    - name: Setup cmake
+      uses: jwlawson/actions-setup-cmake@v2
       with:
-        name: DFL_macos.dmg
-        path: SuperSlicer.dmg
+        cmake-version: "3.31.x"
+    - name: Use cmake
+      run: cmake --version
+    - name: dep cache
+      id: cache-action
+      uses: actions/cache@v3
+      with:
+        key: macos_intel_2.7
+        path: deps/build/destdir
+    - name: build slicer
+      run: ./BuildMacOS.sh -si
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: rc_${{ github.event.repository.name }}-macOS.tgz
+        path: build/SuperSlicer-macOS-intel.tgz
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: rc_${{ github.event.repository.name }}-macOS.dmg
+        path: build/SuperSlicer-macOS-intel.dmg

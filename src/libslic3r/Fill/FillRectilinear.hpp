@@ -1,3 +1,13 @@
+///|/ Copyright (c) Prusa Research 2016 - 2023 Vojtěch Bubník @bubnikv, Lukáš Hejl @hejllukas, Lukáš Matěna @lukasmatena
+///|/ Copyright (c) Slic3r 2016 Alessandro Ranellucci @alranel
+///|/
+///|/ ported from lib/Slic3r/Fill/Concentric.pm:
+///|/ Copyright (c) Prusa Research 2016 Vojtěch Bubník @bubnikv
+///|/ Copyright (c) Slic3r 2011 - 2015 Alessandro Ranellucci @alranel
+///|/ Copyright (c) 2012 Mark Hindess
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef slic3r_FillRectilinear_hpp_
 #define slic3r_FillRectilinear_hpp_
 
@@ -7,6 +17,7 @@
 
 namespace Slic3r {
 
+class PrintRegionConfig;
 class Surface;
 struct SegmentedIntersectionLine;
 struct ExPolygonWithOffset;
@@ -14,6 +25,7 @@ struct ExPolygonWithOffset;
 class FillRectilinear : public Fill
 {
 public:
+    FillRectilinear() : Fill() { can_fill_surface_single = true; }
     Fill* clone() const override { return new FillRectilinear(*this); }
     ~FillRectilinear() override = default;
     virtual void init_spacing(coordf_t spacing, const FillParams& params) override;
@@ -57,6 +69,15 @@ public:
         FillRectilinear::fill_surface_extrusion(surface, monotonic_params, out);
     }
     Polylines fill_surface(const Surface* surface, const FillParams& params) const override;
+    bool no_sort() const override { return true; }
+};
+
+class FillMonotonicLines : public FillRectilinear
+{
+public:
+    Fill* clone() const override { return new FillMonotonicLines(*this); }
+    ~FillMonotonicLines() override = default;
+    Polylines fill_surface(const Surface *surface, const FillParams &params) const override;
     bool no_sort() const override { return true; }
 };
 
@@ -134,7 +155,13 @@ protected:
 
 class FillRectilinearSawtooth : public FillRectilinear {
 public:
-
+    
+    FillRectilinearSawtooth() : FillRectilinear() { can_fill_surface_single = false; }
+    Polylines fill_surface(const Surface *surface, const FillParams &params) const override {
+        BOOST_LOG_TRIVIAL(error)<<"Error, the fill isn't implemented";
+        assert(false);
+        return {};
+    };
     Fill* clone() const override { return new FillRectilinearSawtooth(*this); };
     ~FillRectilinearSawtooth() override = default;
     void fill_surface_extrusion(const Surface* surface, const FillParams& params, ExtrusionEntitiesPtr& out) const override;
@@ -144,8 +171,14 @@ public:
 class FillRectilinearWGapFill : public FillRectilinear
 {
 public:
+    FillRectilinearWGapFill() : FillRectilinear() { can_fill_surface_single = false; }
     Fill* clone() const override { return new FillRectilinearWGapFill(*this); };
     ~FillRectilinearWGapFill() override = default;
+    Polylines fill_surface(const Surface *surface, const FillParams &params) const override {
+        BOOST_LOG_TRIVIAL(error)<<"Error, the fill isn't implemented";
+        assert(false);
+        return {};
+    };
     void fill_surface_extrusion(const Surface* surface, const FillParams& params, ExtrusionEntitiesPtr& out) const override;
     static void split_polygon_gap_fill(const Surface& surface, const FillParams& params, ExPolygons& rectilinear, ExPolygons& gapfill);
 protected:

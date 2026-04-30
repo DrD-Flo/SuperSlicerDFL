@@ -1,3 +1,3 @@
-[submodule "src/ArcWelderLib"]
-	path = src/ArcWelderLib
-	url = https://github.com/FormerLurker/ArcWelderLib.git
+[submodule "resources/profiles"]
+	path = resources/profiles
+	url = https://github.com/DrD-Flo/slic3r-profiles.git

@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2021 - 2023 Lukáš Matěna @lukasmatena, Vojtěch Bubník @bubnikv, Lukáš Hejl @hejllukas
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef slic3r_FillLightning_hpp_
 #define slic3r_FillLightning_hpp_
 
@@ -19,6 +23,7 @@ GeneratorPtr build_generator(const PrintObject &print_object, const coordf_t fil
 class Filler : public Slic3r::Fill
 {
 public:
+    Filler() : Fill() { can_fill_surface_single = true; }
     ~Filler() override = default;
 
     Generator   *generator { nullptr };

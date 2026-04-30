@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2021 - 2022 Tomáš Mészáros @tamasmeszaros, Lukáš Hejl @hejllukas, Vojtěch Bubník @bubnikv, Lukáš Matěna @lukasmatena
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include "LocalesUtils.hpp"
 
 #ifdef _WIN32
@@ -8,6 +12,7 @@
 
 #include <fast_float/fast_float.h>
 
+#include <boost/lexical_cast.hpp>
 
 namespace Slic3r {
 
@@ -51,21 +56,31 @@ bool is_decimal_separator_point()
     return str[1] == '.';
 }
 
-
-double string_to_double_decimal_point(const std::string_view str, size_t* pos /* = nullptr*/)
+template<class T>
+static T string_to_floating_decimal_point(const std::string_view str, size_t* pos /* = nullptr*/)
 {
-    double out;
+    T out;
     size_t p = fast_float::from_chars(str.data(), str.data() + str.size(), out).ptr - str.data();
     if (pos)
         *pos = p;
     return out;
 }
 
+double string_to_double_decimal_point(const std::string_view str, size_t* pos /* = nullptr*/)
+{
+    return string_to_floating_decimal_point<double>(str, pos);
+}
+
+float string_to_float_decimal_point(const std::string_view str, size_t* pos /* = nullptr*/)
+{
+    return string_to_floating_decimal_point<float>(str, pos);
+}
+
 std::string to_string_nozero(double value, int32_t max_precision) {
     double intpart;
     if (modf(value, &intpart) == 0.0) {
         //shortcut for int
-        return std::to_string(intpart);
+        return std::to_string(int64_t(intpart));
     } else {
         std::stringstream ss;
         //first, get the int part, to see how many digit it takes
@@ -76,6 +91,7 @@ std::string to_string_nozero(double value, int32_t max_precision) {
         ss << std::fixed << std::setprecision(int(std::min(15 - long10, int(max_precision)))) << value;
         std::string ret = ss.str();
         uint8_t nb_del = 0;
+        assert(ret.find(',') == std::string::npos);
         if (ret.find('.') != std::string::npos) {
             uint8_t idx_char;
             for (idx_char = uint8_t(ss.tellp()) - 1; idx_char > 0; idx_char--) {
@@ -122,6 +138,43 @@ std::string float_to_string_decimal_point(double value, int precision/* = -1*/)
 //#endif
 
     return to_string_nozero(value, precision < 0 ? 6 : precision);
+}
+
+// replace '.' by ',' if needed by the lcoale
+std::string from_dot_to_local(const std::string &in) {
+    if (in.find('.') != std::string::npos || in.find(',') != std::string::npos) {
+        bool dot_sep = is_decimal_separator_point();
+        if (!dot_sep) {
+            std::string out;
+            for (size_t i = 0; i < in.size(); ++i) {
+                if (in.at(i) == '.') {
+                    out.push_back(',');
+                } else if (in.at(i) == ',') {
+                    out.push_back('.');
+                } else {
+                    out.push_back(in.at(i));
+                }
+            }
+            return out;
+        }
+    }
+    return in;
+}
+
+// parse in 'decimal locale' and in current locale
+float parse_float_all_locale(const std::string &in) {
+    float f_locale = std::stof(in);
+    float f_en = string_to_float_decimal_point(in);
+    if (f_en != f_locale) {
+        if (f_locale == int(f_locale)) {
+            assert(f_en != int(f_en));
+            return f_en;
+        } else {
+            assert(f_en == int(f_en));
+            return f_locale;
+        }
+    }
+    return f_locale;
 }
 
 void remove_not_ascii(std::string &tomodify) {

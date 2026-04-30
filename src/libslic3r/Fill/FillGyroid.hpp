@@ -1,3 +1,8 @@
+///|/ Copyright (c) Prusa Research 2018 - 2020 Vojtěch Bubník @bubnikv, Lukáš Matěna @lukasmatena
+///|/ Copyright (c) SuperSlicer 2018 Remi Durand @supermerill
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef slic3r_FillGyroid_hpp_
 #define slic3r_FillGyroid_hpp_
 
@@ -11,7 +16,7 @@ namespace Slic3r {
 class FillGyroid : public Fill
 {
 public:
-    FillGyroid() {}
+    FillGyroid() : Fill() { can_fill_surface_single = true; }
     Fill* clone() const override { return new FillGyroid(*this); }
 
     // Density adjustment to have a good %of weight.

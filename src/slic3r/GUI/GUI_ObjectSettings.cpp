@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2018 - 2023 Oleksandra Iushchenko @YuSanka, Vojtěch Bubník @bubnikv, Lukáš Matěna @lukasmatena, Vojtěch Král @vojtechkral, Enrico Turri @enricoturri1966
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include "GUI_ObjectSettings.hpp"
 #include "GUI_ObjectList.hpp"
 #include "GUI_Factories.hpp"
@@ -13,6 +17,7 @@
 #include <boost/algorithm/string.hpp>
 
 #include "I18N.hpp"
+#include "format.hpp"
 #include "ConfigManipulation.hpp"
 
 #include <wx/wupdlock.h>
@@ -94,16 +99,18 @@ bool ObjectSettings::update_settings_list()
 
         auto extra_column = [config, this](wxWindow* parent, const Line& line)
 		{
-			auto opt_key = (line.get_options())[0].opt_id;  //we assume that we have one option per line
+            assert(!line.get_options().empty());
+            t_config_option_key opt_key = (line.get_options())[0].opt_key; // we assume that we have one option per line
+            assert((line.get_options())[0].opt_idx < 0);
 
 			auto btn = new ScalableButton(parent, wxID_ANY, m_bmp_delete);
             btn->SetToolTip(_(L("Remove parameter")));
 
             btn->SetBitmapFocus(m_bmp_delete_focus.bmp());
-            btn->SetBitmapHover(m_bmp_delete_focus.bmp());
+            btn->SetBitmapCurrent(m_bmp_delete_focus.bmp());
 
 			btn->Bind(wxEVT_BUTTON, [opt_key, config, this](wxEvent &event) {
-                wxGetApp().plater()->take_snapshot(from_u8((boost::format(_utf8(L("Delete Option %s"))) % opt_key).str()));
+                wxGetApp().plater()->take_snapshot(format_wxstr(_L("Delete Option %s"), opt_key));
 				config->erase(opt_key);
                 wxGetApp().obj_list()->changed_object();
                 wxTheApp->CallAfter([this]() {
@@ -115,15 +122,15 @@ bool ObjectSettings::update_settings_list()
 			return btn;
 		};
 
-        for (auto& cat : cat_options)
+        for (auto& [opt_category, opt_keys] : cat_options)
         {
-            categories.push_back(cat.first);
+            categories.push_back(opt_category);
 
-            auto optgroup = std::make_shared<ConfigOptionsGroup>(m_og->ctrl_parent(), _(toString(cat.first)), config, false, extra_column);
+            auto optgroup = std::make_shared<ConfigOptionsGroup>(m_og->ctrl_parent(), _(toString(opt_category)), config, false, extra_column);
             optgroup->title_width = 15;
             optgroup->sidetext_width = 5;
 
-            optgroup->m_on_change = [this, config](const t_config_option_key& opt_id, const boost::any& value) {
+            optgroup->m_on_change = [this, config](const OptionKeyIdx &opt_key_idx, bool enabled, const boost::any &value) {
                                     this->update_config_values(config);
                                     wxGetApp().obj_list()->changed_object(); };
 
@@ -134,13 +141,13 @@ bool ObjectSettings::update_settings_list()
                     return;
                 ctrl->SetBitmap_(m_bmp_delete);
                 ctrl->SetBitmapFocus(m_bmp_delete_focus.bmp()); 
-                ctrl->SetBitmapHover(m_bmp_delete_focus.bmp());
+                ctrl->SetBitmapCurrent(m_bmp_delete_focus.bmp());
             };
 
-            const bool is_extruders_cat = cat.first == OptionCategory::extruders;
-            for (auto& opt : cat.second)
+            const bool is_extruders_cat = opt_category == OptionCategory::extruders;
+            for (const std::string &opt_key : opt_keys)
             {
-                Option option = optgroup->get_option_and_register(opt);
+                Option option = optgroup->get_option_and_register(opt_key);
                 option.opt.width = 12;
                 if (!option.opt.full_label.empty())
                     option.opt.label = option.opt.full_label;
@@ -155,12 +162,16 @@ bool ObjectSettings::update_settings_list()
                 option.opt.label = label;
             }
             optgroup->activate();
-            for (auto& opt : cat.second)
-                optgroup->get_field(opt)->m_on_change = [optgroup](const std::string& opt_id, const boost::any& value) {
+            for (const std::string &opt_key : opt_keys) {
+                assert(opt_key.find("#") == std::string::npos);
+                // there is only scalar object (or the full vector in string format)
+                optgroup->get_field(OptionKeyIdx::scalar(opt_key))->m_on_change = [optgroup]
+                    (const OptionKeyIdx &opt_key_idx, bool enabled, const boost::any &value) {
                     // first of all take a snapshot and then change value in configuration
-                    wxGetApp().plater()->take_snapshot(from_u8((boost::format(_utf8(L("Change Option %s"))) % opt_id).str()));
-                    optgroup->on_change_OG(opt_id, value);
+                    wxGetApp().plater()->take_snapshot(format_wxstr(_L("Change Option %s"), opt_key_idx.key));
+                    optgroup->on_change_OG(opt_key_idx, enabled, value);
                 };
+            }
 
             optgroup->reload_config();
 
@@ -241,12 +252,12 @@ void ObjectSettings::update_config_values(ModelConfig* config)
     {
         Field* field = nullptr;
         for (auto og : m_og_settings) {
-            field = og->get_fieldc(opt_key, opt_index);
+            field = og->get_field({opt_key, opt_index});
             if (field != nullptr)
                 break;
         }
         if (field)
-            field->toggle(toggle);
+            field->toggle_widget_enable(toggle);
     };
 
     ConfigManipulation config_manipulation(load_config, toggle_field, nullptr, config);
@@ -261,8 +272,8 @@ void ObjectSettings::update_config_values(ModelConfig* config)
     }
 
     main_config.apply(config->get(), true);
-    printer_technology == ptFFF  ?  config_manipulation.update_print_fff_config(&main_config) :
-                                    config_manipulation.update_print_sla_config(&main_config) ;
+    if (printer_technology == ptFFF) 
+        config_manipulation.update_print_fff_config(&main_config);
 
     printer_technology == ptFFF  ?  config_manipulation.toggle_print_fff_options(&main_config) :
                                     config_manipulation.toggle_print_sla_options(&main_config) ;
@@ -271,15 +282,6 @@ void ObjectSettings::update_config_values(ModelConfig* config)
 void ObjectSettings::UpdateAndShow(const bool show)
 {
     OG_Settings::UpdateAndShow(show ? update_settings_list() : false);
-}
-
-void ObjectSettings::msw_rescale()
-{
-    m_bmp_delete.msw_rescale();
-    m_bmp_delete_focus.msw_rescale();
-
-    for (auto group : m_og_settings)
-        group->msw_rescale();
 }
 
 void ObjectSettings::sys_color_changed()

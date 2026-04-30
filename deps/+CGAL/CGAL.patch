@@ -1,0 +1,25 @@
+--- a/cgal-5.6.2/BGL/include/CGAL/boost/graph/iterator.h
++++ b/cgal-5.6.2/BGL/include/CGAL/boost/graph/iterator.h
+@@ -222,7 +222,7 @@
+   operator bool_type() const
+   {
+-    return (! (this->base() == nullptr)) ?
++    return (! (this->g == nullptr)) ?
+       &Halfedge_around_source_iterator::this_type_does_not_support_comparisons : 0;
+   }
+
+@@ -322,7 +322,7 @@
+   operator bool_type() const
+   {
+-    return (! (this->base() == nullptr)) ?
++    return (! (this->g == nullptr)) ?
+       &Halfedge_around_target_iterator::this_type_does_not_support_comparisons : 0;
+   }
+
+@@ -421,7 +421,7 @@
+   operator bool_type() const
+   {
+-    return (! (this->base() == nullptr)) ?
++    return (! (this->g == nullptr)) ?
+       &Halfedge_around_face_iterator::this_type_does_not_support_comparisons : 0;
+   }

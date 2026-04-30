@@ -1,3 +1,8 @@
+///|/ Copyright (c) Prusa Research 2016 - 2021 Vojtěch Bubník @bubnikv
+///|/ Copyright (c) Slic3r 2016 Alessandro Ranellucci @alranel
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef slic3r_FillLine_hpp_
 #define slic3r_FillLine_hpp_
 
@@ -12,6 +17,7 @@ class Surface;
 class FillLine : public Fill
 {
 public:
+    FillLine() : Fill() { can_fill_surface_single = true; }
     Fill* clone() const override { return new FillLine(*this); };
     ~FillLine() override = default;
 

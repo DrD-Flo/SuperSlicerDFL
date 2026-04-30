@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.5)
 project(clipper)
 
 add_library(clipper STATIC
@@ -9,6 +9,4 @@ add_library(clipper STATIC
     clipper_z.hpp
 )
 
-if(SLIC3R_PROFILE)
-    target_link_libraries(clipper Shiny)
-endif()
+target_link_libraries(clipper TBB::tbb TBB::tbbmalloc)
