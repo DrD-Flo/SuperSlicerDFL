@@ -25,3 +25,8 @@ CMakeUserPresets.json
 # MacOS Ignores
 .DS_Store
 
+# Build artifacts
+cmake/CPackConfig.cmake
+version.date.inc
+resources/localization/**/*.mo
+
