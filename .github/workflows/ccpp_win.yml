@@ -1,12 +1,7 @@
 name: C/C++ Nightly windows x64
 
 on:
-  push:
-    branches:
-      - Nigthly
-      - nightly_dev
-      - nightly_master
-      - debug_win
+  workflow_dispatch:
 
 jobs:
   build_dep:

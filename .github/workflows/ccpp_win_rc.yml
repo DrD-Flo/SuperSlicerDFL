@@ -1,13 +1,8 @@
 name: C/C++ Release candidate windows x64
 
 on:
-  push:
-    branches:
-      - rc
-      - debug_win
-      - main
-      - 2.7.61.9_merge
-      # - 2.7.61.10_merge
+  workflow_dispatch:
+  workflow_call:
 
 jobs:
   build_dep:
