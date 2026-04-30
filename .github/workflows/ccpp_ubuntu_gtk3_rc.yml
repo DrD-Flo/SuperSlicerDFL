@@ -14,7 +14,7 @@ jobs:
     steps:
     - uses: actions/checkout@v3
       with:
-        ref: 'rc'
+        ref: 'master'
     - name: Setup cmake
       uses: jwlawson/actions-setup-cmake@v1.13
       with:
