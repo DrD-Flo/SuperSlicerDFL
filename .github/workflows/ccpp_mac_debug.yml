@@ -20,7 +20,7 @@ jobs:
     - name: Install Autoconf
       run: |
         brew update
-        brew install autoconf
+        brew install autoconf texinfo
     - name: check autoconf version
       run: autoconf --version
     - name: update automake for mpfr
