@@ -347,7 +347,7 @@ PrinterPicker::PrinterPicker(wxWindow *parent, const VendorProfile &vendor, wxSt
                 % model.thumbnail
                 % vendor.id
                 % model.id;
-            load_bitmap(Slic3r::var(PRINTER_PLACEHOLDER), bitmap, bitmap_width);
+            load_bitmap(Slic3r::get_icon_file(PRINTER_PLACEHOLDER), bitmap, bitmap_width);
         }
         
         wxStaticText* title = new wxStaticText(this, wxID_ANY, from_u8(model.name), wxDefaultPosition, wxDefaultSize, wxALIGN_LEFT);
@@ -1519,7 +1519,7 @@ PageDownloader::PageDownloader(ConfigWizard* parent)
     : ConfigWizardPage(parent, _L("Downloads from URL"), _L("Downloads"))
 {
     const AppConfig* app_config = get_app_config();
-    auto boldfont = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT);
+    auto boldfont = wxGetApp().bold_font();
     boldfont.SetWeight(wxFONTWEIGHT_BOLD);
 
     append_spacer(VERTICAL_SPACING);
@@ -1763,7 +1763,7 @@ PageVendors::PageVendors(ConfigWizard *parent)
 
     append_text(wxString::Format(_L("Pick another vendor supported by %s"), SLIC3R_APP_NAME) + ":");
 
-    auto boldfont = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT);
+    auto boldfont = wxGetApp().bold_font();
     boldfont.SetWeight(wxFONTWEIGHT_BOLD);
     // Copy vendors from bundle map to vector, so we can sort it without case sensitivity
     std::vector<std::pair<std::wstring, const VendorProfile*>> vendors;
@@ -1790,7 +1790,7 @@ PageVendors::PageVendors(ConfigWizard *parent)
         /*const*/ bool enabled;
         {
             std::lock_guard<std::recursive_mutex> lk(appconfig.config_lock);
-            const VendorMap &acvendors = appconfig.vendors();
+            const AppConfig::VendorMap &acvendors = appconfig.vendors();
             enabled = acvendors.find(vendor->id) != acvendors.end();
         }
         if (enabled) {
@@ -2133,7 +2133,7 @@ void PageTemperatures::apply_custom_config(DynamicPrintConfig &config)
 
 ConfigWizardIndex::ConfigWizardIndex(wxWindow *parent)
     : wxScrolledWindow(parent)
-    , bg(ScalableBitmap(parent, SLIC3R_APP_KEY "_192px_transparent.png", 192))
+    , bg(ScalableBitmap(parent, get_bmp_bundle(GUI_App::dark_mode() ? wxGetApp().light_icon_name() : wxGetApp().dark_icon_name(), 192)->GetBitmap(wxSize(192, 192)), 192))
     , bullet_black(ScalableBitmap(parent, "bullet_black.png"))
     , bullet_blue(ScalableBitmap(parent, "bullet_blue.png"))
     , bullet_white(ScalableBitmap(parent, "bullet_white.png"))
@@ -3362,7 +3362,10 @@ bool ConfigWizard::priv::apply_config(AppConfig *app_config, PresetBundle *prese
 
     app_config->set_vendors(appconfig_new);
 
-    app_config->set("notify_release", page_update->version_check ? "all" : "none");
+    if (app_config->get("notify_release") != std::string(page_update->version_check ? "release" : "none")) {
+        app_config->set("notify_release", page_update->version_check ? "release" : "none");
+        app_config->set("version_online_seen", "");
+    }
     app_config->set("preset_update", page_update->preset_update ? "1" : "0");
     app_config->set("export_sources_full_pathnames", page_reload_from_disk->full_pathnames ? "1" : "0");
 

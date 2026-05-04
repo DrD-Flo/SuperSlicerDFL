@@ -91,6 +91,7 @@
 #include "CalibrationTempDialog.hpp"
 #include "CalibrationRetractionDialog.hpp"
 #include "CalibrationPressureAdvDialog.hpp"
+#include "ConfigWizard.hpp"
 #include "ConfigSnapshotDialog.hpp"
 #include "CreateMMUTiledCanvas.hpp"
 #include "FreeCADDialog.hpp"
@@ -857,6 +858,18 @@ static void generic_exception_handle()
     }
 }
 
+std::string GUI_App::logo_name() const {
+    return std::string(is_editor() ? SLIC3R_APP_KEY : GCODEVIEWER_APP_KEY) + std::string("_logo");
+}
+
+std::string GUI_App::dark_icon_name() const {
+    return std::string(is_editor() ? SLIC3R_APP_KEY : GCODEVIEWER_APP_KEY) + std::string("");
+}
+
+std::string GUI_App::light_icon_name() const {
+    return std::string(is_editor() ? SLIC3R_APP_KEY : GCODEVIEWER_APP_KEY) + std::string("");
+}
+
 void GUI_App::post_init()
 {
     assert(initialized());
@@ -1072,7 +1085,7 @@ void choose_app_dir(GUI_App &app) {
     if (same_version.size() + old_versions.size() == 0) {
         choice = 0;
     } else {
-        //need fonts for MessageDialog
+        // need fonts for MessageDialog
         app.init_fonts();
         // else, reuse by default
         MessageDialog first_dialog(nullptr,
@@ -1136,7 +1149,7 @@ void choose_app_dir(GUI_App &app) {
     my_default_installation.other_keys["config_path_relative"] = "1";
     assert(!boost::filesystem::exists(my_default_installation.get_config_path(app.app_config->get_root_data_dir())));
     my_default_installation.version = Semver(SLIC3R_VERSION_FULL);
-    
+
     AppConfig::ConfigurationEntry my_new_installation = my_default_installation;
     if (choice > 0) {
         choice--;
@@ -1607,7 +1620,7 @@ bool GUI_App::on_init_inner()
 
         // make a bitmap with dark grey banner on the left side
         if (!bmp.IsOk()) {
-            bmp = SplashScreen::MakeBitmap(get_bmp_bundle(SLIC3R_APP_KEY, 600)->GetPreferredBitmapSizeAtScale(1.0), scrn_scaling);
+            bmp = SplashScreen::MakeBitmap(get_bmp_bundle(light_icon_name(), 600)->GetPreferredBitmapSizeAtScale(1.0), scrn_scaling);
         }
         scrn = new SplashScreen(bmp, scrn_scaling, wxSPLASH_CENTRE_ON_SCREEN | wxSPLASH_TIMEOUT, 4000, splashscreen_pos, artist);
 
@@ -2273,6 +2286,37 @@ int GUI_App::get_max_font_pt_size()
 
 void GUI_App::init_fonts()
 {
+    static bool first_run = true;
+    if (first_run) {
+        first_run = false;
+
+        auto copy_and_install_font = [](std::string_view font_filename) -> bool {
+            assert(boost::filesystem::exists(Slic3r::resources_path() / "fonts"));
+            boost::filesystem::path cache_path;
+            if (!Slic3r::data_dir().empty()) {
+                cache_path = Slic3r::data_path() / "cache";
+            } else {
+                cache_path = boost::filesystem::temp_directory_path();
+            }
+            // copy fonts into configuration, to avoid blocking them
+            if (!boost::filesystem::exists(cache_path / "fonts" / font_filename) &&
+                boost::filesystem::exists(Slic3r::resources_path() / "fonts" / font_filename)) {
+                if (!boost::filesystem::exists(cache_path / "fonts")) {
+                    boost::filesystem::create_directories(cache_path / "fonts");
+                }
+                boost::filesystem::copy(Slic3r::resources_path() / "fonts" / font_filename,
+                                        cache_path / "fonts" / font_filename);
+            }
+            return wxFont::AddPrivateFont(
+                (cache_path / "fonts" / font_filename)
+                    .string()); // this needs to be done just once per the application run
+        };
+        // Exemple of font add
+        // if (!copy_and_install_font("comic.ttf")) {
+        //    wxLogError("Could not find Comic Sans MS font");
+        // }
+    }
+
     m_small_font = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT);
     m_bold_font = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT).Bold();
     m_normal_font = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT);
@@ -2297,9 +2341,9 @@ void GUI_App::update_fonts(const MainFrame *main_frame)
      */
 	if (main_frame == nullptr)
 		main_frame = this->mainframe;
-    m_normal_font   = main_frame->normal_font();
-    m_small_font    = m_normal_font;
-    m_bold_font     = main_frame->normal_font().Bold();
+    m_small_font.SetPointSize(main_frame->normal_font().GetPointSize());
+    m_bold_font.SetPointSize(main_frame->normal_font().GetPointSize());
+    m_normal_font.SetPointSize(main_frame->normal_font().GetPointSize());
     m_link_font     = m_bold_font.Underlined();
     m_em_unit       = main_frame->em_unit();
     m_code_font.SetPointSize(m_normal_font.GetPointSize());
@@ -4019,7 +4063,8 @@ bool GUI_App::run_wizard(ConfigWizard::RunReason reason, ConfigWizard::StartPage
             return false;
     }
 #endif
-    // if nothing installed, show the installatino dialog first
+#ifndef ALLOW_PRUSA_FIRST
+    // if nothing installed, show the installation dialog first
     bool is_synch = this->preset_updater->is_synch;
     if (bypass_bundle_install == RVBM_ALWAYS ||
         (bypass_bundle_install == RVBM_IF_EMPTY && this->preset_updater->count_installed() == 0)) {
@@ -4032,6 +4077,44 @@ bool GUI_App::run_wizard(ConfigWizard::RunReason reason, ConfigWizard::StartPage
             [&](bool is_ok) { if (is_ok) run_wizard(reason, start_page, RunVendorBundleManage::RVBM_NEVER); });
         return false;
     }
+#else //ALLOW_PRUSA_FIRST
+    if (this->preset_updater->count_installed() == 0 && bypass_bundle_install != RVBM_NEVER) {
+        this->preset_updater->reload_all_vendors();
+        // don't run the bundle manager but just install the vendor version
+        this->preset_updater->sync_async([this, reason, start_page](int update_count) {
+            bool found = false;
+            std::lock_guard<std::recursive_mutex> guard(this->preset_updater->all_vendors_mutex);
+            for (const auto &[id, vendor] : this->preset_updater->all_vendors) {
+                if (vendor.profile.id == ALLOW_PRUSA_FIRST) {
+                    found = true;
+                    if (vendor.best != nullptr) {
+                        this->preset_updater->install_vendor(ALLOW_PRUSA_FIRST, *vendor.best,
+                                                             [this, reason, start_page](const std::string &error_msg) {
+                                                                 run_wizard(reason, start_page,
+                                                                            RunVendorBundleManage::RVBM_NEVER);
+                                                             });
+                    } else {
+                        //TODO: failsafe
+                        for (auto &vendor_loc : vendor.available_profiles) {
+                            if (vendor_loc.local_file.find(Slic3r::resources_dir()) != std::string::npos) {
+                                this->preset_updater->install_vendor(ALLOW_PRUSA_FIRST, vendor_loc,
+                                                                     [this, reason,
+                                                                      start_page](const std::string &error_msg) {
+                                                                         run_wizard(reason, start_page,
+                                                                                    RunVendorBundleManage::RVBM_NEVER);
+                                                                     });
+                                break;
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+            assert(found);
+        });
+        return false;
+    }
+#endif
 
     ConfigWizard *wizard = nullptr;
     {
@@ -4384,33 +4467,40 @@ void GUI_App::associate_bgcode_files()
 
 void GUI_App::on_version_read(wxCommandEvent& evt)
 {
-    app_config->set("version_online", into_u8(evt.GetString()));
-    std::optional<Slic3r::Semver> version_online = Semver::parse(into_u8(evt.GetString()));
     std::string opt = app_config->get("notify_release");
+    std::optional<Semver> version_online = Semver::parse(into_u8(evt.GetString()));
     if (!version_online || this->plater_ == nullptr) {
         return;
-    } else if (!m_app_updater->get_triggered_by_user() && opt != "all" && (opt != "release" || version_online->prerelease() == nullptr)) {
+    } else if (!m_app_updater->get_triggered_by_user() &&
+               (opt == "none" || (opt == "release" && version_online->prerelease()))) {
         BOOST_LOG_TRIVIAL(info) << "Version online: " << evt.GetString() << ". User does not wish to be notified.";
         return;
     }
-    if (*Semver::parse(SLIC3R_VERSION_FULL) >= *version_online) {
-        if (m_app_updater->get_triggered_by_user())
-        {
-            std::string text = (*version_online == Semver()) 
-                ? _u8L("Check for application update has failed.")
-                : Slic3r::format(_u8L("You are currently running the latest released version %1%."), evt.GetString());
+    std::optional<Semver> lastest_download = Semver::parse(app_config->get("version_online_seen"));
+    std::optional<Semver> current_version = Semver::parse(SLIC3R_VERSION_FULL);
+    assert(current_version);
+    if (m_app_updater->get_triggered_by_user()) {
+        if (!version_online || *version_online <= *current_version) {
+            std::string text = (*version_online == Semver()) ?
+                _u8L("Check for application update has failed.") :
+                Slic3r::format(_u8L("You are currently running the latest released version %1%."), current_version->to_string());
 
             if (*Semver::parse(SLIC3R_VERSION) > *version_online)
-                text = Slic3r::format(_u8L("There are no new released versions online. The latest release version is %1%."), evt.GetString());
+                text = Slic3r::format(
+                    _u8L("There are no new released versions online. The latest release version is %1%."),
+                    evt.GetString());
 
-            this->plater_->get_notification_manager()->push_version_notification(NotificationType::NoNewReleaseAvailable
-                , NotificationManager::NotificationLevel::RegularNotificationLevel
-                , text
-                , std::string()
-                , std::function<bool(wxEvtHandler*)>()
-            );
+            this->plater_->get_notification_manager()
+                ->push_version_notification(NotificationType::NoNewReleaseAvailable,
+                                            NotificationManager::NotificationLevel::RegularNotificationLevel, text,
+                                            std::string(), std::function<bool(wxEvtHandler *)>());
+            return;
         }
-        return;
+    } else {
+        if (!version_online || *version_online <= *current_version ||
+            (lastest_download && *version_online <= *lastest_download)) {
+            return;
+        }
     }
     // notification
     /*
@@ -4429,11 +4519,11 @@ void GUI_App::on_version_read(wxCommandEvent& evt)
 void GUI_App::app_updater(bool from_user)
 {
     DownloadAppData app_data = m_app_updater->get_app_data();
-
-    if (from_user && (!app_data.version || *app_data.version <= *Semver::parse(SLIC3R_VERSION)))
+    Semver current_version = *Semver::parse(SLIC3R_VERSION_FULL);
+    if (from_user && (app_data.version <= current_version || app_data.url.empty()))
     {
         BOOST_LOG_TRIVIAL(info) << "There is no newer version online.";
-        MsgNoAppUpdates no_update_dialog;
+        MsgNoAppUpdates no_update_dialog; 
         no_update_dialog.ShowModal();
         return;
 
@@ -4442,19 +4532,27 @@ void GUI_App::app_updater(bool from_user)
     assert(!app_data.url.empty());
     assert(!app_data.target_path.empty());
 
+    if (app_data.url.empty() || app_data.target_path.empty()) {
+        return;
+    }
+
     // dialog with new version info
-    AppUpdateAvailableDialog dialog(*Semver::parse(SLIC3R_VERSION), *app_data.version, from_user);
+    AppUpdateAvailableDialog dialog(current_version, app_data.version, from_user);
     auto dialog_result = dialog.ShowModal();
     // checkbox "do not show again"
     if (dialog.disable_version_check()) {
         app_config->set("notify_release", "none");
+        app_config->set("version_online_seen", "");
     }
     // Doesn't wish to update
     if (dialog_result != wxID_OK) {
+        if (dialog_result == wxID_NO) {
+            app_config->set("version_online_seen", app_data.version.to_string());
+        }
         return;
     }
     // dialog with new version download (installer or app dependent on system) including path selection
-    AppUpdateDownloadDialog dwnld_dlg(*app_data.version, app_data.target_path);
+    AppUpdateDownloadDialog dwnld_dlg(app_data.version, app_data.target_path);
     dialog_result = dwnld_dlg.ShowModal();
     //  Doesn't wish to download
     if (dialog_result != wxID_OK) {
@@ -4471,6 +4569,7 @@ void GUI_App::app_updater(bool from_user)
 
 void GUI_App::app_version_check(bool from_user)
 {
+    AppUpdater::clean();
     if (from_user) {
         if (m_app_updater->get_download_ongoing()) {
             MessageDialog msgdlg(nullptr, _L("Downloading of the new version is in progress. Do you want to continue?"), _L("Notice"), wxYES_NO);
