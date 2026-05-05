@@ -2289,29 +2289,29 @@ void GUI_App::init_fonts()
     static bool first_run = true;
     if (first_run) {
         first_run = false;
-
-        auto copy_and_install_font = [](std::string_view font_filename) -> bool {
-            assert(boost::filesystem::exists(Slic3r::resources_path() / "fonts"));
-            boost::filesystem::path cache_path;
-            if (!Slic3r::data_dir().empty()) {
-                cache_path = Slic3r::data_path() / "cache";
-            } else {
-                cache_path = boost::filesystem::temp_directory_path();
-            }
-            // copy fonts into configuration, to avoid blocking them
-            if (!boost::filesystem::exists(cache_path / "fonts" / font_filename) &&
-                boost::filesystem::exists(Slic3r::resources_path() / "fonts" / font_filename)) {
-                if (!boost::filesystem::exists(cache_path / "fonts")) {
-                    boost::filesystem::create_directories(cache_path / "fonts");
-                }
-                boost::filesystem::copy(Slic3r::resources_path() / "fonts" / font_filename,
-                                        cache_path / "fonts" / font_filename);
-            }
-            return wxFont::AddPrivateFont(
-                (cache_path / "fonts" / font_filename)
-                    .string()); // this needs to be done just once per the application run
-        };
-        // Exemple of font add
+        // // only with recent wxwidget, and maybe only on windows. Uncomment if you need it.
+        //auto copy_and_install_font = [](std::string_view font_filename) -> bool {
+        //    assert(boost::filesystem::exists(Slic3r::resources_path() / "fonts"));
+        //    boost::filesystem::path cache_path;
+        //    if (!Slic3r::data_dir().empty()) {
+        //        cache_path = Slic3r::data_path() / "cache";
+        //    } else {
+        //        cache_path = boost::filesystem::temp_directory_path();
+        //    }
+        //    // copy fonts into configuration, to avoid blocking them
+        //    if (!boost::filesystem::exists(cache_path / "fonts" / font_filename) &&
+        //        boost::filesystem::exists(Slic3r::resources_path() / "fonts" / font_filename)) {
+        //        if (!boost::filesystem::exists(cache_path / "fonts")) {
+        //            boost::filesystem::create_directories(cache_path / "fonts");
+        //        }
+        //        boost::filesystem::copy(Slic3r::resources_path() / "fonts" / font_filename,
+        //                                cache_path / "fonts" / font_filename);
+        //    }
+        //    return wxFont::AddPrivateFont(
+        //        (cache_path / "fonts" / font_filename)
+        //            .string()); // this needs to be done just once per the application run
+        //};
+        // // Exemple of font add
         // if (!copy_and_install_font("comic.ttf")) {
         //    wxLogError("Could not find Comic Sans MS font");
         // }
