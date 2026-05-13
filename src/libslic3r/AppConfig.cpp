@@ -177,7 +177,7 @@ void AppConfig::set_defaults()
         if (get("tab_icon_size").empty())
             set("tab_icon_size", "32");
 
-        if (get("font_size").empty())
+        if (get("font_size").empty() || get_int("font_size") <= 0)
             set("font_size", "0");
 
         if (get("side_panel_width").empty())
