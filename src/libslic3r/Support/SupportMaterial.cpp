@@ -55,6 +55,8 @@
     #define DEBUG
     #define _DEBUG
     #undef NDEBUG
+    #include "SupportDebug.hpp"
+    #include "SupportDebug.cpp"
     #include "../utils.hpp"
     #include "../SVG.hpp"
 #endif
@@ -751,7 +753,7 @@ public:
                 bbox.merge(get_extents(out));
             if (!support_polygons_simplified.empty())
                 bbox.merge(get_extents(support_polygons_simplified));
-            SVG svg(debug_out_path("extract_support_from_grid_trimmed-%s-%d-%d-%lf.svg", step_name, iRun, layer_id, print_z_mm).c_str(), bbox);
+            SVG svg(debug_out_path("extract_support_from_grid_trimmed-smsGrid-%s-%d-%d-%lf.svg", step_name, iRun, layer_id, print_z_mm).c_str(), bbox);
             svg.draw(union_ex(support_polygons_simplified), "gray", 0.25f);
             svg.draw(islands, "red", 0.5f);
             svg.draw(union_ex(out), "green", 0.5f);
@@ -777,7 +779,7 @@ public:
             auto closing_distance   = scaled<float>(m_support_material_closing_radius_mm);
             auto smoothing_distance = scaled<float>(m_extrusion_width_mm);
 #ifdef SLIC3R_DEBUG
-            SVG::export_expolygons(debug_out_path("extract_support_from_grid_trimmed-%s-%d-%d-%lf.svg", step_name, iRun, layer_id, print_z_mm),
+            SVG::export_expolygons(debug_out_path("extract_support_from_grid_trimmed-smsSnug-%s-%d-%d-%lf.svg", step_name, iRun, layer_id, print_z_mm),
                 { { { diff_ex(expand(*m_support_polygons, closing_distance), closing(*m_support_polygons, closing_distance, SUPPORT_SURFACES_OFFSET_PARAMETERS)) }, { "closed", "blue",   0.5f } },
                   { { union_ex(smooth_outward(closing(*m_support_polygons, closing_distance, SUPPORT_SURFACES_OFFSET_PARAMETERS), smoothing_distance)) },           { "regularized", "red", "black", "", scaled<coord_t>(0.1f), 0.5f } },
                   { { union_ex(*m_support_polygons) },                                                                                                              { "src",   "green",  0.5f } },
@@ -1274,6 +1276,7 @@ static inline std::tuple<Polygons, Polygons, Polygons, float> detect_overhangs(
         0.;
     float        no_interface_offset = 0.f;
 
+    coord_t max_flow_width  = 0;
     if (layer_id == 0) 
     {
         // This is the first object layer, so the object is being printed on a raft and
@@ -1287,6 +1290,10 @@ static inline std::tuple<Polygons, Polygons, Polygons, float> detect_overhangs(
 #endif
         // Expand for better stability.
         contact_polygons = object_config.raft_expansion.value > 0 ? expand(overhang_polygons, scaled<float>(object_config.raft_expansion.value)) : overhang_polygons;
+
+        for (LayerRegion *layerm : layer.regions()) {
+            max_flow_width = std::max(max_flow_width, (layerm->flow(frExternalPerimeter).scaled_width()));
+        }
     }
     else if (! layer.regions().empty())
     {
@@ -1322,6 +1329,7 @@ static inline std::tuple<Polygons, Polygons, Polygons, float> detect_overhangs(
             // Extrusion width accounts for the roundings of the extrudates.
             // It is the maximum widh of the extrudate.
             coord_t flow_width = (layerm->flow(frExternalPerimeter).scaled_width());
+            max_flow_width = std::max(max_flow_width, flow_width);
             lower_layer_offset  = 
                 (layer_id < (size_t)object_config.support_material_enforce_layers.value) ? 
                     // Enforce a full possible support, ignore the overhang angle.
@@ -1410,7 +1418,7 @@ static inline std::tuple<Polygons, Polygons, Polygons, float> detect_overhangs(
             if (object_config.dont_support_bridges) {
                 // FIXME Expensive, potentially not precise enough.
                 assert_valid(diff_polygons);
-                remove_bridges_from_contacts(print_config, lower_layer, *layerm, flow_width, diff_polygons);
+                remove_bridges_from_contacts(print_config, lower_layer, *layerm, double(flow_width), diff_polygons);
                 ensure_valid(diff_polygons, resolution);
             }
 
@@ -1422,7 +1430,7 @@ static inline std::tuple<Polygons, Polygons, Polygons, float> detect_overhangs(
                 debug_out_path("support-top-contacts-filtered-run%d-layer%d-region%d-z%f.svg", 
                     iRun, layer_id, 
                     std::find_if(layer.regions().begin(), layer.regions().end(), [layerm](const LayerRegion* other){return other == layerm;}) - layer.regions().begin(),
-                    layer.print_z),
+                    layer.scaled_print_z()),
                 union_ex(diff_polygons));
             #endif /* SLIC3R_DEBUG */
 
@@ -1472,7 +1480,7 @@ static inline std::tuple<Polygons, Polygons, Polygons, float> detect_overhangs(
                 //note: don't diff with inflated lower_layer_polygons, or the slopes will be unsupported.
                 enforcer_polygons = intersection(layer.lslices(), enforcer_polygons_src);
     #ifdef SLIC3R_DEBUG
-                SVG::export_expolygons(debug_out_path("support-top-contacts-enforcers-run%d-layer%d-z%f.svg", iRun, layer_id, layer.print_z),
+                SVG::export_expolygons(debug_out_path("support-top-contacts-enforcers-run%d-layer%d-z%f.svg", iRun, layer_id, layer.scaled_print_z()),
                     { { layer.lslices(),                               { "layer.lslices",              "gray",   0.2f } },
                       { { union_ex(lower_layer_polygons) },            { "lower_layer_polygons",       "green",  0.5f } },
                       { enforcers_united,                              { "enforcers",                  "blue",   0.5f } },
@@ -1489,6 +1497,9 @@ static inline std::tuple<Polygons, Polygons, Polygons, float> detect_overhangs(
                 }
             }
         }
+    overhang_polygons = closing(overhang_polygons, double(max_flow_width) * 0.1);
+    contact_polygons = closing(contact_polygons, double(max_flow_width) * 0.1);
+    enforcer_polygons = closing(enforcer_polygons, double(max_flow_width) * 0.1);
 
     return std::make_tuple(std::move(overhang_polygons), std::move(contact_polygons), std::move(enforcer_polygons), no_interface_offset);
 }
@@ -1923,7 +1934,7 @@ static inline SupportGeneratorLayer* detect_bottom_contacts(
     Polygons top = collect_region_slices_by_type(layer, stPosTop | stDensSolid);
     assert_valid(top);
 #ifdef SLIC3R_DEBUG
-    SVG::export_expolygons(debug_out_path("support-bottom-layers-raw-%d-%lf.svg", iRun, layer.print_z),
+    SVG::export_expolygons(debug_out_path("support-bottom-layers-raw-%d-%lf.svg", iRun, layer.scaled_print_z()),
         { { { union_ex(top) },                                { "top",            "blue",    0.5f } },
             { { union_safety_offset_ex(supports_projected) }, { "overhangs",      "magenta", 0.5f } },
             { layer.lslices(),                                { "layer.lslices",  "green",   0.5f } },
