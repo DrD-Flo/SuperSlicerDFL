@@ -122,7 +122,7 @@ def handle_artifact(json_artifact):
 			resp = requests.get(json_artifact["archive_download_url"], headers={'Authorization': 'token ' + github_auth_token,}, allow_redirects=True);
 			print("win: " +str(resp));
 			z = zipfile.ZipFile(io.BytesIO(resp.content))
-			base_name = release_path+"/"+prefix+"_" +program_name+"_"+version+"_win64_"+date_str;
+			base_name = release_path+"/"+program_name+"_"+version+"_win64_"+date_str;
 			z.extractall(base_name);
 			try:
 				ret = subprocess.check_output([path_7zip, "a", "-tzip", base_name+".zip", base_name]);
@@ -199,13 +199,14 @@ if(not os.path.isdir("./releases")):
 base_path = "./releases/"+branch_name+"_release_"+str(version);
 release_path = base_path;
 
-# find a non-existing directory name
+# find a directory that either doesn't exist OR is empty
 counter = 2;
-while os.path.isdir(release_path):
+while os.path.isdir(release_path) and os.listdir(release_path):
 	release_path = f"{base_path}_{counter}";
 	counter += 1;
+if not os.path.isdir(release_path):
+	os.mkdir(release_path);
 
-os.mkdir(release_path);
 #urllib.urlretrieve ("https://api.github.com/repos/"+repo+"/actions/artifacts", release_path+"artifacts.json");
 need_more = True
 page = 1
@@ -219,4 +220,4 @@ while need_more and page < 10:
 				break;
 	page = page + 1;
 
-print("DONT FORGET TO PUSH YOUR MASTER");
+print("DONT FORGET TO PUSH YOUR MAIN/MASTER BRANCH");

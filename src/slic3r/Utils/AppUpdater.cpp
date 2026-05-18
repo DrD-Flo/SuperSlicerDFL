@@ -165,7 +165,7 @@ AppUpdater::priv::priv() :
 #ifdef __linux__
     , m_default_dest_folder (boost::filesystem::path("/tmp"))
 #else
-	, m_default_dest_folder (boost::filesystem::path(data_dir()) / "cache")
+	, m_default_dest_folder (Slic3r::data_path() / "cache")
 #endif //_WIN32
 {	
 	boost::filesystem::path downloads_path = boost::filesystem::path(get_downloads_path());
@@ -233,7 +233,7 @@ boost::filesystem::path AppUpdater::priv::download_file(const DownloadAppData& d
 	tmp_path += format(".%1%%2%", std::to_string(GUI::GLCanvas3D::timestamp_now()), ".download");
 	FILE* file;
 	wxString temp_path_wstring(tmp_path.wstring());
-	file = fopen(temp_path_wstring.c_str(), "wb");
+	file = boost::nowide::fopen(temp_path_wstring.c_str(), "wb");
 	assert(file != NULL);
 	if (file == NULL) {
 	    std::string line1 = GUI::format(_u8L("Download from %1% couldn't start:"), data.url);
@@ -743,14 +743,14 @@ bool replace_me(DownloadAppData input_data, const boost::filesystem::path &archi
 
         mz_zip_archive_file_stat file_stat;
 
-        std::string archive_name = archive_path.stem().string();
+        boost::filesystem::path archive_name = archive_path.stem();
 
         // we first loop the entries to read from the archive the .model file only, in order to extract the version from it
         bool found_model = false;
         for (mz_uint i = 0; i < num_entries; ++i) {
             if (mz_zip_reader_file_stat(&zip.archive, i, &file_stat)) {
                 boost::filesystem::path name(file_stat.m_filename);
-                boost::filesystem::path out = name.lexically_relative(archive_path.stem());
+                boost::filesystem::path out = name.lexically_relative(archive_name);
                 if (file_stat.m_is_directory) {
                     boost::filesystem::create_directories(out);
                 } else {
@@ -804,6 +804,9 @@ void fix_replace_me() {
         }
     }
     if (boost::filesystem::exists(temp_dir / "resources")) {
+        if (boost::filesystem::exists(my_dir / "resources")) {
+            boost::filesystem::remove_all(my_dir / "resources");
+        }
         boost::filesystem::rename(temp_dir / "resources", my_dir / "resources");
     }
 #else
