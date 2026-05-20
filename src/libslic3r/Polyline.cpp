@@ -172,7 +172,7 @@ void Polyline::split_at(const Point &point, Polyline* p1, Polyline* p2) const
     Point  prev = this->points.front();
     for (auto it = this->points.cbegin() + 1; it != this->points.cend(); ++it) {
         Point proj;
-        if (double d2 = line_alg::distance_to_squared(Line(prev, *it), point, &proj); d2 < min_dist2) {
+        if (double d2 = Line::distance_to_squared_abp(prev, *it, point, &proj); d2 < min_dist2) {
             min_dist2 = d2;
             min_point_it = it;
         }
@@ -187,6 +187,49 @@ void Polyline::split_at(const Point &point, Polyline* p1, Polyline* p2) const
     if (*min_point_it == point)
         ++ min_point_it;
     p2->points.insert(p2->points.end(), min_point_it, this->points.cend());
+}
+
+Polyline Polyline::split_at(distf_t dist) {
+    if (dist <= SCALED_EPSILON) {
+        Polyline me = *this;
+        clear();
+        return me;
+    }
+
+    Point pt_split = points.front();
+    size_t next_point_idx = 1;
+    while (dist > SCALED_EPSILON && next_point_idx < size()) {
+        distsqrf_t dist_sqr = points[next_point_idx - 1].distance_to_square(points[next_point_idx]);
+        if (dist_sqr < Slic3r::sqr(SCALED_EPSILON + dist)) {
+            dist -= std::sqrt(dist_sqr);
+            ++next_point_idx;
+        } else {
+            pt_split = Line(points[next_point_idx - 1], points[next_point_idx]).point_at(dist);;
+            dist = 0;
+            break;
+        }
+    }
+
+    if (pt_split == points.front()) {
+        if (next_point_idx < size()) {
+            // just over an existing point
+            Polyline second_part;
+            second_part.points.insert(second_part.points.end(), points.begin() + next_point_idx, points.end());
+            points.resize(next_point_idx + 1);
+            return second_part;
+        } else {
+            // too long
+            return Polyline();
+        }
+    } else {
+        // mid point
+        Polyline second_part;
+        second_part.points.push_back(pt_split);
+        second_part.points.insert(second_part.points.end(), points.begin() + next_point_idx, points.end());
+        points.resize(next_point_idx + 1);
+        points.back() = pt_split;
+        return second_part;
+    }
 }
 
 bool Polyline::is_straight() const
@@ -216,6 +259,12 @@ BoundingBox get_extents(const Polylines &polylines)
     }
     return bb;
 }
+
+Polyline reverse_polyline(const Polyline &polyline) {
+    Polyline p2 = polyline;
+    p2.reverse();
+    return p2;
+};
 
 // Return True when erase some otherwise False.
 bool remove_same_neighbor(Polyline &polyline) {
@@ -328,7 +377,7 @@ std::pair<int, Point> foot_pt(const Points &polyline, const Point &pt)
     auto  it_proj = polyline.begin();
     for (++ it; it != polyline.end(); ++ it) {
         Point foot_pt;
-        if (double d2 = line_alg::distance_to_squared(Line(prev, *it), pt, &foot_pt); d2 < d2_min) {
+        if (double d2 = Line::distance_to_squared_abp(prev, *it, pt, &foot_pt); d2 < d2_min) {
             d2_min      = d2;
             foot_pt_min = foot_pt;
             it_proj     = it;
@@ -350,7 +399,7 @@ ThickLines ThickPolyline::thicklines() const
 }
 
 // Removes the given distance from the end of the ThickPolyline
-void ThickPolyline::clip_end(coordf_t distance)
+void ThickPolyline::clip_end(distf_t distance)
 {
     assert(this->points_width.size() == this->points.size());
     if (! this->empty()) {
@@ -380,14 +429,14 @@ void ThickPolyline::clip_end(coordf_t distance)
     assert(this->points_width.size() == this->points.size());
     }
 }
-void ThickPolyline::extend_end(coordf_t distance)
+void ThickPolyline::extend_end(distf_t distance)
 {
     // relocate last point by extending the last segment by the specified length
     Vec2d v = (this->points.back() - *(this->points.end() - 2)).cast<coordf_t>().normalized();
     this->points.back() += Point::round(v * distance);
 }
 
-void ThickPolyline::extend_start(coordf_t distance)
+void ThickPolyline::extend_start(distf_t distance)
 {
     // relocate first point by extending the first segment by the specified length
     Vec2d v = (this->points.front() - this->points[1]).cast<coordf_t>().normalized();
@@ -845,7 +894,7 @@ std::pair<int, Point> ArcPolyline::foot_pt(const Point &pt) const
         Point prev    = m_path.front().point;
         for (size_t idx = 1; idx < m_path.size(); ++idx) {
             Point foot_pt;
-            if (double d2 = line_alg::distance_to_squared(Line(prev, m_path[idx].point), pt, &foot_pt); d2 < d2_min) {
+            if (double d2 = Line::distance_to_squared_abp(prev, m_path[idx].point, pt, &foot_pt); d2 < d2_min) {
                 d2_min      = d2;
                 foot_pt_min = foot_pt;
                 foot_idx_min = idx;
@@ -1515,7 +1564,7 @@ int ArcPolyline::simplify_straits(coordf_t min_tolerance,
                     Point current = m_path[idxs[i+1]].point;
                     Point next = m_path[idxs[i+2]].point;
                     // check deviation
-                    coordf_t deviation = Line::distance_to(current, previous, next);
+                    coordf_t deviation = std::sqrt(Line::distance_to_squared_abp(previous, next, current));
                     if (deviation > min_tolerance) {
                         weights[i] = 0;
                     } else {
@@ -1693,7 +1742,7 @@ void ArcPolyline::simplify_straits(const coordf_t min_tolerance,
             Point current = m_path[idx_pt].point;
             Point next = m_path[idx_pt + 1].point;
             // check deviation
-            coordf_t deviation = Line::distance_to(current, previous, next);
+            coordf_t deviation = std::sqrt(Line::distance_to_squared_abp(previous, next, current));
             //if deviation is small enough and the distance is too small
             if (deviation < min_tolerance &&
                 (min_point_distance_sqr < previous.distance_to_square(current) ||

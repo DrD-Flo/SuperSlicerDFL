@@ -198,12 +198,16 @@ set(SLIC3R_SOURCES
     GCode/SeamPlacer.hpp
     #GCode/SmoothPath.cpp
     #GCode/SmoothPath.hpp
+    GCode/TemperatureMover.cpp
+    GCode/TemperatureMover.hpp
     GCode/ToolOrdering.cpp
     GCode/ToolOrdering.hpp
     GCode/Wipe.cpp
     GCode/Wipe.hpp
     GCode/WipeTower.cpp
     GCode/WipeTower.hpp
+    GCode/WipeTower2.cpp
+    GCode/WipeTower2.hpp
     GCode/WipeTowerIntegration.cpp
     GCode/WipeTowerIntegration.hpp
     GCode/GCodeProcessor.cpp
@@ -624,6 +628,7 @@ target_link_libraries(libslic3r
     JPEG::JPEG
     qoi
     LibBGCode::bgcode_convert
+	quickdigest5
     )
 
 if (APPLE)

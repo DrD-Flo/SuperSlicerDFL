@@ -455,7 +455,9 @@ wxBoxSizer* Preview::create_layers_slider_sizer()
     std::lock_guard lock(m_layers_slider->lock_render());
 
     m_layers_slider->SetDrawMode(wxGetApp().get_current_printer_technology() == ptSLA,
-        wxGetApp().preset_bundle->fff_prints.get_edited_preset().config.opt_bool("complete_objects") || wxGetApp().preset_bundle->fff_prints.get_edited_preset().config.opt_float("parallel_objects_step") > 0);
+                                 wxGetApp().preset_bundle->fff_prints.get_edited_preset().config.opt_bool("complete_objects") ||
+                                     (wxGetApp().preset_bundle->fff_prints.get_edited_preset().config.opt_float("parallel_objects_step") > 0 &&
+                                      !wxGetApp().preset_bundle->fff_prints.get_edited_preset().config.opt_bool("parallel_islands")));
     m_layers_slider->enable_action_icon(wxGetApp().is_editor());
 
     sizer->Add(m_layers_slider, 0, wxEXPAND, 0);
@@ -524,7 +526,7 @@ void Preview::check_layers_slider_values(std::vector<CustomGCode::Item>& ticks_f
     ticks_from_model.erase(std::remove_if(ticks_from_model.begin(), ticks_from_model.end(),
                      [layers_z](CustomGCode::Item val)
         {
-            auto it = std::lower_bound(layers_z.begin(), layers_z.end(), val.print_z - DoubleSlider::epsilon());
+            auto it = std::lower_bound(layers_z.begin(), layers_z.end(), unscaled(val.print_z_) - DoubleSlider::epsilon());
             return it == layers_z.end();
         }),
         ticks_from_model.end());
@@ -625,8 +627,8 @@ void Preview::update_layers_slider(const std::vector<double>& layers_z, bool sho
                 // do not fetch uncomplete data
                 m_layers_slider->SetLayersAreas({});
             } else {
-                const std::vector<std::pair<coordf_t, float>> &layerz_to_area =
-                    plater->fff_print().print_statistics().layer_area_stats;
+                const std::vector<std::pair<coord_t, float>> &layerz_to_area =
+                    plater->fff_print().print_statistics()._layer_area_stats;
                 std::vector<float> areas;
                 for (auto [z, area] : layerz_to_area) areas.push_back(area);
                 m_layers_slider->SetLayersAreas(areas);

@@ -254,6 +254,14 @@ std::string GCodeWriter::write_pressure_advance(double pa) {
     return gcode;
 }
 
+int16_t GCodeWriter::get_temperature(int tool) {
+    //use m_tool if tool isn't set
+    if (tool < 0 && m_tool != nullptr)
+        tool = m_tool->id();
+
+    return m_last_temperature;
+}
+
 std::string GCodeWriter::set_temperature(const int16_t temperature, bool wait, int tool)
 {
     //use m_tool if tool isn't set
@@ -707,7 +715,7 @@ std::string GCodeWriter::travel_to_xyz(const Vec3d &point, const bool is_lift, c
     }
 
     m_pos = point;
-    
+
     GCodeG1Formatter w(this->get_default_gcode_formatter());
     bool has_x_y = w.emit_xy(point.head<2>(), m_pos_str_x, m_pos_str_y);
     if (!has_x_y) {
@@ -748,6 +756,22 @@ std::string GCodeWriter::travel_to_z(const double z, const std::string_view comm
     return this->get_travel_to_z_gcode(z, comment);
 }
 
+std::string GCodeWriter::ensure_z(const double z, const std::string_view comment) {
+    /*  If target Z is lower than current Z but higher than nominal Z
+        we don't perform the move but we only adjust the nominal Z by
+        reducing the lift amount that will be used for unlift. */
+    // note that if we move but it's lower and we are lifted, we can wait a bit for unlifting, to avoid possible dance on layer change.
+    double current_z = z < 0 ? (m_pos.z() - m_lifted) : z;
+    if (current_z < m_pos.z()) {
+        m_lifted = m_pos.z() - current_z;
+        if (std::abs(m_lifted) < EPSILON)
+            m_lifted = 0.;
+        current_z = m_pos.z();
+    } else {
+        m_lifted = 0.;
+    }
+    return this->get_travel_to_z_gcode(current_z, comment);
+}
 
 std::string GCodeWriter::get_travel_to_z_gcode(const double z, const std::string_view comment)
 {
@@ -802,6 +826,19 @@ void GCodeWriter::_extrude_e(GCodeFormatter &w, double dE)
     if (is_extrude) {
         w.emit_e(m_extrusion_axis, e_to_write);
     }
+}
+
+std::string GCodeWriter::extrude_to_e(const double dE, const double speed_mm_s, const std::string_view comment)
+{
+    assert(dE == dE);
+
+    GCodeG1Formatter w(this->get_default_gcode_formatter());
+    _extrude_e(w, dE);
+    if (speed_mm_s > 0) {
+        w.emit_f(speed_mm_s * 60.);
+    }
+    w.emit_comment(this->config.gcode_comments, comment);
+    return write_acceleration() + w.string();
 }
 
 std::string GCodeWriter::extrude_to_xy(const Vec2d &point, const double dE, const std::string_view comment)
@@ -1100,7 +1137,7 @@ std::string GCodeWriter::unretract()
             gcode += w.string();
         }
     }
-    
+
     return gcode;
 }
 

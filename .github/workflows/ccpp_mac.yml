@@ -6,7 +6,8 @@ on:
       - Nigthly
       - nightly_dev
       - nightly_master
-      - nightly_2.7.62
+      - nightly_macos_intel
+      - nightly_2.7.63
       - debug_macos
 
 jobs:
@@ -46,7 +47,7 @@ jobs:
       id: cache-action
       uses: actions/cache@v3
       with:
-        key: macos_intel_2.7
+        key: macos_intel_2.7.63
         path: deps/build/destdir
     - if: steps.cache-action.outputs.cache-hit != 'true'
       name: build deps if new cache
@@ -87,7 +88,7 @@ jobs:
       id: cache-action
       uses: actions/cache@v3
       with:
-        key: macos_intel_2.7
+        key: macos_intel_2.7.63
         path: deps/build/destdir
     - name: build slicer
       run: ./BuildMacOS.sh -siv

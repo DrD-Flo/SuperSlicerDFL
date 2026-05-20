@@ -374,29 +374,32 @@ const BoundingBoxf3& GLVolume::transformed_non_sinking_bounding_box() const
     return *m_transformed_non_sinking_bounding_box;
 }
 
-void GLVolume::set_range(double min_z, double max_z)
+void GLVolume::set_range(double min_z_mm, double max_z_mm)
 {
     this->tverts_range.first = 0;
     this->tverts_range.second = this->model.indices_count();
 
-    if (!this->print_zs.empty()) {
+    coord_t max_z = Layer::scale_to_layer_coord(max_z_mm);
+    coord_t min_z = Layer::scale_to_layer_coord(min_z_mm);
+
+    if (!this->_print_zs.empty()) {
         // The Z layer range is specified.
         // First test whether the Z span of this object is not out of (min_z, max_z) completely.
-        if (this->print_zs.front() > max_z || this->print_zs.back() < min_z)
+        if (this->_print_zs.front() > max_z || this->_print_zs.back() < min_z)
             this->tverts_range.second = 0;
         else {
             // Then find the lowest layer to be displayed.
             size_t i = 0;
-            for (; i < this->print_zs.size() && this->print_zs[i] < min_z; ++i);
-            if (i == this->print_zs.size())
+            for (; i < this->_print_zs.size() && this->_print_zs[i] < min_z; ++i);
+            if (i == this->_print_zs.size())
                 // This shall not happen.
                 this->tverts_range.second = 0;
             else {
                 // Remember start of the layer.
                 this->tverts_range.first = this->offsets[i];
                 // Some layers are above $min_z. Which?
-                for (; i < this->print_zs.size() && this->print_zs[i] <= max_z; ++i);
-                if (i < this->print_zs.size())
+                for (; i < this->_print_zs.size() && this->_print_zs[i] <= max_z; ++i);
+                if (i < this->_print_zs.size())
                     this->tverts_range.second = this->offsets[i];
             }
         }
@@ -575,27 +578,34 @@ int GLVolumeCollection::load_wipe_tower_preview(
             m.translate(0.f, -z_and_depth_pairs[i-1].second/2.f + z_and_depth_pairs[0].second/2.f, z_and_depth_pairs[i-1].first);
             mesh.merge(m);
         }
+        if (z_and_depth_pairs.empty()) {
+            depth = 0;
+        } else {
+            depth = z_and_depth_pairs.front().second;
+        }
     }
 
-    // We'll make another mesh to show the brim (fixed layer height):
-    TriangleMesh brim_mesh = make_cube(width + 2.f * brim_width, depth + 2.f * brim_width, 0.2f);
-    brim_mesh.translate(-brim_width, -brim_width, 0.f);
-    mesh.merge(brim_mesh);
+    if (depth > 0) {
+        // We'll make another mesh to show the brim (fixed layer height):
+        TriangleMesh brim_mesh = make_cube(width + 2.f * brim_width, depth + 2.f * brim_width, 0.2f);
+        brim_mesh.translate(-brim_width, -brim_width, 0.f);
+        mesh.merge(brim_mesh);
 
-    // Now the stabilization cone and its base.
-    const auto [R, scale_x] = WipeTower::get_wipe_tower_cone_base(width, height, depth, cone_angle);
-    if (R > 0.) {
-        TriangleMesh cone_mesh(its_make_cone(R, height));
-        cone_mesh.scale(Vec3f(1.f/scale_x, 1.f, 1.f));
+        // Now the stabilization cone and its base.
+        const auto [R, scale_x] = WipeTower::get_wipe_tower_cone_base(width, height, depth, cone_angle);
+        if (R > 0.) {
+            TriangleMesh cone_mesh(its_make_cone(R, height));
+            cone_mesh.scale(Vec3f(1.f / scale_x, 1.f, 1.f));
 
-        TriangleMesh disk_mesh(its_make_cylinder(R, brim_height));
-        disk_mesh.scale(Vec3f(1. / scale_x, 1., 1.)); // Now it matches the base, which may be elliptic.
-        disk_mesh.scale(Vec3f(1.f + scale_x*brim_width/R, 1.f + brim_width/R, 1.f)); // Scale so the brim is not deformed.
-        cone_mesh.merge(disk_mesh);
-        cone_mesh.translate(width / 2., depth / 2., 0.);
-        mesh.merge(cone_mesh);
+            TriangleMesh disk_mesh(its_make_cylinder(R, brim_height));
+            disk_mesh.scale(Vec3f(1. / scale_x, 1., 1.)); // Now it matches the base, which may be elliptic.
+            disk_mesh.scale(Vec3f(1.f + scale_x * brim_width / R, 1.f + brim_width / R,
+                                  1.f)); // Scale so the brim is not deformed.
+            cone_mesh.merge(disk_mesh);
+            cone_mesh.translate(width / 2., depth / 2., 0.);
+            mesh.merge(cone_mesh);
+        }
     }
-
 
     volumes.emplace_back(new GLVolume(color));
     GLVolume& v = *volumes.back();
@@ -935,14 +945,14 @@ void GLVolumeCollection::update_colors_by_extruder(const DynamicPrintConfig* con
     }
 }
 
-std::vector<double> GLVolumeCollection::get_current_print_zs(bool active_only) const
+std::vector<coord_t> GLVolumeCollection::get_current_print_zs(bool active_only) const
 {
     // Collect layer top positions of all volumes.
-    std::vector<double> print_zs;
+    std::vector<coord_t> print_zs;
     for (const std::unique_ptr<GLVolume> &vol : this->volumes)
     {
         if (!active_only || vol->is_active)
-            append(print_zs, vol->print_zs);
+            append(print_zs, vol->_print_zs);
     }
     std::sort(print_zs.begin(), print_zs.end());
 
@@ -951,7 +961,7 @@ std::vector<double> GLVolumeCollection::get_current_print_zs(bool active_only) c
     int k = 0;
     for (int i = 0; i < n;) {
         int j = i + 1;
-        coordf_t zmax = print_zs[i] + EPSILON;
+        coord_t zmax = print_zs[i] /*+ EPSILON*/;
         for (; j < n && print_zs[j] <= zmax; ++ j) ;
         print_zs[k ++] = (j > i + 1) ? (0.5 * (print_zs[i] + print_zs[j - 1])) : print_zs[i];
         i = j;

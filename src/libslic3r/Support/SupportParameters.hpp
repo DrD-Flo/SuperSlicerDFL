@@ -55,6 +55,7 @@ struct SupportParameters {
 	Flow 					support_material_interface_flow;
 	// Flow at the bottom interfaces and contacts.
 	Flow 					support_material_bottom_interface_flow;
+	FloatOrPercent			bottom_interface_expansion;
 	// Flow at raft layers.
 	Flow    				raft_flow;
 	// Flow at raft inteface & contact layers.
@@ -64,10 +65,12 @@ struct SupportParameters {
 	// Is merging of regions allowed? Could the interface & base support regions be printed with the same extruder?
 	bool 					can_merge_support_regions;
 
-    double                  support_layer_height_min; //unscaled
-//	coordf_t				support_layer_height_max;
+    coord_t                 _support_layer_height_min;
+    // double                  support_layer_height_max;
 
-	coordf_t				gap_xy;
+    coord_t                 _gap_xy;
+    
+    coord_t                 support_max_slope;
 
     //scaled, resolution for supports
     coord_t                 resolution = SCALED_EPSILON;
@@ -78,11 +81,11 @@ struct SupportParameters {
     float                   interface_angle_incr;
 
     // Density of the top / bottom interface and contact layers.
-    coordf_t 				interface_density;
+    double                  interface_density;
     // Density of the raft interface and contact layers.
-    coordf_t 				raft_interface_density;
+    double                  raft_interface_density;
     // Density of the base support layers.
-    coordf_t 				support_density;
+    double                  support_density;
 
     // Pattern of the sparse infill including sparse raft layers.
     InfillPattern           base_fill_pattern;

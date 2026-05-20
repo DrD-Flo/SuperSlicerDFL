@@ -59,6 +59,11 @@ namespace Slic3r {
         double  value;
         bool    percent;
 
+        double get_abs_value(double ratio_over) const {
+            return this->percent ? (ratio_over * this->value / 100) : this->value;
+        }
+        double get_float(size_t idx = 0) const { return get_abs_value(1.); }
+        bool is_percent(size_t idx = 0) const { return this->percent; }
     private:
         friend class cereal::access;
         template<class Archive> void serialize(Archive& ar) { ar(this->value); ar(this->percent); }
@@ -97,8 +102,9 @@ namespace Slic3r {
         // data is the useable part of the graph
         Pointfs data() const;
         size_t data_size() const;
-
+        
         double interpolate(double x_value) const;
+        double inverse_interpolate(double y_value) const;
 
         //return false if data are not good
         bool validate() const;
@@ -152,6 +158,11 @@ namespace Slic3r {
         std::vector<GraphData::GraphType> allowed_types;
         // the values when you click on the "reset" button (dynamically set to the current data stored in the setting)
         GraphData reset_vals;
+        // min & max enforced points. if no values here, no enforced points.
+        // if only one, only the min is enforced.
+        // if the first value has nan x, only the max is enforced
+        // if more than 2 values, other are ignored
+        Pointfs enforced_values;
     };
 }
 
@@ -1628,6 +1639,7 @@ private:
 	template<class Archive> void serialize(Archive &ar) { ar(cereal::base_class<ConfigOptionFloats>(this)); }
 };
 
+// note: maybe should be a ConfigOptionSingle<FloatOrPercent>
 class ConfigOptionFloatOrPercent : public ConfigOptionPercent
 {
 public:

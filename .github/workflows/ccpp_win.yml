@@ -7,7 +7,9 @@ on:
       - nightly_dev
       - nightly_2.7.62
       - nightly_master
+      - nightly_2.7.63
       - debug_win
+      - nightly_win
 
 jobs:
   build_dep:
@@ -22,7 +24,7 @@ jobs:
       id: cache-action
       uses: actions/cache@v3
       with:
-        key: win_2.7
+        key: win_2.7.63
         path: deps/build/destdir
     - if: steps.cache-action.outputs.cache-hit != 'true'
       name: build deps if new cache
@@ -50,7 +52,7 @@ jobs:
       id: cache-action
       uses: actions/cache@v3
       with:
-        key: win_2.7
+        key: win_2.7.63
         path: deps/build/destdir
     - run: dir deps
     - run: dir deps/build

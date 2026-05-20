@@ -340,6 +340,7 @@ group:Options for support material and raft
 	setting:sidetext_width$7:support_material_xy_spacing
 	setting:dont_support_bridges
 	setting:support_material_synchronize_layers
+	setting:support_max_slope
 group:Options for support material interface
 	setting:support_material_interface_layer_height
 	line:Pattern
@@ -356,7 +357,7 @@ group:Options for support material interface
 		setting:label$Bottom:support_material_bottom_interface_layers
 	end_line
 	setting:support_material_interface_contact_loops
-	
+	setting:support_material_bottom_interface_expansion
 group:Organic supports
 	line:Tree Branch angle
 		setting:label$Maximum:support_tree_angle
@@ -576,6 +577,7 @@ group:Wipe tower
 		setting:label$Spacing between lines:wipe_tower_extra_spacing
 	end_line
 	setting:wipe_tower_no_sparse_layers
+	setting:wipe_tower_rest_in_middle
 	line:Priming
 		setting:single_extruder_multi_material_priming
 		setting:priming_position
@@ -599,6 +601,10 @@ group:Sequential printing
 	line:Parallel printing step
 		setting:label$Step:parallel_objects_step
 		setting:label$Max z:parallel_objects_step_max_z
+	end_line
+	line:Island Parallel printing step
+		setting:label$:parallel_islands
+		setting:label$Minimum island distance:parallel_islands_min_distance
 	end_line
 	setting:complete_objects_one_skirt
 	setting:complete_objects_sort

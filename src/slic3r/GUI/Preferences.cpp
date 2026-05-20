@@ -1014,7 +1014,7 @@ void PreferencesDialog::build()
 		
 		append_bool_option(m_tabid_2_optgroups.back().back(), "show_layer_time_doubleslider",
 			L("Show layer time on the scroll bar"),
-			L("Add the layer height (after the layer height, or if it's hidden after the layer z position) next to a widget of the layer double-scrollbar."),
+			L("Add the layer time (after the layer height, or if it's hidden after the layer z position) next to a widget of the layer double-scrollbar."),
 			app_config->get_bool("show_layer_time_doubleslider"));
 		
 		append_bool_option(m_tabid_2_optgroups.back().back(), "show_layer_area_doubleslider",

@@ -165,7 +165,7 @@ boost::filesystem::path clean_absolute_path(const boost::filesystem::path &path)
     // make sure the path is well formed for the os.
     boost::filesystem::path fixpath(path);
     // note: lexically_normal() already do make_preferred()
-    fixpath.lexically_normal();
+    fixpath = fixpath.lexically_normal();
 #ifndef _WIN32
     fixpath = boost::filesystem::canonical(fixpath);
 #else
@@ -194,7 +194,7 @@ std::string clean_dir(const std::string &dir_name)
     // make sure the path is well formed for the os.
     boost::filesystem::path fixpath(dir_name);
     // note: lexically_normal() already do make_preferred()
-    fixpath.lexically_normal();
+    fixpath = fixpath.lexically_normal();
     assert(fixpath.string().find("..") == std::string::npos);
     return fixpath.string();
 }
@@ -357,6 +357,9 @@ std::string debug_out_path(const char *name, ...)
     if (!debug_out_path_called.exchange(true)) {
         std::string path = clean_absolute_path(boost::filesystem::system_complete(SLIC3R_DEBUG_OUT_PATH_PREFIX)).string();
         printf("Debugging output files will be written to %s\n", path.c_str());
+        if (!boost::filesystem::exists(path)) {
+            boost::filesystem::create_directories(path);
+        }
     }
     char buffer[2048];
     va_list args;
@@ -381,6 +384,9 @@ std::string debug_out_path_uniqueid(std::string name, ...) {
     if (!debug_out_path_called.exchange(true)) {
         std::string path = clean_absolute_path(boost::filesystem::system_complete(SLIC3R_DEBUG_OUT_PATH_PREFIX)).string();
         printf("Debugging output files will be written to %s\n", path.c_str());
+        if (!boost::filesystem::exists(path)) {
+            boost::filesystem::create_directories(path);
+        }
     }
     char buffer[2048];
     va_list args;

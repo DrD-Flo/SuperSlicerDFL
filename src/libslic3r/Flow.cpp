@@ -12,7 +12,6 @@
 #include "I18N.hpp"
 #include "Print.hpp"
 #include "Layer.hpp"
-#include "Layer.hpp"
 #include <cassert>
 #include <cmath>
 
@@ -26,6 +25,10 @@ FlowErrorNegativeSpacing::FlowErrorNegativeSpacing() :
 
 FlowErrorNegativeFlow::FlowErrorNegativeFlow() :
     FlowError("Flow::mm3_per_mm() produced negative flow. Did you set some extrusion width too small, or the (maximum) layer height too high?") {}
+
+coord_t Flow::scaled_height() const {
+    return Layer::scale_to_layer_coord(this->m_height);
+}
 
 // This static method returns a sane extrusion width default.
 float Flow::auto_extrusion_width(FlowRole role, float nozzle_diameter)

@@ -99,6 +99,7 @@ public:
     const Polygon& 	contour_or_hole(size_t idx) const 	{ return (idx == 0) ? this->contour : this->holes[idx - 1]; }
 
 #ifdef _DEBUGINFO
+#pragma UNOPTIMIZE
     void assert_valid() const {
         contour.assert_valid();
         assert(contour.is_counter_clockwise());
@@ -469,6 +470,8 @@ inline ExPolygons to_expolygons(const Polygons &polys)
     return ex_polys;
 }
 
+// trasform a list of contour (ccw) into expolygons
+// polys.size() == return.size()
 inline ExPolygons to_expolygons(Polygons &&polys)
 {
     ExPolygons ex_polys;
@@ -480,6 +483,8 @@ inline ExPolygons to_expolygons(Polygons &&polys)
     return ex_polys;
 }
 
+// trasform a list of contour (ccw) into expolygons
+// polys.size() == return.size()
 inline Points to_points(const ExPolygon &expoly)
 {
     Points out;
@@ -536,6 +541,22 @@ inline void polygons_append(Polygons &dst, ExPolygons &&src)
         dst.insert(dst.end(), 
             std::make_move_iterator(expoly.holes.begin()),
             std::make_move_iterator(expoly.holes.end()));
+    }
+}
+
+inline void expolygons_append(ExPolygons &dst, const Polygons &src) 
+{ 
+    for (const Polygon& poly: src) {
+        assert(poly.is_counter_clockwise());
+        dst.emplace_back(poly);
+    }
+}
+
+inline void expolygons_append(ExPolygons &dst, Polygons &&src) 
+{ 
+    for (Polygon& poly: src) {
+        assert(poly.is_counter_clockwise());
+        dst.emplace_back(std::move(poly));
     }
 }
 

@@ -86,8 +86,9 @@
 
 static constexpr const float TRACKBALLSIZE = 0.8f;
 
-static const Slic3r::ColorRGBA DEFAULT_BG_DARK_COLOR  = { 0.478f, 0.478f, 0.478f, 1.0f };
-static const Slic3r::ColorRGBA DEFAULT_BG_LIGHT_COLOR = { 0.753f, 0.753f, 0.753f, 1.0f };
+// now in AppConfig::get_color("Gui_skybox_dark/light")
+//static const Slic3r::ColorRGBA DEFAULT_BG_DARK_COLOR  = { 0.478f, 0.478f, 0.478f, 1.0f };
+//static const Slic3r::ColorRGBA DEFAULT_BG_LIGHT_COLOR = { 0.753f, 0.753f, 0.753f, 1.0f };
 static const Slic3r::ColorRGBA ERROR_BG_DARK_COLOR    = { 0.478f, 0.192f, 0.039f, 1.0f };
 static const Slic3r::ColorRGBA ERROR_BG_LIGHT_COLOR   = { 0.753f, 0.192f, 0.039f, 1.0f };
 
@@ -1533,6 +1534,9 @@ GLCanvas3D::GLCanvas3D(wxGLCanvas *canvas, Bed3D &bed)
     m_arrange_settings_dialog.on_arrange_btn([]{
         wxGetApp().plater()->arrange();
     });
+
+    this->m_skybox_dark =  Slic3r::ColorRGBA(get_app_config()->get_color("color_skybox_dark"));
+    this->m_skybox_light = Slic3r::ColorRGBA(get_app_config()->get_color("color_skybox_light"));
 }
 
 GLCanvas3D::~GLCanvas3D()
@@ -2325,7 +2329,13 @@ const std::vector<double>& GLCanvas3D::get_gcode_layers_zs() const
 
 std::vector<double> GLCanvas3D::get_volumes_print_zs(bool active_only) const
 {
-    return m_volumes.get_current_print_zs(active_only);
+    std::vector<double> print_zs_mm;
+    std::vector<coord_t> print_zs = m_volumes.get_current_print_zs(active_only);
+    print_zs_mm.reserve(print_zs.size());
+    for (coord_t z : print_zs) {
+        print_zs_mm.push_back(unscaled(z));
+    }
+    return print_zs_mm;
 }
 
 void GLCanvas3D::set_gcode_options_visibility_from_flags(unsigned int flags)
@@ -2734,7 +2744,8 @@ void GLCanvas3D::reload_scene(bool refresh_immediately, bool force_full_scene_re
         const bool wt = m_config->option("wipe_tower")->get_bool();
         const bool co = m_config->option("complete_objects")->get_bool() ||
             (m_config->option("parallel_objects_step")->get_float() > 0 &&
-             m_config->option("parallel_objects_step_max_z")->get_float() == 0);
+             m_config->option("parallel_objects_step_max_z")->get_float() == 0 &&
+              !m_config->option("parallel_islands")->get_bool());
 
         if (extruders_count > 1 && wt && !co) {
             // can't get these one from wipe_tower_data, as these use the platter's config, not the print one.
@@ -3835,7 +3846,9 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
                 c == GLGizmosManager::EType::Scale ||
                 c == GLGizmosManager::EType::Rotate) {
                 show_sinking_contours();
-                if (current_printer_technology() == ptFFF && (fff_print()->config().complete_objects || fff_print()->config().parallel_objects_step > 0))
+                if (current_printer_technology() == ptFFF &&
+                    (fff_print()->config().complete_objects ||
+                     (fff_print()->config().parallel_objects_step > 0 && !fff_print()->config().parallel_islands)))
                     update_sequential_clearance(true);
             }
         }
@@ -4086,7 +4099,9 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
             if (cur_scale != Vec3d(1, 1, 1)) {
                 m_selection.scale(cur_scale, trafo_type);
             }
-            if (current_printer_technology() == ptFFF && (fff_print()->config().complete_objects || fff_print()->config().parallel_objects_step > 0))
+            if (current_printer_technology() == ptFFF &&
+                (fff_print()->config().complete_objects ||
+                 (fff_print()->config().parallel_objects_step > 0 && !fff_print()->config().parallel_islands)))
                 update_sequential_clearance(false);
             wxGetApp().obj_manipul()->set_dirty();
             m_dirty = true;
@@ -4924,7 +4939,9 @@ void GLCanvas3D::mouse_up_cleanup()
 
 void GLCanvas3D::update_sequential_clearance(bool force_contours_generation)
 {
-    if (current_printer_technology() != ptFFF || (!fff_print()->config().complete_objects && fff_print()->config().parallel_objects_step == 0))
+    if (current_printer_technology() != ptFFF ||
+        (!fff_print()->config().complete_objects &&
+         (fff_print()->config().parallel_objects_step == 0 || fff_print()->config().parallel_islands)))
         return;
 
     if (m_layers_editing.is_enabled())
@@ -6530,7 +6547,7 @@ void GLCanvas3D::_render_background()
     // Draws a bottom to top gradient over the complete screen.
     glsafe(::glDisable(GL_DEPTH_TEST));
 
-    const ColorRGBA bottom_color = use_error_color ? ERROR_BG_DARK_COLOR : DEFAULT_BG_DARK_COLOR;
+    const ColorRGBA bottom_color = use_error_color ? ERROR_BG_DARK_COLOR : m_skybox_dark /*DEFAULT_BG_DARK_COLOR*/;
 
     if (!m_background.is_initialized()) {
         m_background.reset();
@@ -6556,7 +6573,7 @@ void GLCanvas3D::_render_background()
     GLShaderProgram* shader = wxGetApp().get_shader("background");
     if (shader != nullptr) {
         shader->start_using();
-        shader->set_uniform("top_color", use_error_color ? ERROR_BG_LIGHT_COLOR : DEFAULT_BG_LIGHT_COLOR);
+        shader->set_uniform("top_color", use_error_color ? ERROR_BG_LIGHT_COLOR : m_skybox_light /*DEFAULT_BG_LIGHT_COLOR*/);
         shader->set_uniform("bottom_color", bottom_color);
         m_background.render();
         shader->stop_using();
@@ -7383,16 +7400,16 @@ void GLCanvas3D::_load_skirt_brim_preview_toolpaths(const BuildVolume &build_vol
     //FIXME This code is fishy. It may not work for multiple objects with different layering due to variable layer height feature.
     // This is not critical as this is just an initial preview.
     const PrintObject* highest_object = *std::max_element(print->objects().begin(), print->objects().end(), [](auto l, auto r){ return l->layers().size() < r->layers().size(); });
-    std::vector<float> print_zs;
-    print_zs.reserve(skirt_height * 2);
+    std::vector<float> print_zs_mm;
+    print_zs_mm.reserve(skirt_height * 2);
     for (size_t i = 0; i < std::min(skirt_height, highest_object->layers().size()); ++ i)
-        print_zs.push_back(float(highest_object->layers()[i]->print_z));
+        print_zs_mm.push_back(float(highest_object->layers()[i]->unscaled_print_z()));
     // Only add skirt for the raft layers.
     for (size_t i = 0; i < std::min(skirt_height, std::min(highest_object->slicing_parameters().raft_layers(), highest_object->support_layers().size())); ++ i)
-        print_zs.push_back(float(highest_object->support_layers()[i]->print_z));
-    sort_remove_duplicates(print_zs);
-    skirt_height = std::min(skirt_height, print_zs.size());
-    print_zs.erase(print_zs.begin() + skirt_height, print_zs.end());
+        print_zs_mm.push_back(float(highest_object->support_layers()[i]->unscaled_print_z()));
+    sort_remove_duplicates(print_zs_mm);
+    skirt_height = std::min(skirt_height, print_zs_mm.size());
+    print_zs_mm.erase(print_zs_mm.begin() + skirt_height, print_zs_mm.end());
 
     // Ensure that no volume grows over the limits. If the volume is too large, allocate a new one. (on-demand)
     auto ensure_volume_is_ready = [&build_volume, this](GLVolume* vol, GLModel::Geometry& init_vol_data) -> GLVolume*{
@@ -7411,41 +7428,53 @@ void GLCanvas3D::_load_skirt_brim_preview_toolpaths(const BuildVolume &build_vol
     GLModel::Geometry init_data;
     init_data.format = { GLModel::Geometry::EPrimitiveType::Triangles, GLModel::Geometry::EVertexLayout::P3N3 };
     for (size_t i = 0; i < skirt_height; ++ i) {
-        volume->print_zs.emplace_back(print_zs[i]);
-        volume->offsets.emplace_back(init_data.indices_count());
+        volume->_print_zs.push_back(Layer::scale_to_layer_coord(print_zs_mm[i]));
+        volume->offsets.push_back(init_data.indices_count());
         if (i == 0) {
             //skirt & brim from print
             if (!print->brim().empty()) volume = ensure_volume_is_ready(volume, init_data);
-            _3DScene::extrusionentity_to_verts(print->brim(), print_zs[i], Point(0, 0), init_data);
+            _3DScene::extrusionentity_to_verts(print->brim(), print_zs_mm[i], Point(0, 0), init_data);
             if (print->skirt_first_layer()) {
                 if (!print->skirt_first_layer()->empty()) volume = ensure_volume_is_ready(volume, init_data);
-                _3DScene::extrusionentity_to_verts(*print->skirt_first_layer(), print_zs[i], Point(0, 0), init_data);
+                _3DScene::extrusionentity_to_verts(*print->skirt_first_layer(), print_zs_mm[i], Point(0, 0), init_data);
             }
             //skirt & brim from objects
             for (const PrintObject* print_object : print->objects()) {
                 if (!print_object->brim().empty())
                     for (const PrintInstance& inst : print_object->instances()) {
                         if (!print_object->brim().empty()) volume = ensure_volume_is_ready(volume, init_data);
-                        _3DScene::extrusionentity_to_verts(print_object->brim(), print_zs[i], (print->config().complete_objects || print->config().parallel_objects_step > 0)? inst.shift : Point(0, 0), init_data);
+                        _3DScene::extrusionentity_to_verts(print_object->brim(), print_zs_mm[i],
+                                                           (print->config().complete_objects ||
+                                                            (print->config().parallel_objects_step > 0 &&
+                                                             !print->config().parallel_islands)) ?
+                                                               inst.shift :
+                                                               Point(0, 0),
+                                                           init_data);
                     }
                 if (print_object->skirt_first_layer())
                     for (const PrintInstance& inst : print_object->instances()) {
                         if (!print_object->skirt_first_layer()->empty()) volume = ensure_volume_is_ready(volume, init_data);
-                        _3DScene::extrusionentity_to_verts(*print_object->skirt_first_layer(), print_zs[i], inst.shift, init_data);
+                        _3DScene::extrusionentity_to_verts(*print_object->skirt_first_layer(), print_zs_mm[i], inst.shift, init_data);
                     }
             }
         }
         //skirts from print
         if (i != 0 || !print->skirt_first_layer()) {
             if (!print->skirt().empty()) volume = ensure_volume_is_ready(volume, init_data);
-            _3DScene::extrusionentity_to_verts(print->skirt(), print_zs[i], Point(0, 0), init_data);
+            _3DScene::extrusionentity_to_verts(print->skirt(), print_zs_mm[i], Point(0, 0), init_data);
         }
         //skirts from objects
         for (const PrintObject* print_object : print->objects()) {
             if ( !print_object->skirt().empty() && (i != 0 || !print_object->skirt_first_layer()))
                 for (const PrintInstance& inst : print_object->instances()) {
                     if (!print_object->skirt().empty()) volume = ensure_volume_is_ready(volume, init_data);
-                    _3DScene::extrusionentity_to_verts(print_object->skirt(), print_zs[i], (print->config().complete_objects || print->config().parallel_objects_step > 0)? inst.shift : Point(0, 0), init_data);
+                    _3DScene::extrusionentity_to_verts(print_object->skirt(), print_zs_mm[i],
+                                                       (print->config().complete_objects ||
+                                                        (print->config().parallel_objects_step > 0 &&
+                                                         !print->config().parallel_islands)) ?
+                                                           inst.shift :
+                                                           Point(0, 0),
+                                                       init_data);
                 }
         }
     }
@@ -7488,18 +7517,18 @@ void GLCanvas3D::_load_print_object_toolpaths(const PrintObject &               
         // For coloring by a color_print(M600), return a parsed color.
         bool                         color_by_color_print() const { return color_print_values!=nullptr; }
         const size_t                 color_print_color_idx_by_layer_idx(const size_t layer_idx) const {
-            const CustomGCode::Item value{layers[layer_idx]->print_z + EPSILON, CustomGCode::Custom, 0, ""};
+            const CustomGCode::Item value{layers[layer_idx]->scaled_print_z(), CustomGCode::Custom, 0, ""};
             auto it = std::lower_bound(color_print_values->begin(), color_print_values->end(), value);
             return (it - color_print_values->begin()) % number_tools();
         }
 
         const size_t                 color_print_color_idx_by_layer_idx_and_extruder(const size_t layer_idx, const int extruder) const
         {
-            const coordf_t print_z = layers[layer_idx]->print_z;
+            const coord_t print_z = layers[layer_idx]->scaled_print_z();
 
             auto it = std::find_if(color_print_values->begin(), color_print_values->end(),
                 [print_z](const CustomGCode::Item& code)
-                { return fabs(code.print_z - print_z) < EPSILON; });
+                { return code.print_z_ == print_z; });
             if (it != color_print_values->end()) {
                 CustomGCode::Type type = it->type;
                 // pause print or custom Gcode
@@ -7518,7 +7547,7 @@ void GLCanvas3D::_load_print_object_toolpaths(const PrintObject &               
                 }
             }
 
-            const CustomGCode::Item value{print_z + EPSILON, CustomGCode::Custom, 0, ""};
+            const CustomGCode::Item value{print_z, CustomGCode::Custom, 0, ""};
             it = std::lower_bound(color_print_values->begin(), color_print_values->end(), value);
             while (it != color_print_values->begin()) {
                 --it;
@@ -7615,7 +7644,7 @@ void GLCanvas3D::_load_print_object_toolpaths(const PrintObject &               
     if (ctxt.has_support)
         for (const Layer *layer : print_object.support_layers())
             ctxt.layers.push_back(layer);
-    std::sort(ctxt.layers.begin(), ctxt.layers.end(), [](const Layer *l1, const Layer *l2) { return l1->print_z < l2->print_z; });
+    std::sort(ctxt.layers.begin(), ctxt.layers.end(), [](const Layer *l1, const Layer *l2) { return l1->scaled_print_z() < l2->scaled_print_z(); });
 
     // Maximum size of an allocation block: 32MB / sizeof(float)
     BOOST_LOG_TRIVIAL(debug) << "Loading print object toolpaths in parallel - start" << m_volumes.log_memory_info() << log_memory_info();
@@ -7733,60 +7762,111 @@ void GLCanvas3D::_load_print_object_toolpaths(const PrintObject &               
             }
 
             for (GeoStorage &geo_storage : geo_vols) {
-                if (geo_storage.volume_ptr->print_zs.empty() || geo_storage.volume_ptr->print_zs.back() != layer->print_z) {
-                    geo_storage.volume_ptr->print_zs.push_back(layer->print_z);
+                if (geo_storage.volume_ptr->_print_zs.empty() || geo_storage.volume_ptr->_print_zs.back() != layer->scaled_print_z()) {
+                    geo_storage.volume_ptr->_print_zs.push_back(layer->scaled_print_z());
                     geo_storage.volume_ptr->offsets.push_back(geo_storage.geometry_storage->indices_count());
                 }
             }
 
             for (const PrintInstance &instance : *ctxt.shifted_copies) {
                 const Point &copy = instance.shift;
-                for (const LayerRegion *layerm : layer->regions()) {
-                    if (is_selected_separate_extruder) {
-                        const PrintRegionConfig& cfg = layerm->region().config();
-                        if (cfg.perimeter_extruder.value    != m_selected_extruder ||
-                            cfg.infill_extruder.value       != m_selected_extruder ||
-                            cfg.solid_infill_extruder.value != m_selected_extruder)
-                            continue;
-                    }
-                    if (ctxt.has_perimeters)
-                        _3DScene::extrusionentity_to_verts(layerm->perimeters(), float(layer->print_z), copy,
-                                                           select_geometry(idx_layer, layerm->region().config().perimeter_extruder.value,
-                                                                           GCodeExtrusionRole::Perimeter),
-                                                           feature_to_geometry_map);
-                    if (ctxt.has_infill) {
-                        for (const ExtrusionEntity *ee : layerm->fills()) {
+                for (const LayerSliceIslandPtr &layer_island_ptr : layer->islands()) {
+                    for (const LayerRegionIslandPtr &region_island_ptr : layer_island_ptr->regions_islands()) {
+                        if (ctxt.has_perimeters && region_island_ptr->has_extrusion(LayerRegionIsland::PERIMETERS)) {
+                            const LayerRegion *one_lregion = *region_island_ptr->regions().begin();
+                            if (is_selected_separate_extruder) {
+                                const PrintRegionConfig &cfg = one_lregion->region().config();
+                                if (cfg.perimeter_extruder.value != m_selected_extruder)
+                                    continue;
+                            }
+                                _3DScene::extrusionentity_to_verts(
+                                    region_island_ptr->extrusion(LayerRegionIsland::PERIMETERS), float(layer->unscaled_print_z()), copy,
+                                    select_geometry(idx_layer, one_lregion->region().config().perimeter_extruder.value,
+                                                    GCodeExtrusionRole::Perimeter),
+                                    feature_to_geometry_map);
+                        }
+                        if (ctxt.has_perimeters && region_island_ptr->has_extrusion(LayerRegionIsland::GAP_FILLS)) {
+                            const LayerRegion *one_lregion = *region_island_ptr->regions().begin();
+                            if (is_selected_separate_extruder) {
+                                const PrintRegionConfig &cfg = one_lregion->region().config();
+                                if (cfg.perimeter_extruder.value != m_selected_extruder)
+                                    continue;
+                            }
+                                _3DScene::extrusionentity_to_verts(
+                                    region_island_ptr->extrusion(LayerRegionIsland::GAP_FILLS), float(layer->unscaled_print_z()), copy,
+                                    select_geometry(idx_layer, one_lregion->region().config().perimeter_extruder.value,
+                                                    GCodeExtrusionRole::Perimeter),
+                                    feature_to_geometry_map);
+                        }
+                        if (ctxt.has_infill && region_island_ptr->has_extrusion(LayerRegionIsland::INFILLS)) {
+                            const LayerRegion *one_lregion = *region_island_ptr->regions().begin();
+                            if (is_selected_separate_extruder) {
+                                const PrintRegionConfig &cfg = one_lregion->region().config();
+                                if (cfg.infill_extruder.value != m_selected_extruder ||
+                                    cfg.solid_infill_extruder.value != m_selected_extruder)
+                                    continue;
+                            }
                             // fill represents infill extrusions of a single island.
-                            const auto *fill = dynamic_cast<const ExtrusionEntityCollection*>(ee);
-                            if (fill != nullptr && !fill->entities().empty()) {
-                                bool has_solid_infill = HasRoleVisitor::search(fill->entities(), HasSolidInfillVisitor{});
-                                _3DScene::extrusionentity_to_verts(*fill, float(layer->print_z), copy,
-                                                                   select_geometry(idx_layer,
-                                                                                   has_solid_infill ?
-                                                                                       layerm->region().config().solid_infill_extruder :
-                                                                                       layerm->region().config().infill_extruder,
-                                                                                   has_solid_infill ?
-                                                                                       GCodeExtrusionRole::SolidInfill :
-                                                                                       GCodeExtrusionRole::InternalInfill),
-                                                                   feature_to_geometry_map);
+                            const ExtrusionEntityCollection &fill = region_island_ptr->extrusion(
+                                LayerRegionIsland::INFILLS);
+                            if (!fill.entities().empty()) {
+                                bool has_solid_infill = HasRoleVisitor::search(fill.entities(),
+                                                                               HasSolidInfillVisitor{});
+                                _3DScene::extrusionentity_to_verts(
+                                    fill, float(layer->unscaled_print_z()), copy,
+                                    select_geometry(idx_layer,
+                                                    has_solid_infill ?
+                                                        one_lregion->region().config().solid_infill_extruder :
+                                                        one_lregion->region().config().infill_extruder,
+                                                    has_solid_infill ? GCodeExtrusionRole::SolidInfill :
+                                                                       GCodeExtrusionRole::InternalInfill),
+                                    feature_to_geometry_map);
                             }
                         }
-                    }
-                }
-                if (ctxt.has_support) {
-                    const SupportLayer *support_layer = dynamic_cast<const SupportLayer*>(layer);
-                    if (support_layer) {
-                        for (const ExtrusionEntity *extrusion_entity : support_layer->support_fills.entities())
-                            _3DScene::extrusionentity_to_verts(
-                                *extrusion_entity, float(layer->print_z), copy,
-                                select_geometry(idx_layer,
-                                                (extrusion_entity->role() == ExtrusionRole::SupportMaterial) ?
-                                                    support_layer->object()->config().support_material_extruder :
-                                                    support_layer->object()->config().support_material_interface_extruder,
-                                                ((extrusion_entity->role() == ExtrusionRole::SupportMaterial) ?
-                                                     GCodeExtrusionRole::SupportMaterial :
-                                                     GCodeExtrusionRole::SupportMaterialInterface)),
-                                feature_to_geometry_map);
+                        if (ctxt.has_support && region_island_ptr->has_extrusion(LayerRegionIsland::SUPPORT)) {
+                            const LayerRegion *one_lregion = *region_island_ptr->regions().begin();
+                            if (is_selected_separate_extruder) {
+                                const PrintRegionConfig &cfg = one_lregion->region().config();
+                                if (cfg.infill_extruder.value != m_selected_extruder ||
+                                    cfg.solid_infill_extruder.value != m_selected_extruder)
+                                    continue;
+                            }
+                            // fill represents infill extrusions of a single island.
+                            const ExtrusionEntityCollection &fill = region_island_ptr->extrusion(
+                                LayerRegionIsland::SUPPORT);
+                            if (!fill.entities().empty()) {
+                                bool has_solid_infill = HasRoleVisitor::search(fill.entities(),
+                                                                               HasSolidInfillVisitor{});
+                                _3DScene::extrusionentity_to_verts(
+                                    fill, float(layer->unscaled_print_z()), copy,
+                                    select_geometry(idx_layer, layer->object()->config().support_material_extruder,
+                                                    GCodeExtrusionRole::SupportMaterial),
+                                    feature_to_geometry_map);
+                            }
+                        }
+                        if (ctxt.has_support &&
+                            region_island_ptr->has_extrusion(LayerRegionIsland::SUPPORT_INTERFACE)) {
+                            const LayerRegion *one_lregion = *region_island_ptr->regions().begin();
+                            if (is_selected_separate_extruder) {
+                                const PrintRegionConfig &cfg = one_lregion->region().config();
+                                if (cfg.infill_extruder.value != m_selected_extruder ||
+                                    cfg.solid_infill_extruder.value != m_selected_extruder)
+                                    continue;
+                            }
+                            // fill represents infill extrusions of a single island.
+                            const ExtrusionEntityCollection &fill = region_island_ptr->extrusion(
+                                LayerRegionIsland::SUPPORT_INTERFACE);
+                            if (!fill.entities().empty()) {
+                                bool has_solid_infill = HasRoleVisitor::search(fill.entities(),
+                                                                               HasSolidInfillVisitor{});
+                                _3DScene::extrusionentity_to_verts(
+                                    fill, float(layer->unscaled_print_z()), copy,
+                                    select_geometry(idx_layer,
+                                                    layer->object()->config().support_material_interface_extruder,
+                                                    GCodeExtrusionRole::SupportMaterialInterface),
+                                    feature_to_geometry_map);
+                            }
+                        }
                     }
                 }
             }
@@ -7883,8 +7963,8 @@ void GLCanvas3D::_load_wipe_tower_toolpaths(const BuildVolume& build_volume, con
     if (print->wipe_tower_data().final_purge)
         ctxt.final.emplace_back(*print->wipe_tower_data().final_purge.get());
 
-    ctxt.wipe_tower_angle = ctxt.print->config().wipe_tower_rotation_angle.value/180.f * PI;
-    ctxt.wipe_tower_pos = Vec2f(ctxt.print->config().wipe_tower_x.value, ctxt.print->config().wipe_tower_y.value);
+    ctxt.wipe_tower_angle = ctxt.print->default_object_config().wipe_tower_rotation_angle.value/180.f * PI;
+    ctxt.wipe_tower_pos = Vec2f(ctxt.print->default_object_config().wipe_tower_x.value, ctxt.print->default_object_config().wipe_tower_y.value);
 
     ctxt.color_support = m_gcode_viewer.get_extrusion_colors()[uint8_t(GCodeExtrusionRole::WipeTower)];
 
@@ -7933,8 +8013,8 @@ void GLCanvas3D::_load_wipe_tower_toolpaths(const BuildVolume& build_volume, con
             const std::vector<WipeTower::ToolChangeResult> &layer = ctxt.tool_change(idx_layer);
             for (size_t i = 0; i < vols.size(); ++i) {
                 GLVolume &vol = *vols[i];
-                if (vol.print_zs.empty() || vol.print_zs.back() != layer.front().print_z) {
-                    vol.print_zs.push_back(layer.front().print_z);
+                if (vol._print_zs.empty() || vol._print_zs.back() != Layer::scale_to_layer_coord(layer.front().print_z)) {
+                    vol._print_zs.push_back(Layer::scale_to_layer_coord(layer.front().print_z));
                     vol.offsets.push_back(geometries[i].indices_count());
                 }
             }
@@ -8149,7 +8229,8 @@ void GLCanvas3D::_set_warning_notification(EWarning warning, bool state)
     const ConflictResultOpt& conflict_result = m_gcode_viewer.get_conflict_result();
     if (warning == EWarning::GCodeConflict) {
         if (conflict_result.has_value()) {
-            const PrintObject* obj2 = reinterpret_cast<const PrintObject*>(conflict_result->_obj2);
+            const void* obj2_void = conflict_result->_obj2;
+            const PrintObject* obj2 = reinterpret_cast<const PrintObject*>(obj2_void);
             auto     mo = obj2->model_object();
             ObjectID id = mo->id();
             int layer_id = conflict_result->layer;

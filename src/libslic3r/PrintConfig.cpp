@@ -253,7 +253,7 @@ static const t_config_enum_values s_keys_map_SeamPosition {
         {"rear", spRear},
         {"custom", spCustom}, // for seam object
 };
-CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(SeamPosition);
+CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(SeamPosition)
 
 // Orca
 static t_config_enum_values s_keys_map_SeamScarfType{
@@ -1222,27 +1222,6 @@ void PrintConfigDef::init_fff_params()
     def->mode = comSimpleAE | comPrusa;
     def->set_default_value(new ConfigOptionBool(false));
 
-    def = this->add("parallel_objects_step", coFloat);
-    def->label = L("Parallel printing step");
-    def->category = OptionCategory::output;
-    def->tooltip = L("When multiple objects are present, instead of jumping form one to another at each layer"
-        " the printer will continue to print the current object layers up to this height before moving to the next object."
-        " (first layers will be still printed one by one)."
-        "\nThis feature also use the same extruder clearance radius field as 'complete individual objects' (complete_objects)"
-        ", but you can modify them to instead reflect the clerance of the nozzle, if this field reflect the z-clearance of it."
-        "\nThis field is exclusive with 'complete individual objects' (complete_objects). Set to 0 to deactivate.");
-    def->sidetext = L("mm");
-    def->mode = comAdvancedE | comSuSi;
-    def->set_default_value(new ConfigOptionFloat(0));
-
-    def = this->add("parallel_objects_step_max_z", coFloat);
-    def->label = L("Max height for parallel printing step");
-    def->category = OptionCategory::output;
-    def->tooltip = L("If the nozzle print higher than taht, the print is switched back to normal printing. Allow to quicly print the first layer per object if these need quick printing.");
-    def->sidetext = L("mm");
-    def->mode = comAdvancedE | comSuSi;
-    def->set_default_value(new ConfigOptionFloat(0));
-
     def = this->add("complete_objects_one_skirt", coBool);
     def->label = L("Allow only one skirt loop");
     def->category = OptionCategory::output;
@@ -1873,6 +1852,37 @@ void PrintConfigDef::init_fff_params()
     def->min = 0;
     def->mode = comExpert | comPrusa;
     def->set_default_value(new ConfigOptionFloat(20));
+
+    def             = this->add("extruder_clearance", coGraphs);
+    def->label      = L("Extruder clearance");
+    def->category   = OptionCategory::speed;
+    def->tooltip    = L("height of the extruder in function of the clearance radius (all in mm).");
+    def->is_vector_extruder = true;
+    def->mode       = comExpert | comSuSi;
+    def->set_default_value(new ConfigOptionGraphs({GraphData(0,3, GraphData::GraphType::LINEAR,
+        {{0, 0},{0.55, 0},{2,1.9}}
+    )}));
+    def->graph_settings = std::make_shared<GraphSettings>();
+    def->graph_settings->title       = L("Overhangs fan speed by % of overlap");
+    def->graph_settings->description = L("Choose the Overhangs maximum fan speed for each percentage of overlap with the layer below."
+        "If the current fan speed (from perimeter, external, of default) is higher, then this setting won't slow the fan."
+        "\n100% overlap is when the extrusion is fully on top of the previous layer's extrusion."
+        "\n0% overlap is when the extrusion centerline is at a distance of 'overhangs threshold for speed'(overhangs_bridge_threshold)"
+        "\nfrom the nearest extrusion of the previous layer.");
+    def->graph_settings->x_label     = L("radius clearance");
+    def->graph_settings->y_label     = L("Height from nozzle tip");
+    def->graph_settings->label_min_x = L("");
+    def->graph_settings->label_max_x = L("Highest available clearance");
+    def->graph_settings->label_min_y = L("");
+    def->graph_settings->label_max_y = L("Max height with clearance");
+    def->graph_settings->min_x       = 0;
+    def->graph_settings->max_x       = 10;
+    def->graph_settings->step_x      = .1;
+    def->graph_settings->min_y       = 0;
+    def->graph_settings->max_y       = 10;
+    def->graph_settings->step_y      = .1;
+    def->graph_settings->enforced_values = {{0.,0.}};
+    def->graph_settings->allowed_types = {GraphData::GraphType::LINEAR, GraphData::GraphType::SQUARE};
 
     def = this->add("extruder_clearance_radius", coFloat);
     def->label = L("Radius");
@@ -5584,8 +5594,6 @@ void PrintConfigDef::init_fff_params()
     def->is_vector_extruder = true;
     def->set_default_value(new ConfigOptionFloats { 0. });
 
-
-
     def = this->add("retract_lift_below", coFloats);
     def->label = L("Below Z");
     def->full_label = L("Only lift Z below");
@@ -5641,6 +5649,26 @@ void PrintConfigDef::init_fff_params()
     def->mode = comExpert | comPrusa;
     def->is_vector_extruder = true;
     def->set_default_value(new ConfigOptionFloats { 0. });
+
+    def = this->add("retract_restart_wipe_toolchange", coPercents);
+    def->label = L("Wipe the unretraction");
+    def->full_label = L("Wipe the unretraction (Toolchange)");
+    def->tooltip = L("When unretraction is triggered after changing tool in a wipe tower, the last part of the "
+                     "unretraction is made into a wipe move instead of a static unretraction on top of the wipe "
+                     "tower. This percentage is the perdcetage of the unretraction that is made into a wipe move");
+    def->sidetext = L("%");
+    def->mode = comExpert | comSuSi;
+    def->is_vector_extruder = true;
+    def->set_default_value(new ConfigOptionPercents { 20. });
+
+    def = this->add("retract_restart_toolchange_on_perimeter", coBools);
+    def->label = L("Unretract on perimeter");
+    def->full_label = L("Wipe the unretraction (Toolchange)");
+    def->tooltip = L("When unretraction is triggered after changing tool in a wipe tower, the first bit is done on "
+                     "the perimeter instead than in the air next to it. This may prevent too much oozing while unretracting.");
+    def->mode = comExpert | comSuSi;
+    def->is_vector_extruder = true;
+    def->set_default_value(new ConfigOptionBools { true });
 
     def = this->add("retract_speed", coFloats);
     def->label = L("Retraction Speed");
@@ -6245,6 +6273,36 @@ void PrintConfigDef::init_fff_params()
     def->mode = comExpert | comPrusa;
     def->set_default_value(new ConfigOptionString(""));
 
+    def = this->add("parallel_objects_step", coFloat);
+    def->label = L("Parallel printing step");
+    def->category = OptionCategory::output;
+    def->tooltip = L("When multiple objects are present, instead of jumping form one to another at each layer"
+        " the printer will continue to print the current object layers up to this height before moving to the next object."
+        " (first layers will be still printed one by one)."
+        "\nThis feature also use the same extruder clearance radius field as 'complete individual objects' (complete_objects)"
+        ", but you can modify them to instead reflect the clerance of the nozzle, if this field reflect the z-clearance of it."
+        "\nThis field is exclusive with 'complete individual objects' (complete_objects). Set to 0 to deactivate.");
+    def->sidetext = L("mm");
+    def->mode = comAdvancedE | comSuSi;
+    def->set_default_value(new ConfigOptionFloat(0));
+
+    def = this->add("parallel_objects_step_max_z", coFloat);
+    def->label = L("Max height for parallel printing step");
+    def->category = OptionCategory::output;
+    def->tooltip = L("If the nozzle print higher than taht, the print is switched back to normal printing. Allow to quicly print the first layer per object if these need quick printing.");
+    def->sidetext = L("mm");
+    def->mode = comAdvancedE | comSuSi;
+    def->set_default_value(new ConfigOptionFloat(0));
+
+    def = this->add("parallel_islands", coBool);
+    def->label = L("Island Parallel printing step");
+    def->category = OptionCategory::output;
+    def->tooltip = L("When using 'parallel_objects_step', consider each object island as a separate object, if far enough."
+                    "\nTwo islands are consider separate if there are farther than the extruder clearance.");
+    def->sidetext = L("mm");
+    def->mode = comAdvancedE | comSuSi;
+    def->set_default_value(new ConfigOptionBool(false));
+
     def = this->add("pause_print_gcode", coString);
     def->label = L("Pause Print G-code");
     def->tooltip = L("This G-code will be used as a code for the pause print."
@@ -6447,6 +6505,16 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvancedE | comPrusa;
     def->aliases = { "support_material_contact_distance_bottom" }; //since PS 2.4
     def->set_default_value(new ConfigOptionFloatOrPercent(0.2,false));
+
+    def = this->add("support_material_bottom_interface_expansion", coFloatOrPercent);
+    def->label = L("Bottom interface expansion");
+    def->category = OptionCategory::support;
+    def->tooltip = L("Expanion of the bottom interface for better stability."
+        "\nCan be percentage of the interface line width.");
+    def->sidetext = L("mm or %");
+    def->min = 0;
+    def->mode = comAdvancedE | comSuSi;
+    def->set_default_value(new ConfigOptionFloatOrPercent(100, true));
 
     def = this->add("support_material_enforce_layers", coInt);
     def->label = L("Enforce support for the first");
@@ -6764,6 +6832,19 @@ void PrintConfigDef::init_fff_params()
     def->mode = comExpert | comPrusa;
     def->set_default_value(new ConfigOptionBool(true));
 
+    def = this->add("support_max_slope", coFloatOrPercent);
+    def->label = L("Maximum slope");
+    def->full_label = L("Maximum slope for supports");
+    def->category = OptionCategory::support;
+    def->tooltip = L("Maximum slope for support x-y growth, in mm of overhangs allowed."
+                    "\nCan be a % of the widest nozzle diameter."
+                    "\nSet to 0 to disable.");
+    def->sidetext = L("mm or %");
+    def->ratio_over = "nozzle_diameter";
+    def->min = 0;
+    def->mode = comExpert | comSuSi;
+    def->set_default_value(new ConfigOptionFloatOrPercent(0, false));
+
     def = this->add("support_tree_angle", coFloat);
     def->label = L("Maximum Branch Angle");
     def->category = OptionCategory::support;
@@ -6867,17 +6948,29 @@ void PrintConfigDef::init_fff_params()
 
     def = this->add("temperature", coInts);
     def->label = L("Other layers");
-    def->full_label = L("Temperature");
+    def->full_label = L("Nozzle temperature");
     def->category = OptionCategory::filament;
     def->tooltip = L("Extruder nozzle temperature for layers after the first one. Set zero to disable "
                    "temperature control commands in the output G-code.");
     def->sidetext = L("°C");
-    def->full_label = L("Nozzle temperature");
     def->min = 0;
     def->max = max_temp;
     def->mode = comSimpleAE | comPrusa;
     def->is_vector_extruder = true;
     def->set_default_value(new ConfigOptionInts { 200 });
+
+    def = this->add("temperature_heat_speed", coFloats);
+    def->label = L("heating speed");
+    def->full_label = L("Extruder heating speed");
+    def->category = OptionCategory::extruders;
+    def->tooltip = L("When a tool change is approaching, the next extruder that may be at parking temperature can "
+                     "heat up in advance to be ready for the higher temperature more quickly."
+                     "\nSet to 0 to deactivate.");
+    def->sidetext = L("°C/s");
+    def->min = 0;
+    def->mode = comExpert | comSuSi;
+    def->is_vector_extruder = true;
+    def->set_default_value(new ConfigOptionFloats { 0 });
 
     def = this->add("thin_perimeters", coPercent);
     def->label = L("Overlapping external perimeter");
@@ -7470,6 +7563,15 @@ void PrintConfigDef::init_fff_params()
                      "User is responsible for ensuring there is no collision with the print.");
     def->mode = comAdvancedE | comPrusa;
     def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("wipe_tower_rest_in_middle", coBool);
+    def->label = L("toolchange inside the wipetower");
+    def->category = OptionCategory::mmsetup;
+    def->tooltip = L("If enabled, there will be a travel inside the wipe tower before the toolchange.");
+    def->mode = comAdvancedE | comSuSi;
+    def->set_default_value(new ConfigOptionBool(false));
+
+    //TODO: combuine x&y into a coPoint
     def = this->add("wipe_tower_x", coFloat);
     def->label = L("X");
     def->full_label = L("Wipe tower X");
@@ -7838,6 +7940,7 @@ void PrintConfigDef::init_extruder_option_keys()
     m_extruder_option_keys = {
         "default_filament_profile",
         "deretract_speed",
+        "extruder_clearance",
         "extruder_colour",
         "extruder_extrusion_multiplier_speed",
         "extruder_fan_offset",
@@ -7859,9 +7962,12 @@ void PrintConfigDef::init_extruder_option_keys()
         "retract_lift_top",
         "retract_restart_extra",
         "retract_restart_extra_toolchange",
+        "retract_restart_toolchange_on_perimeter",
+        "retract_restart_wipe_toolchange",
         "retract_speed",
         "seam_gap",
         "seam_gap_external",
+        "temperature_heat_speed",
         "tool_name",
         "travel_lift_before_obstacle",
         // "travel_max_lift",
@@ -7896,6 +8002,8 @@ void PrintConfigDef::init_extruder_option_keys()
         "retract_lift_top",
         "retract_restart_extra",
         "retract_restart_extra_toolchange",
+        "retract_restart_toolchange_on_perimeter",
+        "retract_restart_wipe_toolchange",
         "retract_speed",
         "seam_gap",
         "seam_gap_external",
@@ -7929,8 +8037,11 @@ void PrintConfigDef::init_extruder_option_keys()
         "retract_lift_below",
         "retract_restart_extra",
         "retract_restart_extra_toolchange",
+        "retract_restart_toolchange_on_perimeter",
+        "retract_restart_wipe_toolchange",
         "retract_speed",
         "seam_gap",
+        "temperature_heat_speed",
         "travel_lift_before_obstacle",
         // "travel_max_lift",
         "travel_ramping_lift",
@@ -10375,6 +10486,7 @@ std::unordered_set<std::string> prusa_export_to_remove_keys = {
 "extra_perimeters_below_area",
 "extra_perimeters_count",
 "extra_perimeters_odd_layers",
+"extruder_clearance",
 "extruder_extrusion_multiplier_speed",
 "extruder_fan_offset",
 "extruder_temperature_offset",
@@ -10523,6 +10635,7 @@ std::unordered_set<std::string> prusa_export_to_remove_keys = {
 "overhangs_speed_enforce",
 "overhangs_type",
 "overhangs_width_speed",
+"parallel_islands",
 "parallel_objects_step",
 "parallel_objects_step_max_z",
 "perimeter_bonding",
@@ -10557,6 +10670,8 @@ std::unordered_set<std::string> prusa_export_to_remove_keys = {
 "retract_lift_first_layer",
 "retract_lift_top",
 "retract_lift_before_travel",
+"retract_restart_toolchange_on_perimeter",
+"retract_restart_wipe_toolchange",
 "seam_angle_cost",
 "seam_gap",
 "seam_gap_external",
@@ -10594,8 +10709,10 @@ std::unordered_set<std::string> prusa_export_to_remove_keys = {
 "support_material_interface_angle_increment",
 "support_material_interface_fan_speed",
 "support_material_interface_layer_height",
+"support_material_bottom_interface_expansion",
 "support_material_bottom_interface_pattern",
 "support_material_layer_height",
+"temperature_heat_speed",
 "thin_perimeters_all",
 "thin_perimeters",
 "thin_walls_acceleration",
@@ -10633,6 +10750,7 @@ std::unordered_set<std::string> prusa_export_to_remove_keys = {
 "wipe_only_crossing",
 "wipe_return",
 "wipe_speed",
+"filament_temperature_heat_speed", // filament override
 "filament_wipe_extra_perimeter", // filament override
 "filament_wipe_inside_depth", // filament override
 "filament_wipe_inside_end", // filament override
@@ -10644,6 +10762,7 @@ std::unordered_set<std::string> prusa_export_to_remove_keys = {
 "filament_wipe_return", // filament override
 "filament_wipe_speed", // filament override
 "wipe_tower_extrusion_width",
+"wipe_tower_rest_in_middle",
 "wipe_tower_speed",
 "wipe_tower_wipe_starting_speed",
 "xy_size_compensation",
@@ -10672,7 +10791,7 @@ std::map<std::string, std::string> PrintConfigDef::to_prusa(t_config_option_key&
     }
     if (!opt_key.empty() && prusa_export_to_change_keys.find(opt_key) == prusa_export_to_change_keys.end()) {
         auto mode = all_conf.def()->get(opt_key)->mode;
-        assert( (mode & comPrusa) == comPrusa);
+        assert( (mode & comPrusa) == comPrusa || mode == coNone);
     }
     if (opt_key.find("_pattern") != std::string::npos) {
         if ("smooth" == value || "smoothtriple" == value || "smoothhilbert" == value || "rectiwithperimeter" == value || "scatteredrectilinear" == value || "rectilineargapfill" == value || "sawtooth" == value) {
