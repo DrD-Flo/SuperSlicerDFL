@@ -229,8 +229,16 @@ bool Polygon::intersections(const Line &line, Points *intersections) const
     for (size_t i = 0; i < this->points.size(); ++ i) {
         l.b = this->points[i];
         Point intersection;
-        if (l.intersection(line, &intersection))
-            intersections->emplace_back(std::move(intersection));
+        if (l.intersection(line, &intersection)) {
+            if (intersection == l.b || intersection == l.a) {
+                // if on a corner, only keep one intersection
+                if (std::find(intersections->begin(), intersections->end(), intersection) == intersections->end()) {
+                    intersections->emplace_back(std::move(intersection));
+                }
+            } else {
+                intersections->emplace_back(std::move(intersection));
+            }
+        }
         l.a = l.b;
     }
     return intersections->size() > intersections_size;
@@ -457,14 +465,14 @@ size_t Polygon::remove_collinear(coord_t max_offset){
     if (points.size() < 3) return 0;
 
     double min_dist_sq = coordf_t(max_offset) * max_offset;
-    while (points.size() > 2 && Line::distance_to_squared(points[0], points.back(), points[1]) < min_dist_sq){
+    while (points.size() > 2 && Line::distance_to_squared_abp(points.back(), points[1], points[0]) < min_dist_sq){
         //colinear! delete!
         points.erase(points.begin());
         nb_del++;
     }
     for (size_t idx = 1; idx < points.size()-1; ) {
         //if (Line(previous, points[idx + 1]).distance_to(points[idx]) < SCALED_EPSILON){
-        if (Line::distance_to_squared(points[idx], points[idx-1], points[idx + 1]) < min_dist_sq){
+        if (Line::distance_to_squared_abp(points[idx-1], points[idx + 1], points[idx]) < min_dist_sq){
             //colinear! delete!
             points.erase(points.begin() + idx);
             nb_del++;
@@ -472,7 +480,7 @@ size_t Polygon::remove_collinear(coord_t max_offset){
             idx++;
         }
     }
-    while (points.size() > 2 && Line::distance_to_squared(points.back(), points[points.size()-2], points.front()) < min_dist_sq) {
+    while (points.size() > 2 && Line::distance_to_squared_abp(points[points.size()-2], points.front(), points.back()) < min_dist_sq) {
         //colinear! delete!
         points.erase(points.end()-1);
         nb_del++;
@@ -487,9 +495,9 @@ size_t Polygon::remove_collinear_angle(double angle_radian) {
     //std::cout << "== remove_collinear_angle \n";
     double min_dist_sq = std::sin(angle_radian);
     min_dist_sq = min_dist_sq * min_dist_sq;
-    while (points.size() > 2 && Line::distance_to_squared(points.front(), points.back(), points[1]) < min_dist_sq * std::min(points.back().distance_to_square(points.front()), points.front().distance_to_square(points[1]))) {
-       /* if (Line::distance_to_squared(points.front(), points.back(), points[1]) > SCALED_EPSILON) {
-            std::cout << "Fcolinear angle " << Line::distance_to_squared(points[0], points.back(), points[1]) << " < " << (min_dist_sq * std::min(points.back().distance_to_square(points.front()), points.front().distance_to_square(points[1]))) << " (" << min_dist_sq << " * " << std::min(points.back().distance_to_square(points.front()), points.front().distance_to_square(points[1])) << ")\n";
+    while (points.size() > 2 && Line::distance_to_squared_abp(points.back(), points[1], points.front()) < min_dist_sq * std::min(points.back().distance_to_square(points.front()), points.front().distance_to_square(points[1]))) {
+       /* if (Line::distance_to_squared_abp(points.back(), points[1], points.front()) > SCALED_EPSILON) {
+            std::cout << "Fcolinear angle " << Line::distance_to_squared_abp(points.back(), points[1], points[0]) << " < " << (min_dist_sq * std::min(points.back().distance_to_square(points.front()), points.front().distance_to_square(points[1]))) << " (" << min_dist_sq << " * " << std::min(points.back().distance_to_square(points.front()), points.front().distance_to_square(points[1])) << ")\n";
             std::cout << "      unscaled= " << unscaled(Line::distance_to(points[0], points.back(), points[1])) << " < " << unscaled(std::sin(angle_radian) * std::min(points.back().distance_to(points.front()), points.front().distance_to(points[1]))) << " (" << std::sin(angle_radian) << " * " << unscaled(std::min(points.back().distance_to(points.front()), points.front().distance_to(points[1]))) << ")\n";
             std::cout << "      dists: " << unscaled(points.back().distance_to(points.front())) << " => " << unscaled(points.front().distance_to(points[1])) << "\n";
         }*/
@@ -498,9 +506,9 @@ size_t Polygon::remove_collinear_angle(double angle_radian) {
         nb_del++;
     }
     for (size_t idx = 1; idx < points.size() - 1 && points.size() > 2; ) {
-        if (Line::distance_to_squared(points[idx], points[idx - 1], points[idx + 1]) < min_dist_sq * std::min(points[idx - 1].distance_to_square(points[idx]), points[idx].distance_to_square(points[idx + 1]))) {
-            /*if (Line::distance_to_squared(points[idx], points[idx - 1], points[idx + 1]) > SCALED_EPSILON) {
-                std::cout << " colinear angle " << Line::distance_to_squared(points[idx], points[idx - 1], points[idx + 1]) << " < " << (min_dist_sq * std::min(points[idx - 1].distance_to_square(points[idx]), points[idx].distance_to_square(points[idx + 1]))) << " (" << min_dist_sq << " * " << std::min(points[idx - 1].distance_to_square(points[idx]), points[idx].distance_to_square(points[idx + 1])) << ")\n";
+        if (Line::distance_to_squared_abp(points[idx - 1], points[idx + 1], points[idx]) < min_dist_sq * std::min(points[idx - 1].distance_to_square(points[idx]), points[idx].distance_to_square(points[idx + 1]))) {
+            /*if (Line::distance_to_squared_abp(points[idx - 1], points[idx + 1], points[idx]) > SCALED_EPSILON) {
+                std::cout << " colinear angle " << Line::distance_to_squared_abp(points[idx - 1], points[idx + 1], points[idx]) << " < " << (min_dist_sq * std::min(points[idx - 1].distance_to_square(points[idx]), points[idx].distance_to_square(points[idx + 1]))) << " (" << min_dist_sq << " * " << std::min(points[idx - 1].distance_to_square(points[idx]), points[idx].distance_to_square(points[idx + 1])) << ")\n";
                 std::cout << "      unscaled= " << unscaled(Line::distance_to(points[idx], points[idx - 1], points[idx + 1])) << " < " << unscaled(std::sin(angle_radian) * std::min(points[idx - 1].distance_to(points[idx]), points[idx].distance_to(points[idx + 1]))) << " (" << std::sin(angle_radian) << " * " << unscaled(std::min(points[idx - 1].distance_to(points[idx]), points[idx].distance_to(points[idx + 1]))) << ")\n";
                 std::cout << "      dists: " << unscaled(points[idx - 1].distance_to(points[idx])) << " => " << unscaled(points[idx].distance_to(points[idx + 1])) << "\n";
             }*/
@@ -511,7 +519,7 @@ size_t Polygon::remove_collinear_angle(double angle_radian) {
             idx++;
         }
     }
-    while (points.size() > 2 && Line::distance_to_squared(points.back(), points[points.size() - 2], points.front()) < min_dist_sq * std::min(points.back().distance_to_square(points[points.size() - 2]), points.front().distance_to_square(points.back()))) {
+    while (points.size() > 2 && Line::distance_to_squared_abp(points[points.size() - 2], points.front(), points.back()) < min_dist_sq * std::min(points.back().distance_to_square(points[points.size() - 2]), points.front().distance_to_square(points.back()))) {
         //colinear! delete!
         points.erase(points.end() - 1);
         nb_del++;
@@ -521,6 +529,7 @@ size_t Polygon::remove_collinear_angle(double angle_radian) {
 }
 
 #ifdef _DEBUGINFO
+#pragma UNOPTIMIZE
 void Polygon::assert_valid() const {
     assert(size() > 2);
     for (size_t i_pt = 1; i_pt < size(); ++i_pt)
@@ -710,6 +719,51 @@ bool ensure_valid(Polygon &polygon, coord_t resolution) {
     return true;
 }
 
+void Polygon::remove_point_too_close(coord_t tolerance) {
+    const double tolerance_sq = tolerance * (double)tolerance;
+    size_t id = 1;
+    while (id < this->points.size() - 1) {
+        coord_t d_prev = this->points[id].distance_to_square(this->points[id - 1]);
+        coord_t d_next = this->points[id].distance_to_square(this->points[id + 1]);
+        if (d_prev < tolerance_sq && d_next < tolerance_sq) {
+            this->points.erase(this->points.begin() + id);
+            continue;
+        } else if (d_prev < tolerance_sq) {
+            this->points[id-1] += this->points[id];
+            this->points[id-1] /= 2;
+            this->points.erase(this->points.begin() + id);
+            continue;
+        } else if (d_next < tolerance_sq) {
+            this->points[id + 1] += this->points[id];
+            this->points[id + 1] /= 2;
+            this->points.erase(this->points.begin() + id);
+            continue;
+        }
+
+        //go to next one
+        ++id;
+    }
+    if (this->points.front().distance_to_square(this->points.back()) < tolerance_sq) {
+        this->points.erase(this->points.end() -1);
+    }
+
+    if (this->points.size() < 3) {
+        points.clear();
+    }
+}
+
+void remove_point_too_close(Polygons &polygons, coord_t resolution) {
+    for (auto it = polygons.begin(); it != polygons.end();) {
+        it->remove_point_too_close(resolution);
+        if (it->empty()) {
+            it = polygons.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+
 #ifdef _DEBUGINFO
 void assert_valid(const Polygons &polygons) {
     for (const Polygon &polygon : polygons) {
@@ -843,6 +897,45 @@ static inline void simplify_polygon_impl(const Points &points, double tolerance,
     }
 }
 
+void polygons_append(Polygons &dst, const Polygons &src) {
+#ifdef _DEBUG
+    Polygons uni = dst;
+    append(uni, src);
+    uni= union_(uni);
+    Polygons exuni = union_(union_ex(dst), union_ex(src));
+    Polygons test_result = diff(exuni, uni);
+    assert(test_result.empty());
+    // I'm not confident on how we can add holes in the ordered list that is Polygons can only work if each polygons_append is for different islands.
+    // currently used by support, but please use ExPolygons instead of Polygons if you have holes and pushing randmly inot it instead of using clipper::union
+    //for (const Polygon &poly : src) {
+    //    assert(poly.is_counter_clockwise());
+    //}
+#endif
+    dst.insert(dst.end(), src.begin(), src.end());
+}
+
+void polygons_append(Polygons &dst, Polygons &&src) {
+#ifdef _DEBUG
+    Polygons uni = dst;
+    append(uni, src);
+    uni= union_(uni);
+    Polygons exuni = union_(union_ex(dst), union_ex(src));
+    Polygons test_result = diff(exuni, uni);
+    assert(test_result.empty());
+    // I'm not confident on how we can add holes in the ordered list that is Polygons can only work if each polygons_append is for different islands.
+    // currently used by support, but please use ExPolygons instead of Polygons if you have holes and pushing randmly inot it instead of using clipper::union
+    //for (const Polygon &poly : src) {
+    //    assert(poly.is_counter_clockwise());
+    //}
+#endif
+    if (dst.empty()) {
+        dst = std::move(src);
+    } else {
+        std::move(std::begin(src), std::end(src), std::back_inserter(dst));
+        src.clear();
+    }
+}
+
 Polygons polygons_simplify(Polygons &&source_polygons, double tolerance, bool strictly_simple /* = true */)
 {
     Polygons out;
@@ -907,14 +1000,14 @@ bool contains(const Polygons &polygons, const Point &p, bool border_result)
     return (poly_count_inside % 2) == 1;
 }
 
-Polygon make_circle(double radius, double error)
+Polygon make_circle(distf_t radius, distf_t error)
 {
     double angle = 2. * acos(1. - error / radius);
     size_t num_segments = size_t(ceil(2. * M_PI / angle));
     return make_circle_num_segments(radius, num_segments);
 }
 
-Polygon make_circle_num_segments(double radius, size_t num_segments)
+Polygon make_circle_num_segments(distf_t radius, size_t num_segments)
 {
     Polygon out;
     out.points.reserve(num_segments);

@@ -8,13 +8,22 @@ set(SLIC3R_APP_KEY "SuperSlicer")
 # exe name of the slicer, should be lowercase and valid in all os
 set(SLIC3R_APP_CMD "superslicer")
 # id for windows registry ([a-z] [A-Z] [0-9] '_' and '.' only)
-set(SLIC3R_APP_PROG_ID "Slic3r.1")
+set(SLIC3R_APP_PROG_ID "superslicer.1")
+# windows guid to identify the app, can begenerated via powershell running [guid]::NewGuid()
+set(SLIC3R_GUID "a81705b0-978a-4a7d-bf67-8671e631dd4c")
 # versions
-set(SLIC3R_VERSION "2.7-beta+UNKNOWN")
-set(SLIC3R_VERSION_FULL "2.7.61.10")
-set(SLIC3R_BUILD_ID "${SLIC3R_APP_KEY}_${SLIC3R_VERSION_FULL}+UNKNOWN")
-set(SLIC3R_RC_VERSION "2,7,61,10")
-set(SLIC3R_RC_VERSION_DOTS "${SLIC3R_VERSION_FULL}")
+set(SLIC3R_VERSION_TAG "-beta+UNKNOWN")
+set(SLIC3R_RC_VERSION "2,7,63,0")
+set(SLIC3R_RC_VERSION_DOTS "2.7.63.0")
+set(SLIC3R_VERSION "2.7.63${SLIC3R_VERSION_TAG}")
+message(STATUS "SLIC3R_RC_VERSION = ${SLIC3R_RC_VERSION}")
+message(STATUS "SLIC3R_RC_VERSION_DOTS = ${SLIC3R_RC_VERSION_DOTS}")
+message(STATUS "SLIC3R_VERSION_TAG = ${SLIC3R_VERSION_TAG}")
+set(SLIC3R_VERSION_FULL "${SLIC3R_RC_VERSION_DOTS}${SLIC3R_VERSION_TAG}")
+message(STATUS "SLIC3R_VERSION = ${SLIC3R_VERSION}")
+message(STATUS "SLIC3R_VERSION_FULL = ${SLIC3R_VERSION_FULL}")
+# add an '+UNKNOWN' at the end of SLIC3R_BUILD_ID if it's not in the SLIC3R_VERSION_FULL
+set(SLIC3R_BUILD_ID "${SLIC3R_APP_KEY}_${SLIC3R_VERSION_FULL}")
 
 # Same as the slicer name but for gcodeviewer
 set(GCODEVIEWER_APP_NAME "${SLIC3R_APP_NAME} G-code Viewer")

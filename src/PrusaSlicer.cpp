@@ -783,6 +783,7 @@ bool CLI::setup(int argc, char **argv)
     // See Invoking prusa-slicer from $PATH environment variable crashes #5542
     // boost::filesystem::path path_to_binary = boost::filesystem::system_complete(argv[0]);
     boost::filesystem::path path_to_binary = boost::dll::program_location();
+    boost::filesystem::path install_path = path_to_binary.parent_path();
 
     // Path from the Slic3r binary to its resources.
 #ifdef __APPLE__
@@ -804,12 +805,28 @@ bool CLI::setup(int argc, char **argv)
     // Path from Slic3r binary to resources:
     boost::filesystem::path path_resources = boost::filesystem::canonical(path_to_binary).parent_path() / "../resources";
 #endif
+#if !defined(_WIN32) && !defined(__APPLE__)
+    //test if launched from appiamge
+    const char* appimage_env = std::getenv("APPIMAGE");
+    if (appimage_env != nullptr && appimage_env[0] != '\0') {
+        try {
+            boost::filesystem::path appimage_path = boost::filesystem::canonical(boost::filesystem::path(appimage_env));
+            if (boost::filesystem::exists(appimage_path)) {
+                BOOST_LOG_TRIVIAL(trace) << "appimage detected, change install path from '" << install_path
+                                         << "' to '" << appimage_env << "\n";
+                install_path = appimage_path;
+            }
+        } catch (std::exception &) {}
+    }
+#endif
 
+    set_install_path(install_path);
+    set_binary_file(path_to_binary);
     set_resources_dir(path_resources.string());
-    set_var_dir((path_resources / "icons").string());
+    set_icons_dir((path_resources / "icons").string());
     set_local_dir((path_resources / "localization").string());
     set_sys_shapes_dir((path_resources / "shapes").string());
-    set_custom_gcodes_dir((path_resources / "custom_gcodes").string());
+    //set_custom_gcodes_dir((path_resources / "custom_gcodes").string());
 
     // Parse all command line options into a DynamicConfig.
     // If any option is unsupported, print usage and abort immediately.
@@ -848,8 +865,10 @@ bool CLI::setup(int argc, char **argv)
         for (const t_optiondef_map::value_type &optdef : *options)
             m_config.option(optdef.first, true);
 
-    set_data_dir(m_config.opt_string("datadir"));
-    
+    if (std::string datadir = m_config.opt_string("datadir"); !datadir.empty()) {
+        set_data_dir(boost::filesystem::absolute(datadir).string());
+    }
+
     //FIXME Validating at this stage most likely does not make sense, as the config is not fully initialized yet.
     if (!validity.empty()) {
         boost::nowide::cerr << "error: " << validity << std::endl;
@@ -868,9 +887,11 @@ void CLI::print_help(bool include_print_options, PrinterTechnology printer_techn
 #else /* SLIC3R_GUI */
         << " (without GUI support)"
 #endif /* SLIC3R_GUI */
-        << std::endl
-        << "https://github.com/" << SLIC3R_GITHUB << std::endl << std::endl
-        << "Usage: superslicer [ ACTIONS ] [ TRANSFORM ] [ OPTIONS ] [ file.stl ... ]" << std::endl
+        << std::endl;
+        if (SLIC3R_GITHUB[0] !='h' && SLIC3R_GITHUB[1] != 't' && SLIC3R_GITHUB[2] != 't' && SLIC3R_GITHUB[3] != 'p') {
+            boost::nowide::cout << "https://github.com/" << SLIC3R_GITHUB << std::endl << std::endl;
+        }
+    boost::nowide::cout << "Usage: " SLIC3R_APP_CMD " [ ACTIONS ] [ TRANSFORM ] [ OPTIONS ] [ file.stl ... ]" << std::endl
         << std::endl
         << "Actions:" << std::endl;
     cli_actions_config_def.print_cli_help(boost::nowide::cout, false);

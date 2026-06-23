@@ -31,6 +31,7 @@ public:
     const PrintRegionConfig* config_region = nullptr;
     
     GCodeWriter() {}
+    void                reset();
     Tool*               tool()             { return m_tool; }
     const Tool*         tool()     const   { return m_tool; }
 
@@ -55,9 +56,11 @@ public:
     const Tool* get_tool(uint16_t id) const;
     std::string preamble();
     std::string postamble() const;
+    int16_t get_temperature(int tool = -1);
     std::string set_temperature(int16_t temperature, bool wait = false, int tool = -1);
     std::string set_bed_temperature(uint32_t temperature, bool wait = false);
-    std::string set_pressure_advance(double pa) const;
+    void set_pressure_advance(double pa);
+    std::string write_pressure_advance(double pa);
     std::string set_chamber_temperature(uint32_t temperature, bool wait = false);
     void        set_acceleration(uint32_t acceleration);
     void        set_travel_acceleration(uint32_t acceleration);
@@ -82,9 +85,12 @@ public:
     std::string travel_arc_to_xy(const Vec2d& point, const Vec2d& center_offset, const bool is_ccw, const double speed, const std::string_view comment);
     std::string travel_to_xyz(const Vec3d &point, const bool is_lift, const double speed = 0.0, const std::string_view comment = {});
     std::string travel_to_z(const double z, const std::string_view comment = {});
+    // like travel_to_z, but force write the z to the current z (or z if higher)
+    std::string ensure_z(const double z = -1, const std::string_view comment = {});
     // low-level method to force a z travel, disregarding the lift and other thigns. Prefer using "travel_to_z" "lift" and "unlift".
     std::string get_travel_to_z_gcode(const double z, const std::string_view comment = {});
     bool        will_move_z(const double z) const;
+    std::string extrude_to_e(const double dE, const double speed_mm_s = 0.0, const std::string_view comment = {});
     std::string extrude_to_xy(const Vec2d &point, const double dE, const std::string_view comment = {});
     std::string extrude_arc_to_xy(const Vec2d& point, const Vec2d& center_offset, const double dE, const bool is_ccw, const std::string_view comment = {}); //BBS: generate G2 or G3 extrude which moves by arc
     std::string extrude_arc_to_xyz(const Vec3d& point, const Vec2d& center_offset, const double dE, const bool is_ccw, const std::string_view comment = {}); //BBS: generate G2 or G3 extrude which moves by arc
@@ -99,6 +105,8 @@ public:
     double      will_lift(int layer_id) const;
     std::string lift(int layer_id);
     std::string unlift();
+    // extrude a bit of filament without moving, then deduce it from the next extrusion.
+    std::string pre_extrude(const double dE, const std::string_view comment = {});
 
     // this 'de' should be too small to print, but should be be accounted for.
     // for exemple, if the retraction miss this ammount, the unretraction mays be a little bit too far (by one unit)
@@ -130,6 +138,9 @@ public:
     static std::string get_default_pause_gcode(const GCodeConfig &config);
     static std::string get_default_color_change_gcode(const GCodeConfig &config);
 
+protected:
+    void _extrude_e(GCodeFormatter &w, double dE);
+
 private:
 	// Extruders are sorted by their ID, so that binary search is possible.
     std::vector<Extruder> m_extruders;
@@ -137,6 +148,8 @@ private:
     std::string     m_extrusion_axis = "E";
     bool            m_single_extruder_multi_material = false;
     Tool*           m_tool = nullptr;
+    double          m_last_pressure_advance = 0;
+    double          m_current_pressure_advance = 0;
     uint32_t        m_last_acceleration = uint32_t(0);
     uint32_t        m_last_travel_acceleration = uint32_t(0);
     uint32_t        m_current_acceleration = 0;
@@ -155,6 +168,7 @@ private:
     double          m_extra_lift = 0;
     // current lift, to remove from m_pos to have the current height.
     double          m_lifted = 0;
+    double          m_pre_extrude = 0;
     Vec3d           m_pos = Vec3d::Zero();
     // cached string representation of x & y & z m_pos
     std::string     m_pos_str_x;
@@ -167,6 +181,8 @@ private:
     GCodeFormatter  m_formatter {0,0};
     
     std::string _retract(double length, std::optional<double> restart_extra, std::optional<double> restart_extra_toolchange, const std::string_view comment = {});
+    // write the pressure advance if needed on gcode string
+    void _write_pressure_advance(std::string &gcode);
 
 };
 

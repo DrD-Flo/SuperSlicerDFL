@@ -79,6 +79,10 @@ std::string GCodeWriter::get_default_color_change_gcode(const GCodeConfig &confi
     }
 }
 
+void GCodeWriter::reset() {
+    *this = GCodeWriter{};
+}
+
 void GCodeWriter::apply_print_config(const PrintConfig &print_config)
 {
     this->config.apply(print_config, true);
@@ -202,41 +206,61 @@ std::string GCodeWriter::postamble() const
     return gcode.str();
 }
 
-std::string GCodeWriter::set_pressure_advance(double pa) const {
+
+void GCodeWriter::set_pressure_advance(double pa) {
+    m_current_pressure_advance = pa;
+}
+
+void GCodeWriter::_write_pressure_advance(std::string &gcode) {
+    if (m_current_pressure_advance != m_last_pressure_advance && m_current_pressure_advance >= 0) {
+        gcode += write_pressure_advance(m_current_pressure_advance);
+    }
+}
+
+std::string GCodeWriter::write_pressure_advance(double pa) {
     if (pa < 0)
         return "";
-    std::string_view comment =  " ; Pressure advance value "sv;
-    int16_t tool_id = -1;
-    if (m_tool)
-        tool_id = m_tool->id();
     std::string gcode;
-    if (FLAVOR_IS(gcfKlipper)) {
-        gcode = std::string("SET_PRESSURE_ADVANCE ADVANCE=") + to_string_nozero(pa, 4);
+    std::string_view comment = " ; Pressure advance value "sv;
+    int16_t tool_id = -1;
+    if (m_tool) {
+        tool_id = m_tool->id();
+    }
+    m_last_pressure_advance = pa;
+    if (FLAVOR_IS(gcfRepRap) || FLAVOR_IS(gcfSprinter)) {
         if (tool_id >= 0 && !this->config.single_extruder_multi_material.value) {
-            if (this->config.tool_name.size() > tool_id && !this->config.tool_name.get_at(tool_id).empty()) {
-                gcode += std::string(" EXTRUDER=") + this->config.tool_name.get_at(tool_id);
+            gcode += "M572 D" + std::to_string(tool_id) + " S" + to_string_nozero(pa, 4);
+        } else {
+            // is it possible to have no tool id? or a -1 is possible?
+            gcode = std::string("M572 S") + to_string_nozero(pa, 4);
+        }
+    } else if (FLAVOR_IS(gcfKlipper)) {
+        gcode = std::string("SET_PRESSURE_ADVANCE ADVANCE=") + to_string_nozero(pa, 4);
+        if (this->config.tool_name.size() > tool_id && !this->config.tool_name.get_at(tool_id).empty()) {
+            gcode += std::string(" EXTRUDER=") + this->config.tool_name.get_at(tool_id);
             } else if(tool_id > 0){
                 gcode += std::string(" EXTRUDER=extruder") + std::to_string(tool_id);
             } else {
                 gcode += std::string(" EXTRUDER=extruder");
-            }
-        }
-    } else if (FLAVOR_IS(gcfRepRap) || FLAVOR_IS(gcfSprinter)) {
-        if (tool_id >= 0) {
-            gcode = std::string("M572 D") + std::to_string(tool_id) + " S" + to_string_nozero(pa, 4);
-        } else {
-            //is it possible to have no tool id? or a -1 is possible?
-            gcode = std::string("M572 S") + to_string_nozero(pa, 4);
         }
     } else {
-        gcode = std::string("M900 K") + to_string_nozero(pa, 4);
+        // if (FLAVOR_IS(gcfMarlinFirmware) || FLAVOR_IS(gcfMarlinLegacy))
+        gcode += "M900 K" + to_string_nozero(pa, 4);
     }
     if (this->config.gcode_comments) {
         gcode += comment;
     }
-    return gcode + "\n";
+    gcode += "\n";
+    return gcode;
 }
 
+int16_t GCodeWriter::get_temperature(int tool) {
+    //use m_tool if tool isn't set
+    if (tool < 0 && m_tool != nullptr)
+        tool = m_tool->id();
+
+    return m_last_temperature;
+}
 
 std::string GCodeWriter::set_temperature(const int16_t temperature, bool wait, int tool)
 {
@@ -423,48 +447,47 @@ uint32_t GCodeWriter::get_acceleration() const
 }
 
 std::string GCodeWriter::write_acceleration(){
+    std::ostringstream gcode;
     bool need_write_travel_accel = (FLAVOR_IS(gcfMarlinFirmware) || FLAVOR_IS(gcfRepRap)) &&
                                    m_current_travel_acceleration != m_last_travel_acceleration;
     bool need_write_main_accel = m_current_acceleration != m_last_acceleration &&
                                  m_current_acceleration != 0;
-    if (!need_write_main_accel && !need_write_travel_accel)
-        return "";
+    if (need_write_travel_accel || need_write_main_accel) {
+        m_last_acceleration = m_current_acceleration;
+        m_last_travel_acceleration = m_current_travel_acceleration;
 
-    m_last_acceleration = m_current_acceleration;
-    m_last_travel_acceleration = m_current_travel_acceleration;
-
-    std::ostringstream gcode;
-	//try to set only printing acceleration, travel should be untouched if possible
-    if (FLAVOR_IS(gcfRepetier)) {
-        // M201: Set max printing acceleration
-        if (m_current_acceleration > 0)
-            gcode << "M201 X" << m_current_acceleration << " Y" << m_current_acceleration;
-    } else if(FLAVOR_IS(gcfSprinter)){
-        // M204: Set printing acceleration
-        // This is new MarlinFirmware with separated print/retraction/travel acceleration.
-        // Use M204 P, we don't want to override travel acc by M204 S (which is deprecated anyway).
-        if (m_current_acceleration > 0)
-            gcode << "M204 P" << m_current_acceleration;
-    } else if (FLAVOR_IS(gcfMarlinFirmware) || FLAVOR_IS(gcfRepRap)) {
-        // M204: Set printing & travel acceleration
-        if (m_current_acceleration > 0)
-            gcode << "M204 P" << m_current_acceleration << " T" << (m_current_travel_acceleration > 0 ? m_current_travel_acceleration : m_current_acceleration);
-        else if(m_current_travel_acceleration > 0)
-            gcode << "M204 T" << m_current_travel_acceleration;
-    } else { // gcfMarlinLegacy
-        // M204: Set default acceleration
-        if (m_current_acceleration > 0)
-            gcode << "M204 S" << m_current_acceleration;
+        //try to set only printing acceleration, travel should be untouched if possible
+        if (FLAVOR_IS(gcfRepetier)) {
+            // M201: Set max printing acceleration
+            if (m_current_acceleration > 0)
+                gcode << "M201 X" << m_current_acceleration << " Y" << m_current_acceleration;
+        } else if (FLAVOR_IS(gcfSprinter)) {
+            // M204: Set printing acceleration
+            // This is new MarlinFirmware with separated print/retraction/travel acceleration.
+            // Use M204 P, we don't want to override travel acc by M204 S (which is deprecated anyway).
+            if (m_current_acceleration > 0)
+                gcode << "M204 P" << m_current_acceleration;
+        } else if (FLAVOR_IS(gcfMarlinFirmware) || FLAVOR_IS(gcfRepRap)) {
+            // M204: Set printing & travel acceleration
+            if (m_current_acceleration > 0)
+                gcode << "M204 P" << m_current_acceleration << " T" << (m_current_travel_acceleration > 0 ? m_current_travel_acceleration : m_current_acceleration);
+            else if(m_current_travel_acceleration > 0)
+                gcode << "M204 T" << m_current_travel_acceleration;
+        } else { // gcfMarlinLegacy
+            // M204: Set default acceleration
+            if (m_current_acceleration > 0)
+                gcode << "M204 S" << m_current_acceleration;
+        }
     }
     //if at least something, add comment and line return
     if (gcode.tellp() != std::streampos(0)) {
         if (this->config.gcode_comments)
             gcode << " ; adjust acceleration";
         gcode << "\n";
-        return gcode.str();
     }
-    assert(gcode.str().empty());
-    return "";
+    std::string gcode_str = gcode.str();
+    _write_pressure_advance(gcode_str);
+    return gcode_str;
 }
 
 std::string GCodeWriter::reset_e(bool force)
@@ -692,7 +715,7 @@ std::string GCodeWriter::travel_to_xyz(const Vec3d &point, const bool is_lift, c
     }
 
     m_pos = point;
-    
+
     GCodeG1Formatter w(this->get_default_gcode_formatter());
     bool has_x_y = w.emit_xy(point.head<2>(), m_pos_str_x, m_pos_str_y);
     if (!has_x_y) {
@@ -733,6 +756,22 @@ std::string GCodeWriter::travel_to_z(const double z, const std::string_view comm
     return this->get_travel_to_z_gcode(z, comment);
 }
 
+std::string GCodeWriter::ensure_z(const double z, const std::string_view comment) {
+    /*  If target Z is lower than current Z but higher than nominal Z
+        we don't perform the move but we only adjust the nominal Z by
+        reducing the lift amount that will be used for unlift. */
+    // note that if we move but it's lower and we are lifted, we can wait a bit for unlifting, to avoid possible dance on layer change.
+    double current_z = z < 0 ? (m_pos.z() - m_lifted) : z;
+    if (current_z < m_pos.z()) {
+        m_lifted = m_pos.z() - current_z;
+        if (std::abs(m_lifted) < EPSILON)
+            m_lifted = 0.;
+        current_z = m_pos.z();
+    } else {
+        m_lifted = 0.;
+    }
+    return this->get_travel_to_z_gcode(current_z, comment);
+}
 
 std::string GCodeWriter::get_travel_to_z_gcode(const double z, const std::string_view comment)
 {
@@ -767,14 +806,49 @@ bool GCodeWriter::will_move_z(const double z) const
     return true;
 }
 
+void GCodeWriter::_extrude_e(GCodeFormatter &w, double dE)
+{
+    if (this->m_pre_extrude > 0) {
+        // also remove a part of the this->m_pre_extrude
+        if (this->m_pre_extrude > dE * 0.9) {
+            double remove_de = dE * 0.9;
+            assert(remove_de < this->m_pre_extrude);
+            dE -= remove_de;
+            this->m_pre_extrude -= remove_de;
+        } else {
+            dE -= this->m_pre_extrude;
+            this->m_pre_extrude = 0;
+        }
+    }
+    auto [/*double*/ delta_e, /*double*/ e_to_write]  = this->m_tool->extrude(dE + this->m_de_left);
+    bool is_extrude  = std::abs(delta_e) > 0.00000001;
+    this->m_de_left += dE - delta_e;
+    if (is_extrude) {
+        w.emit_e(m_extrusion_axis, e_to_write);
+    }
+}
+
+std::string GCodeWriter::extrude_to_e(const double dE, const double speed_mm_s, const std::string_view comment)
+{
+    assert(dE == dE);
+
+    GCodeG1Formatter w(this->get_default_gcode_formatter());
+    _extrude_e(w, dE);
+    if (speed_mm_s > 0) {
+        w.emit_f(speed_mm_s * 60.);
+    }
+    w.emit_comment(this->config.gcode_comments, comment);
+    return write_acceleration() + w.string();
+}
+
 std::string GCodeWriter::extrude_to_xy(const Vec2d &point, const double dE, const std::string_view comment)
 {
     assert(dE == dE);
     assert(m_pos.x() != point.x() || m_pos.y() != point.y());
 
     m_pos.head<2>() = point.head<2>();
-     auto [/*double*/ delta_e, /*double*/ e_to_write]  = this->m_tool->extrude(dE + this->m_de_left);
-    bool is_extrude  = std::abs(delta_e) > 0.00000001;
+    // auto [/*double*/ delta_e, /*double*/ e_to_write]  = this->m_tool->extrude(dE + this->m_de_left);
+    //bool is_extrude  = std::abs(delta_e) > 0.00000001;
 
     GCodeG1Formatter w(this->get_default_gcode_formatter());
     if (!w.emit_xy(point, m_pos_str_x, m_pos_str_y)) {
@@ -783,11 +857,12 @@ std::string GCodeWriter::extrude_to_xy(const Vec2d &point, const double dE, cons
         this->m_de_left += dE;
         return "";
     }
-    this->m_de_left += dE - delta_e;
-    if (is_extrude) {
-        double delta = w.emit_e(m_extrusion_axis, e_to_write);
-        this->m_de_left += delta;
-    }
+    _extrude_e(w, dE);
+    //this->m_de_left += dE - delta_e;
+    //if (is_extrude) {
+    //    double delta = w.emit_e(m_extrusion_axis, e_to_write);
+    //    this->m_de_left += delta;
+    //}
     w.emit_comment(this->config.gcode_comments, comment);
     return write_acceleration() + w.string();
 }
@@ -816,9 +891,9 @@ std::string GCodeWriter::extrude_arc_to_xy(const Vec2d& point, const Vec2d& cent
 
     m_pos.x()             = point.x();
     m_pos.y()             = point.y();
-    auto [/*double*/ delta_e, /*double*/ e_to_write]  = this->m_tool->extrude(dE + this->m_de_left);
-    //note: delta_e is the quantized delta.
-    bool is_extrude  = std::abs(delta_e) > 0.00000001;
+    //auto [/*double*/ delta_e, /*double*/ e_to_write]  = this->m_tool->extrude(dE + this->m_de_left);
+    ////note: delta_e is the quantized delta.
+    //bool is_extrude  = std::abs(delta_e) > 0.00000001;
 
     bool has_x_y = w.emit_xy(point, m_pos_str_x, m_pos_str_y);
     if (!has_x_y) {
@@ -829,11 +904,12 @@ std::string GCodeWriter::extrude_arc_to_xy(const Vec2d& point, const Vec2d& cent
     }
     // there is a move, write the arc center.
     w.emit_ij(center_offset);
-    this->m_de_left += dE - delta_e;
-    if (is_extrude) {
-        double delta = w.emit_e(m_extrusion_axis, e_to_write);
-        this->m_de_left += delta;
-    }
+    //this->m_de_left += dE - delta_e;
+    //if (is_extrude) {
+    //    double delta = w.emit_e(m_extrusion_axis, e_to_write);
+    //    this->m_de_left += delta;
+    //}
+    _extrude_e(w, dE);
     w.emit_comment(this->config.gcode_comments, comment);
     return write_acceleration() + w.string();
 }
@@ -847,8 +923,8 @@ std::string GCodeWriter::extrude_to_xyz(const Vec3d &point, const double dE, con
     //assert(point.z() >= m_pos.z() - EPSILON);
     m_pos = point;
     m_lifted = 0;
-     auto [/*double*/ delta_e, /*double*/ e_to_write]  = this->m_tool->extrude(dE + this->m_de_left);
-    bool is_extrude  = std::abs(delta_e) > 0.00000001;
+    // auto [/*double*/ delta_e, /*double*/ e_to_write]  = this->m_tool->extrude(dE + this->m_de_left);
+    //bool is_extrude  = std::abs(delta_e) > 0.00000001;
 
     GCodeG1Formatter w(this->get_default_gcode_formatter());
     bool has_x_y = w.emit_xy(Vec2d(point.x(), point.y()), m_pos_str_x, m_pos_str_y);
@@ -870,13 +946,14 @@ std::string GCodeWriter::extrude_to_xyz(const Vec3d &point, const double dE, con
             w.emit_xy(Vec2d(point.x(), point.y()), m_pos_str_x, m_pos_str_y);
         }
     }
-    this->m_de_left += dE - delta_e;
-    if (is_extrude) {
-        double delta = w.emit_e(m_extrusion_axis, e_to_write);
-        if((delta < 0.00000000001) & (delta > -0.00000000001)) delta = 0;
-        assert(delta == 0 ); // shoulde be already taken into account by m_tool->extrude
-        this->m_de_left += delta;
-    }
+    //this->m_de_left += dE - delta_e;
+    //if (is_extrude) {
+    //    double delta = w.emit_e(m_extrusion_axis, e_to_write);
+    //    if((delta < 0.00000000001) & (delta > -0.00000000001)) delta = 0;
+    //    assert(delta == 0 ); // shoulde be already taken into account by m_tool->extrude
+    //    this->m_de_left += delta;
+    //}
+    _extrude_e(w, dE);
     w.emit_comment(this->config.gcode_comments, comment);
     return write_acceleration() + w.string();
 }
@@ -900,8 +977,8 @@ std::string GCodeWriter::extrude_arc_to_xyz(const Vec3d& point, const Vec2d& cen
     }
 
     m_pos = point;
-     auto [/*double*/ delta_e, /*double*/ e_to_write]  = this->m_tool->extrude(dE + this->m_de_left);
-    bool is_extrude  = std::abs(delta_e) > 0.00000001;
+    //auto [/*double*/ delta_e, /*double*/ e_to_write]  = this->m_tool->extrude(dE + this->m_de_left);
+    //bool is_extrude  = std::abs(delta_e) > 0.00000001;
 
     bool has_x_y = w.emit_xy(Vec2d(point.x(), point.y()), m_pos_str_x, m_pos_str_y);
     bool has_z = w.emit_z(point.z() + this->config.z_offset.value, m_pos_str_z);
@@ -913,12 +990,22 @@ std::string GCodeWriter::extrude_arc_to_xyz(const Vec3d& point, const Vec2d& cen
         return "";
     }
     w.emit_ij(center_offset);
-    this->m_de_left += dE - delta_e;
-    if (is_extrude) {
-        double delta = w.emit_e(m_extrusion_axis, e_to_write);
-        this->m_de_left += delta;
-    }
+    //this->m_de_left += dE - delta_e;
+    //if (is_extrude) {
+    //    double delta = w.emit_e(m_extrusion_axis, e_to_write);
+    //    this->m_de_left += delta;
+    //}
+    _extrude_e(w, dE);
     w.emit_comment(this->config.gcode_comments, comment);
+    return write_acceleration() + w.string();
+}
+
+std::string GCodeWriter::pre_extrude(const double dE, const std::string_view comment)
+{
+    GCodeG1Formatter w(this->get_default_gcode_formatter());
+    _extrude_e(w, dE);
+    w.emit_comment(this->config.gcode_comments, comment);
+    this->m_pre_extrude += dE; 
     return write_acceleration() + w.string();
 }
 
@@ -993,6 +1080,9 @@ std::string GCodeWriter::_retract(double length, std::optional<double> restart_e
     assert(dE >= 0);
     assert(dE < 10000000);
     if (dE != 0) {
+        // write pa if it's set for retraction
+        _write_pressure_advance(gcode);
+        //write retract gcode
         if (this->config.use_firmware_retraction) {
             if (FLAVOR_IS(gcfMachinekit))
                 gcode += "G22 ; retract\n";
@@ -1030,6 +1120,9 @@ std::string GCodeWriter::unretract()
     assert(dE >= 0);
     assert(dE < 10000000);
     if (dE != 0) {
+        // write pa if it's set for retraction
+        _write_pressure_advance(gcode);
+        // write unretract gcode
         if (this->config.use_firmware_retraction) {
             gcode += (FLAVOR_IS(gcfMachinekit) ? "G23 ; unretract\n" : "G11 ; unretract\n");
             gcode += this->reset_e();
@@ -1044,7 +1137,7 @@ std::string GCodeWriter::unretract()
             gcode += w.string();
         }
     }
-    
+
     return gcode;
 }
 

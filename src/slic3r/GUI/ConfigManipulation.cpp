@@ -17,6 +17,36 @@
 namespace Slic3r {
 namespace GUI {
 
+namespace {
+
+// utility methods to get the real value of an extruder option, as they can be overriden by filament_overrides.
+bool uses_filament_override(const DynamicPrintConfig &full_config, const std::string &key, size_t extruder_idx) {
+    if (print_config_def.filament_override_option_keys().find(key) ==
+        print_config_def.filament_override_option_keys().end())
+        return false;
+
+    const ConfigOption *filament_opt = full_config.option(std::string("filament_") + key);
+    return filament_opt != nullptr && filament_opt->is_enabled(extruder_idx);
+}
+
+bool get_effective_extruder_bool(const DynamicPrintConfig &full_config, const std::string &key, size_t extruder_idx) {
+    const std::string effective_key = uses_filament_override(full_config, key, extruder_idx) ?
+        std::string("filament_") + key :
+        key;
+    return full_config.opt_bool(effective_key, extruder_idx);
+}
+
+double get_effective_extruder_float(const DynamicPrintConfig &full_config,
+                                    const std::string &key,
+                                    size_t extruder_idx) {
+    const std::string effective_key = uses_filament_override(full_config, key, extruder_idx) ?
+        std::string("filament_") + key :
+        key;
+    return full_config.opt_float(effective_key, extruder_idx);
+}
+
+} // namespace
+
 void ConfigManipulation::apply(DynamicPrintConfig* config, DynamicPrintConfig* new_config)
 {
     bool modified = false;
@@ -85,8 +115,10 @@ void ConfigManipulation::update_print_fff_config(DynamicPrintConfig* config, con
         // && config->opt_bool("exact_last_layer_height") == false
         && config->opt_bool("infill_dense") == false
         && config->opt_bool("extra_perimeters") == false
-        && config->opt_bool("extra_perimeters_on_overhangs") == false
+        && config->option("extra_perimeters_below_area")->get_float() == 0
+        && config->opt_int("extra_perimeters_count") == 0
         && config->opt_bool("extra_perimeters_odd_layers") == false
+        && config->opt_bool("extra_perimeters_on_overhangs") == false
         && config->opt_bool("overhangs_reverse") == false
         && config->opt_bool("gap_fill_last") == false
         && config->opt_int("solid_infill_every_layers") == 0
@@ -134,10 +166,14 @@ void ConfigManipulation::update_print_fff_config(DynamicPrintConfig* config, con
                 new_conf.set_key_value("infill_dense", new ConfigOptionBool(false));
             else if (this->local_config->get().optptr("extra_perimeters"))
                 new_conf.set_key_value("extra_perimeters", new ConfigOptionBool(false));
-            else if (this->local_config->get().optptr("extra_perimeters_on_overhangs"))
-                new_conf.set_key_value("extra_perimeters_on_overhangs", new ConfigOptionBool(false));
+            else if (this->local_config->get().optptr("extra_perimeters_below_area"))
+                new_conf.set_key_value("extra_perimeters_below_area", new ConfigOptionFloatOrPercent(0, false));
+            else if (this->local_config->get().optptr("extra_perimeters_count"))
+                new_conf.set_key_value("extra_perimeters_count", new ConfigOptionInt(0));
             else if (this->local_config->get().optptr("extra_perimeters_odd_layers"))
                 new_conf.set_key_value("extra_perimeters_odd_layers", new ConfigOptionBool(false));
+            else if (this->local_config->get().optptr("extra_perimeters_on_overhangs"))
+                new_conf.set_key_value("extra_perimeters_on_overhangs", new ConfigOptionBool(false));
             else if (this->local_config->get().optptr("overhangs_reverse"))
                 new_conf.set_key_value("overhangs_reverse", new ConfigOptionBool(false));
             else if (this->local_config->get().optptr("gap_fill_last"))
@@ -162,8 +198,10 @@ void ConfigManipulation::update_print_fff_config(DynamicPrintConfig* config, con
             // new_conf.set_key_value("exact_last_layer_height", new ConfigOptionBool(false));
             new_conf.set_key_value("infill_dense", new ConfigOptionBool(false));
             new_conf.set_key_value("extra_perimeters", new ConfigOptionBool(false));
-            new_conf.set_key_value("extra_perimeters_on_overhangs", new ConfigOptionBool(false));
+            new_conf.set_key_value("extra_perimeters_below_area", new ConfigOptionFloatOrPercent(0, false));
+            new_conf.set_key_value("extra_perimeters_count", new ConfigOptionInt(0));
             new_conf.set_key_value("extra_perimeters_odd_layers", new ConfigOptionBool(false));
+            new_conf.set_key_value("extra_perimeters_on_overhangs", new ConfigOptionBool(false));
             new_conf.set_key_value("overhangs_reverse", new ConfigOptionBool(false));
             new_conf.set_key_value("gap_fill_last", new ConfigOptionBool(false));
             new_conf.set_key_value("solid_infill_every_layers", new ConfigOptionInt(0));
@@ -215,39 +253,40 @@ void ConfigManipulation::update_print_fff_config(DynamicPrintConfig* config, con
                 }
                 apply(config, &new_conf);
             }
-        } else {
-            // not-soluble support branch
-            if ((config->opt_int("support_material_extruder") != 0 || config->opt_int("support_material_interface_extruder") != 0)) {
-                wxString msg_text = _(L("The Wipe Tower currently supports the non-soluble supports only (support-> distance -> not 'none/soluble') "
-                                        "if they are printed with the current extruder without triggering a tool change. "
-                                        "(both support_material_extruder and support_material_interface_extruder need to be set to 0)."));
-                if (is_global_config)
-                    msg_text += "\n\n" + _(L("Shall I adjust those settings in order to enable the Wipe Tower?"));
-                MessageDialog dialog (m_msg_dlg_parent, msg_text, _(L("Wipe Tower")),
-                                        wxICON_WARNING | (is_global_config ? wxYES | wxNO : wxOK));
-                DynamicPrintConfig new_conf = *config;
-                auto answer = dialog.ShowModal();
-                if (!is_global_config) {
-                    if (this->local_config->get().optptr("wipe_tower"))
-                        new_conf.set_key_value("wipe_tower", new ConfigOptionBool(false));
-                    else if (this->local_config->get().optptr("support_material_extruder"))
-                        new_conf.set_key_value("support_material_extruder", new ConfigOptionInt(0));
-                    else if (this->local_config->get().optptr("support_material_interface_extruder"))
-                        new_conf.set_key_value("support_material_interface_extruder", new ConfigOptionInt(0));
-                    else if (this->local_config->get().optptr("support_material_contact_distance_type"))
-                        new_conf.set_key_value("support_material_contact_distance_type", new ConfigOptionEnum<SupportZDistanceType>(zdNone));
-                    else if (this->local_config->get().optptr("support_material"))
-                        new_conf.set_key_value("support_material", new ConfigOptionBool(false));
-                    this->local_config->apply_only(new_conf, this->local_config->keys(), true);
-                } else if (answer == wxID_YES) {
-                    new_conf.set_key_value("support_material_extruder", new ConfigOptionInt(0));
-                    new_conf.set_key_value("support_material_interface_extruder", new ConfigOptionInt(0));
-                }
-                else
-                    new_conf.set_key_value("wipe_tower", new ConfigOptionBool(false));
-                apply(config, &new_conf);
-            }
         }
+        //else {
+        //    // not-soluble support branch
+        //    if ((config->opt_int("support_material_extruder") != 0 || config->opt_int("support_material_interface_extruder") != 0)) {
+        //        wxString msg_text = _(L("The Wipe Tower currently supports the non-soluble supports only (support-> distance -> not 'none/soluble') "
+        //                                "if they are printed with the current extruder without triggering a tool change. "
+        //                                "(both support_material_extruder and support_material_interface_extruder need to be set to 0)."));
+        //        if (is_global_config)
+        //            msg_text += "\n\n" + _(L("Shall I adjust those settings in order to enable the Wipe Tower?"));
+        //        MessageDialog dialog (m_msg_dlg_parent, msg_text, _(L("Wipe Tower")),
+        //                                wxICON_WARNING | (is_global_config ? wxYES | wxNO : wxOK));
+        //        DynamicPrintConfig new_conf = *config;
+        //        auto answer = dialog.ShowModal();
+        //        if (!is_global_config) {
+        //            if (this->local_config->get().optptr("wipe_tower"))
+        //                new_conf.set_key_value("wipe_tower", new ConfigOptionBool(false));
+        //            else if (this->local_config->get().optptr("support_material_extruder"))
+        //                new_conf.set_key_value("support_material_extruder", new ConfigOptionInt(0));
+        //            else if (this->local_config->get().optptr("support_material_interface_extruder"))
+        //                new_conf.set_key_value("support_material_interface_extruder", new ConfigOptionInt(0));
+        //            else if (this->local_config->get().optptr("support_material_contact_distance_type"))
+        //                new_conf.set_key_value("support_material_contact_distance_type", new ConfigOptionEnum<SupportZDistanceType>(zdNone));
+        //            else if (this->local_config->get().optptr("support_material"))
+        //                new_conf.set_key_value("support_material", new ConfigOptionBool(false));
+        //            this->local_config->apply_only(new_conf, this->local_config->keys(), true);
+        //        } else if (answer == wxID_YES) {
+        //            new_conf.set_key_value("support_material_extruder", new ConfigOptionInt(0));
+        //            new_conf.set_key_value("support_material_interface_extruder", new ConfigOptionInt(0));
+        //        }
+        //        else
+        //            new_conf.set_key_value("wipe_tower", new ConfigOptionBool(false));
+        //        apply(config, &new_conf);
+        //    }
+        //}
     }
 
     if (config->opt_float("brim_width") > 0 && config->opt_float("brim_separation") >= config->opt_float("brim_width")) {
@@ -271,7 +310,7 @@ void ConfigManipulation::update_print_fff_config(DynamicPrintConfig* config, con
         // Ask only once.
         if (!m_support_material_overhangs_queried) {
             m_support_material_overhangs_queried = true;
-            if (!config->option("overhangs_width_speed")->is_enabled()) {
+            if (!config->option("overhangs")->get_bool()) {
                 wxString msg_text = _(L("Supports work better, if the following feature is enabled:\n"
                     "- overhangs threshold for speed & fan\n"
                     "- overhangs threshold for flow"));
@@ -282,8 +321,8 @@ void ConfigManipulation::update_print_fff_config(DynamicPrintConfig* config, con
                         auto answer = dialog.ShowModal();
                     if (answer == wxID_YES) {
                         // Enable "detect bridging perimeters".
-                        new_conf.set_key_value("overhangs_width_speed", config->option("overhangs_width_speed")->clone()->set_enabled(true));
-                        new_conf.set_key_value("overhangs_width", config->option("overhangs_width")->clone()->set_enabled(true));
+                        new_conf.set_key_value("overhangs", new ConfigOptionBool(true));
+                        new_conf.set_key_value("overhangs_flow_ratio", config->option("overhangs_flow_ratio")->clone()->set_enabled(true));
                     } else if (answer == wxID_NO) {
                         // Do nothing, leave supports on and "detect bridging perimeters" off.
                     } else if (answer == wxID_CANCEL) {
@@ -346,12 +385,13 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig* config)
 {
     bool have_perimeters = config->opt_int("perimeters") > 0;
     for (auto el : {
-        "extra_perimeters", "extra_perimeters_odd_layers", "extra_perimeters_on_overhangs",
+        "extra_perimeters", "extra_perimeters_below_area", "extra_perimeters_count", "extra_perimeters_odd_layers", "extra_perimeters_on_overhangs",
         "external_perimeters_first", "external_perimeter_extrusion_width", "external_perimeter_extrusion_spacing","external_perimeter_extrusion_change_odd_layers",
         "overhangs",
         "seam_position","staggered_inner_seams",
         "perimeter_speed", "perimeter_reverse", "perimeter_generator",
-        "external_perimeter_speed", "small_perimeter_speed", "overhangs_dynamic_speed",
+        "external_perimeter_speed", "small_perimeter_speed",
+        "overhangs_dynamic_flow", "overhangs_dynamic_speed",
         "small_perimeter_min_length", " small_perimeter_max_length", "spiral_vase",
         "seam_notch_all", "seam_notch_inner", "seam_notch_outer"})
         toggle_field(el, have_perimeters);
@@ -366,7 +406,7 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig* config)
         toggle_field(el, have_arachne);
     }
     toggle_field("perimeters_hole", !have_arachne);
-    
+    toggle_field("overhangs_extrusion_spacing", !have_arachne);
 
     for (auto el : {"perimeter_loop", "thin_perimeters", "perimeter_round_corners"})
         toggle_field(el, have_perimeters && !have_arachne);
@@ -374,8 +414,9 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig* config)
     bool have_perimeter_loop = config->opt_bool("perimeter_loop") && !have_arachne;
 
     bool has_external_peri_not_loop = config->opt_bool("external_perimeters_first") && !have_perimeter_loop;
-    toggle_field("external_perimeters_vase", has_external_peri_not_loop);
-    toggle_field("external_perimeters_vase_min_height", has_external_peri_not_loop && config->opt_bool("external_perimeters_vase"));
+    toggle_field("seam_slope_type", has_external_peri_not_loop);
+    for (auto el : { "seam_slope_min_height", "seam_slope_max_length"})
+        toggle_field(el, has_external_peri_not_loop && config->option<ConfigOptionEnum<SeamScarfType>>("seam_slope_type")->value != SeamScarfType::None);
     toggle_field("external_perimeters_first_force", has_external_peri_not_loop && !have_arachne );
     bool is_ext_forced = config->opt_bool("external_perimeters_first_force");
     for (auto el : { "external_perimeters_nothole", "external_perimeters_hole"})
@@ -387,10 +428,21 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig* config)
     toggle_field("no_perimeter_unsupported_algo", have_perimeters);
     toggle_field("only_one_perimeter_top", have_perimeters);
     toggle_field("only_one_perimeter_first_layer", config->opt_int("perimeters") > 1);
-    bool have_overhangs_reverse = have_perimeters && !have_arachne && !config->opt_bool("perimeter_reverse");
-    toggle_field("overhangs_reverse", have_overhangs_reverse);
-    toggle_field("overhangs_reverse_threshold", have_overhangs_reverse && config->opt_bool("overhangs_reverse"));
-    toggle_field("overhangs_speed_enforce", have_perimeters && !have_perimeter_loop);
+    bool have_overhangs = have_perimeters &&config->opt_bool("overhangs");
+    bool can_have_overhangs_reverse =  !have_arachne && have_overhangs && !config->opt_bool("perimeter_reverse");
+    toggle_field("overhangs_reverse", can_have_overhangs_reverse);
+    toggle_field("overhangs_reverse_threshold", can_have_overhangs_reverse && config->opt_bool("overhangs_reverse"));
+    toggle_field("overhangs_speed_enforce", have_overhangs && !have_perimeter_loop && have_overhangs);
+    for (auto el : { "overhangs_width_speed", "overhangs_flow_ratio" })
+        toggle_field(el, have_overhangs);
+    bool have_overhangs_speed = have_overhangs && config->option("overhangs_width_speed")->is_enabled();
+    for (auto el : { "overhangs_speed", "overhangs_dynamic_speed", "overhangs_flow_ratio" })
+        toggle_field(el, have_overhangs_speed);
+    bool have_overhangs_flow = have_overhangs && config->option("overhangs_flow_ratio")->is_enabled();
+    for (auto el : { "overhangs_width", "overhangs_dynamic_flow", "overhangs_type" })
+        toggle_field(el, have_overhangs_flow);
+
+
     toggle_field("min_width_top_surface", have_perimeters && config->opt_bool("only_one_perimeter_top"));
     toggle_field("thin_perimeters_all", have_perimeters && config->option("thin_perimeters")->get_float() != 0 && !have_arachne);
     bool have_thin_wall = !have_arachne && have_perimeters;
@@ -410,18 +462,13 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig* config)
 
     bool have_gap_fill = !have_arachne;
     toggle_field("gap_fill_enabled", have_gap_fill);
+    have_gap_fill = have_gap_fill && config->opt_bool("gap_fill_enabled");
     for (auto el : { "gap_fill_last"})
-        toggle_field(el, have_gap_fill && config->opt_bool("gap_fill_enabled"));
-    if (have_gap_fill) {
-        have_gap_fill = config->opt_bool("gap_fill_enabled");
-        for (InfillPattern ip : {config->opt_enum<InfillPattern>("bottom_fill_pattern"),
-                                 config->opt_enum<InfillPattern>("solid_fill_pattern"),
-                                 config->opt_enum<InfillPattern>("top_fill_pattern")}) {
-            if (ip == InfillPattern::ipConcentricGapFill || ip == InfillPattern::ipRectilinearWGapFill ||
-                ip == InfillPattern::ipMonotonicWGapFill) {
-                have_gap_fill = true;
-            }
-        }
+        toggle_field(el, have_gap_fill);
+    for (auto el : { "gap_fill_no_overhang" })
+        toggle_field(el, have_gap_fill);
+    if (!have_gap_fill) {
+        have_gap_fill = config->opt_bool("infill_filled_bottom") || config->opt_bool("infill_filled_solid") || config->opt_bool("infill_filled_top");
     }
     for (auto el : { "gap_fill_extension", "gap_fill_max_width", "gap_fill_min_area", "gap_fill_min_length", "gap_fill_min_width" })
         toggle_field(el, have_gap_fill);
@@ -546,7 +593,7 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig* config)
 
     for (auto el : { "support_material_bottom_interface_pattern", "support_material_top_interface_pattern", "support_material_interface_spacing", "support_material_interface_extruder",
                     "support_material_interface_speed", "support_material_interface_contact_loops", "support_material_interface_layer_height"
-                    "support_material_interface_angle", "support_material_interface_angle_increment"})
+                    "support_material_interface_angle", "support_material_interface_angle_increment", "support_material_bottom_interface_expansion"})
         toggle_field(el, have_support_material && have_support_interface);
     toggle_field("support_material_synchronize_layers", have_support_soluble);
 
@@ -609,17 +656,24 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig* config)
     for (auto el : { /*"extruder_clearance_radius", "extruder_clearance_height",*/ "complete_objects_one_skirt",
         "complete_objects_sort"})
         toggle_field(el, have_sequential_printing);
-    toggle_field("parallel_objects_step", !config->opt_bool("complete_objects"));
+    bool temp_complete_step = !config->opt_bool("complete_objects");
+    toggle_field("parallel_objects_step", temp_complete_step);
+    temp_complete_step = temp_complete_step && config->opt_float("parallel_objects_step") > 0;
+    toggle_field("parallel_objects_step_max_z", temp_complete_step);
+    toggle_field("parallel_islands", temp_complete_step);
+    temp_complete_step = temp_complete_step && config->opt_bool("parallel_islands");
 
     bool have_ooze_prevention = config->opt_bool("ooze_prevention");
     toggle_field("standby_temperature_delta", have_ooze_prevention);
 
-    bool have_wipe_tower = config->opt_bool("wipe_tower");
+    bool have_wipe_tower = config->opt_float("parallel_objects_step") <= 0 || config->opt_bool("parallel_islands");
+    toggle_field("wipe_tower", have_wipe_tower);
+    have_wipe_tower = have_wipe_tower && config->opt_bool("wipe_tower");
     for (auto el : { "wipe_tower_x", "wipe_tower_y", "wipe_tower_width", "wipe_tower_rotation_angle", "wipe_tower_brim_width",
                      "wipe_tower_cone_angle", "wipe_tower_extra_spacing",
                      "wipe_tower_bridging", "wipe_tower_brim", "wipe_tower_no_sparse_layers", "single_extruder_multi_material_priming",
                      "wipe_tower_speed", "wipe_tower_wipe_starting_speed",
-                     "wipe_tower_extrusion_width" })
+                     "wipe_tower_extrusion_width", "wipe_tower_rest_in_middle" })
         toggle_field(el, have_wipe_tower);
 
     bool have_non_zero_mmu_segmented_region_max_width = config->opt_float("mmu_segmented_region_max_width") > 0.;
@@ -632,6 +686,8 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig* config)
     toggle_field("avoid_crossing_perimeters_max_detour", have_avoid_crossing_perimeters);
     toggle_field("avoid_crossing_not_first_layer", have_avoid_crossing_perimeters);
     toggle_field("avoid_crossing_top", have_avoid_crossing_perimeters);
+    toggle_field("avoid_travel_island", have_avoid_crossing_perimeters);
+    toggle_field("avoid_travel_island_weight", have_avoid_crossing_perimeters && config->opt_bool("avoid_travel_island"));
     
     toggle_field("enforce_retract_first_layer", config->opt_bool("only_retract_when_crossing_perimeters"));
 
@@ -666,12 +722,13 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig* config)
         config->option<ConfigOptionFloatOrPercent>("bridge_speed")->percent || 
         config->option<ConfigOptionFloatOrPercent>("support_material_speed")->percent);
     toggle_field("max_print_speed", config->opt_float("max_volumetric_speed") != 0);
+    toggle_field("autospeed_min_thin_flow", config->opt_float("max_volumetric_speed") != 0);
 }
 
 
 void ConfigManipulation::update_printer_fff_config(DynamicPrintConfig *config,
-                                                   const bool          is_global_config)
-{
+                                                   uint16_t active_extruder,
+                                                   const bool is_global_config) {
     const std::vector<double> &nozzle_sizes = config->option<ConfigOptionFloats>("nozzle_diameter")->get_values();
     double min_step_size = config->option("z_step")->get_float();
     //for each extruder
@@ -725,7 +782,7 @@ void ConfigManipulation::update_printer_fff_config(DynamicPrintConfig *config,
         }
     }
 }
-void ConfigManipulation::toggle_printer_fff_options(DynamicPrintConfig *config, DynamicPrintConfig &full_config)
+void ConfigManipulation::toggle_printer_fff_options(DynamicPrintConfig *config, const DynamicPrintConfig &full_config, uint16_t active_extruder)
 {
 
     size_t extruder_count = config->option("nozzle_diameter")->size();
@@ -736,13 +793,14 @@ void ConfigManipulation::toggle_printer_fff_options(DynamicPrintConfig *config, 
     bool custom_color = config->opt_bool("thumbnails_custom_color");
     toggle_field("thumbnails_color", custom_color);
     const ConfigOptionEnum<GCodeThumbnailsFormat>* thumbnails_format = config->option<ConfigOptionEnum<GCodeThumbnailsFormat>>("thumbnails_format");
-    
+
     if (thumbnails_format) {
         toggle_field("thumbnails_end_file", thumbnails_format->value != (GCodeThumbnailsFormat::BIQU));
         toggle_field("thumbnails_tag_format", thumbnails_format->value != (GCodeThumbnailsFormat::BIQU));
     }
 
     bool have_arc_fitting = config->option("arc_fitting")->get_int() != int(ArcFittingType::Disabled);
+    toggle_field("arc_fitting_ignore_holes", have_arc_fitting);
     toggle_field("arc_fitting_resolution", have_arc_fitting);
     toggle_field("arc_fitting_tolerance", have_arc_fitting);
 
@@ -761,10 +819,9 @@ void ConfigManipulation::toggle_printer_fff_options(DynamicPrintConfig *config, 
     toggle_field("silent_mode", is_marlin_flavor);
 
     for (size_t i = 0; i < extruder_count; ++i) {
-        
-        bool have_retract_length = config->opt_float("retract_length", i) > 0;
-        
-        const bool ramping_lift = config->get_bool("travel_ramping_lift", i);
+        bool have_retract_length = get_effective_extruder_float(full_config, "retract_length", i) > 0;
+
+        const bool ramping_lift = get_effective_extruder_bool(full_config, "travel_ramping_lift", i);
         //const bool lifts_z = (ramping_lift && config->get_float("travel_max_lift", i) > 0)
         //                  || (! ramping_lift && config->get_float("retract_lift", i) > 0);
 
@@ -789,7 +846,7 @@ void ConfigManipulation::toggle_printer_fff_options(DynamicPrintConfig *config, 
         // for (auto el : vec) {
             // toggle_field(el, retraction, i);
         // }
-                bool has_lift = /*retraction &&  now possible outside retraction */ config->get_float("retract_lift", i) > 0;
+        bool has_lift = /*retraction &&  now possible outside retraction */ get_effective_extruder_float(full_config, "retract_lift", i) > 0;
         // retract lift above / below only applies if using retract lift
         // vec.resize(0);
         std::vector<std::string> vec = { "retract_lift_above", "retract_lift_below", "retract_lift_top", "retract_lift_first_layer", "retract_lift_before_travel"};
@@ -799,14 +856,16 @@ void ConfigManipulation::toggle_printer_fff_options(DynamicPrintConfig *config, 
 
         // some options only apply when not using firmware retraction
         vec.resize(0);
-        vec = { "retract_speed", "deretract_speed", "retract_before_wipe", "retract_restart_extra", "wipe", "wipe_speed" , "wipe_only_crossing"};
+        vec = { "retract_speed", "deretract_speed", "retract_before_wipe",
+            "retract_restart_extra", "wipe", "wipe_speed" , "wipe_only_crossing",
+            "wipe_return"};
         for (auto el : vec) {
             toggle_field(el, retraction && !use_firmware_retraction, i);
         }
 
-        bool wipe = config->opt_bool("wipe", i) && have_retract_length;
+        bool wipe = get_effective_extruder_bool(full_config, "wipe", i) && have_retract_length;
         vec.resize(0);
-        vec = { "retract_before_wipe", "wipe_only_crossing", "wipe_speed" };
+        vec = { "retract_before_wipe", "wipe_only_crossing", "wipe_return", "wipe_speed" };
         for (auto el : vec) {
             toggle_field(el, wipe, i);
         }
@@ -820,8 +879,18 @@ void ConfigManipulation::toggle_printer_fff_options(DynamicPrintConfig *config, 
 
         toggle_field("retract_length_toolchange", extruder_count > 1, i);
 
-        bool toolchange_retraction = config->opt_float("retract_length_toolchange", i) > 0;
+        bool toolchange_retraction = get_effective_extruder_float(full_config, "retract_length_toolchange", i) > 0;
         toggle_field("retract_restart_extra_toolchange", extruder_count > 1 && toolchange_retraction, i);
+        toggle_field("retract_restart_toolchange_on_perimeter", extruder_count > 1 && toolchange_retraction, i);
+        toggle_field("retract_restart_wipe_toolchange", extruder_count > 1 && toolchange_retraction, i);
+
+        if (i < extruder_count) {
+            for (std::string option_name : print_config_def.filament_override_option_keys()) {
+                if (uses_filament_override(full_config, option_name, i)) {
+                    toggle_field(option_name, false, i);
+                }
+            }
+        }
     }
 
     if (config->opt_bool("single_extruder_multi_material") && extruder_count > 1) {

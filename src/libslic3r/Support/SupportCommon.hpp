@@ -24,7 +24,7 @@ void remove_bridges_from_contacts(
     const PrintConfig   &print_config, 
     const Layer         &lower_layer,
     const LayerRegion   &layerm,
-    float                fw, 
+    coord_t              flow_width,
     ExPolygons          &contact_polygons);
 
 // Turn some of the base layers into base interface layers.
@@ -69,6 +69,7 @@ SupportGeneratorLayersPtr generate_support_layers(
 // Produce the support G-code.
 // Used by both classic and tree supports.
 void generate_support_toolpaths(
+	PrintObject							&object,
 	SupportLayerPtrs    				&support_layers,
 	const PrintObjectConfig 			&config,
 	const SupportParameters 			&support_params,

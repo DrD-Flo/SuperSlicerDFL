@@ -455,7 +455,9 @@ wxBoxSizer* Preview::create_layers_slider_sizer()
     std::lock_guard lock(m_layers_slider->lock_render());
 
     m_layers_slider->SetDrawMode(wxGetApp().get_current_printer_technology() == ptSLA,
-        wxGetApp().preset_bundle->fff_prints.get_edited_preset().config.opt_bool("complete_objects") || wxGetApp().preset_bundle->fff_prints.get_edited_preset().config.opt_float("parallel_objects_step") > 0);
+                                 wxGetApp().preset_bundle->fff_prints.get_edited_preset().config.opt_bool("complete_objects") ||
+                                     (wxGetApp().preset_bundle->fff_prints.get_edited_preset().config.opt_float("parallel_objects_step") > 0 &&
+                                      !wxGetApp().preset_bundle->fff_prints.get_edited_preset().config.opt_bool("parallel_islands")));
     m_layers_slider->enable_action_icon(wxGetApp().is_editor());
 
     sizer->Add(m_layers_slider, 0, wxEXPAND, 0);
@@ -524,7 +526,7 @@ void Preview::check_layers_slider_values(std::vector<CustomGCode::Item>& ticks_f
     ticks_from_model.erase(std::remove_if(ticks_from_model.begin(), ticks_from_model.end(),
                      [layers_z](CustomGCode::Item val)
         {
-            auto it = std::lower_bound(layers_z.begin(), layers_z.end(), val.print_z - DoubleSlider::epsilon());
+            auto it = std::lower_bound(layers_z.begin(), layers_z.end(), unscaled(val.print_z_) - DoubleSlider::epsilon());
             return it == layers_z.end();
         }),
         ticks_from_model.end());
@@ -589,12 +591,12 @@ void Preview::update_layers_slider(const std::vector<double>& layers_z, bool sho
     int idx_low = std::max(current_lower_tick, 0);
     int idx_high = snap_to_max ? m_layers_slider->GetMaxValue() : std::min(current_higher_tick, m_layers_slider->GetMaxValue());
     if (!layers_z.empty()) {
-        if (!snap_to_min && !is_approx(layers_z[idx_low], z_low, 0.0000001)) {
+        if (!snap_to_min && idx_low < layers_z.size() && !is_approx(layers_z[idx_low], z_low, 0.0000001)) {
             int idx_new = find_close_layer_idx(layers_z, z_low, DoubleSlider::epsilon()/*1e-6*/);
             if (idx_new != -1)
                 idx_low = idx_new;
         }
-        if (!snap_to_max && !is_approx(layers_z[idx_high], z_high, 0.0000001)) {
+        if (!snap_to_max && idx_high < layers_z.size() && !is_approx(layers_z[idx_high], z_high, 0.0000001)) {
             int idx_new = find_close_layer_idx(layers_z, z_high, DoubleSlider::epsilon()/*1e-6*/);
             if (idx_new != -1)
                 idx_high = idx_new;
@@ -625,8 +627,8 @@ void Preview::update_layers_slider(const std::vector<double>& layers_z, bool sho
                 // do not fetch uncomplete data
                 m_layers_slider->SetLayersAreas({});
             } else {
-                const std::vector<std::pair<coordf_t, float>> &layerz_to_area =
-                    plater->fff_print().print_statistics().layer_area_stats;
+                const std::vector<std::pair<coord_t, float>> &layerz_to_area =
+                    plater->fff_print().print_statistics()._layer_area_stats;
                 std::vector<float> areas;
                 for (auto [z, area] : layerz_to_area) areas.push_back(area);
                 m_layers_slider->SetLayersAreas(areas);

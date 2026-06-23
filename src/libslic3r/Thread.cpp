@@ -14,9 +14,12 @@
 #endif
 
 #include <atomic>
+#include <codecvt>
 #include <condition_variable>
+#include <locale>
 #include <mutex>
 #include <random>
+#include <string>
 #include <thread>
 #include <time.h>
 #include <chrono>
@@ -134,6 +137,29 @@ std::optional<std::string> get_current_thread_name()
 	return (ptr == nullptr) ? std::string() : boost::nowide::narrow(ptr);
 }
 
+
+void win_exec(const std::string &command) {
+    std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
+    std::wstring wide = converter.from_bytes(command);
+
+    //system(command.c_str());
+    STARTUPINFO StartupInfo;
+    PROCESS_INFORMATION ProcessInfo;
+
+    ZeroMemory( &StartupInfo, sizeof( StartupInfo ) );
+    StartupInfo.cb = sizeof( StartupInfo );
+    ZeroMemory( &ProcessInfo, sizeof( ProcessInfo ) );
+
+    CreateProcess( wide.c_str(),
+                   NULL, NULL, NULL,
+                   NULL, NULL, NULL, NULL,
+                   &StartupInfo,
+                   &ProcessInfo
+                   );
+
+    return;
+}
+
 #else // _WIN32
 
 #ifdef __APPLE__
@@ -225,11 +251,11 @@ void parallel_for(size_t begin, size_t size, std::function<void(size_t)> process
     //For now, this is just use in debug mode, to be able toswitch from // to sequential withotu recompiling evrything.
 
     // normal step
-    tbb::parallel_for(begin, size, [&process_one_item](size_t item_idx) { process_one_item(item_idx); });
+    //tbb::parallel_for(begin, size, [&process_one_item](size_t item_idx) { process_one_item(item_idx); });
     // if you need to debug without // stuff
-    //for (size_t idx = begin; idx < size; ++idx) {
-    //    process_one_item(idx);
-    //}
+    for (size_t idx = begin; idx < size; ++idx) {
+        process_one_item(idx);
+    }
 }
 void not_parallel_for(size_t begin, size_t size, std::function<void(size_t)> process_one_item) {
     for (size_t idx = begin; idx < size; ++idx) {

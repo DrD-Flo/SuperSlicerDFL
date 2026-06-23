@@ -700,7 +700,7 @@ ExtrusionEntityCollection make_brim(const Print &print, PrintTryCancel try_cance
 			    	for (; i < j; ++ i) {
                         this_loop_trimmed.entities.emplace_back(new ExtrusionPath({
                             ExtrusionRole::Skirt,
-                            ExtrusionFlow{ float(flow.mm3_per_mm()), float(flow.width()), float(print.skirt_first_layer_height()) } }));
+                            ExtrusionFlow{ float(flow.mm3_per_mm()), float(flow.width()), float(print.skirt_first_layer_height()) } }, nullptr));
 						const ClipperLib_Z::Path &path = *loops_trimmed_order[i].first;
 			            Points &points = dynamic_cast<ExtrusionPath*>(this_loop_trimmed.entities.back())->polyline.points;
 			            points.reserve(path.size());
@@ -827,7 +827,7 @@ void extrude_brim_from_tree(const Print& print, std::vector<std::vector<BrimLoop
     //def: push into extrusions, in the right order
     float mm3_per_mm = float(flow.mm3_per_mm());
     float width = float(flow.width());
-    float height = float(print.get_min_first_layer_height());
+    float height = float(unscaled(print.get_min_first_layer_height()));
     int nextIdx = 0;
     std::function<void(BrimLoop&, ExtrusionEntityCollection*)>* extrude_ptr;
     std::function<void(BrimLoop&, ExtrusionEntityCollection*) > extrude = [&mm3_per_mm, &width, &height, &extrude_ptr, &nextIdx, extrude_cw](BrimLoop& to_cut, ExtrusionEntityCollection* parent) {
@@ -846,11 +846,11 @@ void extrude_brim_from_tree(const Print& print, std::vector<std::vector<BrimLoop
                     pline.reverse();
                 }
                 if (pline.back() == pline.front()) {
-                    ExtrusionPath path({ExtrusionRole::Skirt, {mm3_per_mm, width, height}}, false);
+                    ExtrusionPath path({ExtrusionRole::Skirt, {mm3_per_mm, width, height}}, nullptr, false);
                     path.polyline = pline;
                     to_add.push_back(new ExtrusionLoop(std::move(path), elrSkirt));
                 } else {
-                    ExtrusionPath *extrusion_path = new ExtrusionPath({ExtrusionRole::Skirt, {mm3_per_mm, width, height}}, false);
+                    ExtrusionPath *extrusion_path = new ExtrusionPath({ExtrusionRole::Skirt, {mm3_per_mm, width, height}}, nullptr, false);
                     extrusion_path->polyline = pline;
                     to_add.push_back(extrusion_path);
                 }
@@ -889,11 +889,11 @@ void extrude_brim_from_tree(const Print& print, std::vector<std::vector<BrimLoop
                     pline.reverse();
                 }
                 if (pline.back() == pline.front()) {
-                    ExtrusionPath path({ExtrusionRole::Skirt, {mm3_per_mm, width, height}}, false);
+                    ExtrusionPath path({ExtrusionRole::Skirt, {mm3_per_mm, width, height}}, nullptr, false);
                     path.polyline = pline;
                     to_add.push_back(new ExtrusionLoop(std::move(path), elrSkirt));
                 } else {
-                    ExtrusionPath *extrusion_path = new ExtrusionPath({ExtrusionRole::Skirt, {mm3_per_mm, width, height}}, false);
+                    ExtrusionPath *extrusion_path = new ExtrusionPath({ExtrusionRole::Skirt, {mm3_per_mm, width, height}}, nullptr, false);
                     extrusion_path->polyline = pline;
                     to_add.push_back(extrusion_path);
                 }
@@ -1039,7 +1039,22 @@ void make_brim(const Print& print, const Flow& flow, const PrintObjectPtrs& obje
             }
         }
         if (!object->support_layers().empty()) {
-            ExPolygons polys = union_ex(object->support_layers().front()->support_fills.polygons_covered_by_spacing(flow.spacing_ratio(), float(SCALED_EPSILON)));
+            ExPolygons polys;
+            for (const LayerSliceIslandPtr &island : object->support_layers().front()->islands()) {
+                for (const LayerRegionIslandPtr &region_island : island->regions_islands()) {
+                    if (region_island->has_extrusion(LayerRegionIsland::SUPPORT)) {
+                        expolygons_append(polys,
+                               region_island->extrusion(LayerRegionIsland::SUPPORT)
+                                   .polygons_covered_by_spacing(flow.spacing_ratio(), float(SCALED_EPSILON)));
+                    }
+                    if (region_island->has_extrusion(LayerRegionIsland::SUPPORT_INTERFACE)) {
+                        expolygons_append(polys,
+                               region_island->extrusion(LayerRegionIsland::SUPPORT_INTERFACE)
+                                   .polygons_covered_by_spacing(flow.spacing_ratio(), float(SCALED_EPSILON)));
+                    }
+                }
+            }
+            polys = union_ex(polys);
             for (ExPolygon& poly : polys) {
                 if (brim_offset == 0) {
                     object_islands.push_back(std::move(poly));
@@ -1213,7 +1228,22 @@ void make_brim_ears(const Print& print, const Flow& flow, const PrintObjectPtrs&
         }
 
         if (!object->support_layers().empty()) {
-            ExPolygons polys = union_ex(object->support_layers().front()->support_fills.polygons_covered_by_spacing(flow.spacing_ratio(), float(SCALED_EPSILON)));
+            ExPolygons polys;
+            for (const LayerSliceIslandPtr &island : object->support_layers().front()->islands()) {
+                for (const LayerRegionIslandPtr &region_island : island->regions_islands()) {
+                    if (region_island->has_extrusion(LayerRegionIsland::SUPPORT)) {
+                        expolygons_append(polys,
+                               region_island->extrusion(LayerRegionIsland::SUPPORT)
+                                   .polygons_covered_by_spacing(flow.spacing_ratio(), float(SCALED_EPSILON)));
+                    }
+                    if (region_island->has_extrusion(LayerRegionIsland::SUPPORT_INTERFACE)) {
+                        expolygons_append(polys,
+                               region_island->extrusion(LayerRegionIsland::SUPPORT_INTERFACE)
+                                   .polygons_covered_by_spacing(flow.spacing_ratio(), float(SCALED_EPSILON)));
+                    }
+                }
+            }
+            polys = union_ex(polys);
             //put ears over supports unless it's more than 30% fill
             if (object->config().raft_first_layer_density.get_abs_value(1.) > 0.3) {
                 for (ExPolygon& poly : polys) {
@@ -1437,9 +1467,22 @@ void make_brim_interior(const Print& print, const Flow& flow, const PrintObjectP
         }
         if (!object->support_layers().empty()) {
             spacing = scaled(object->config().support_material_interface_spacing.value) + support_material_flow(object, float(print.get_min_first_layer_height())).scaled_width() * 1.5;
-            ExPolygons polys = closing_ex(
-                union_ex(object->support_layers().front()->support_fills.polygons_covered_by_spacing(flow.spacing_ratio(), float(SCALED_EPSILON)))
-                , spacing);
+            ExPolygons polys;
+            for (const LayerSliceIslandPtr &island : object->support_layers().front()->islands()) {
+                for (const LayerRegionIslandPtr &region_island : island->regions_islands()) {
+                    if (region_island->has_extrusion(LayerRegionIsland::SUPPORT)) {
+                        expolygons_append(polys,
+                               region_island->extrusion(LayerRegionIsland::SUPPORT)
+                                   .polygons_covered_by_spacing(flow.spacing_ratio(), float(SCALED_EPSILON)));
+                    }
+                    if (region_island->has_extrusion(LayerRegionIsland::SUPPORT_INTERFACE)) {
+                        expolygons_append(polys,
+                               region_island->extrusion(LayerRegionIsland::SUPPORT_INTERFACE)
+                                   .polygons_covered_by_spacing(flow.spacing_ratio(), float(SCALED_EPSILON)));
+                    }
+                }
+            }
+            polys = closing_ex(union_ex(polys), spacing);
             for (ExPolygon& poly : polys) {
                 if (brim_offset == 0) {
                     object_islands.push_back(std::move(poly));

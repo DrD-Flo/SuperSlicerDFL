@@ -6,8 +6,6 @@
 #ifndef slic3r_GUI_App_hpp_
 #define slic3r_GUI_App_hpp_
 
-#include <angelscript/include/angelscript.h>
-#include <angelscript/add_on/scriptbuilder/scriptbuilder.h>
 #include <memory>
 #include <string>
 #include "ImGuiWrapper.hpp"
@@ -17,6 +15,7 @@
 #include "wxExtensions.hpp"
 
 #include <wx/app.h>
+#include <wx/busyinfo.h>
 #include <wx/colour.h>
 #include <wx/font.h>
 #include <wx/string.h>
@@ -68,12 +67,14 @@ enum FileType
     FT_STEP,
     FT_AMF,
     FT_3MF,
+    FT_3MF_TRSF, //3mf without baked transformation in mesh
+    FT_3MF_UNKBAKE, //3mf with baked transformation in mesh, and will be unbake
     FT_GCODE,
     FT_MODEL,
     FT_PROJECT,
     FT_FONTS,
     FT_GALLERY,
-
+    FT_HFP,
     FT_INI,
     FT_SVG,
 
@@ -171,8 +172,6 @@ private:
 
     OpenGLManager m_opengl_mgr;
 
-    //AngelScript::PtrRelease<AngelScript::asIScriptEngine> m_script_engine;
-
     std::unique_ptr<RemovableDriveManager> m_removable_drive_manager;
 
     std::unique_ptr<ImGuiWrapper> m_imgui;
@@ -194,9 +193,9 @@ public:
     bool is_editor() const { return m_app_mode == EAppMode::Editor; }
     bool is_gcode_viewer() const { return m_app_mode == EAppMode::GCodeViewer; }
     bool is_recreating_gui() const { return m_is_recreating_gui; }
-    std::string logo_name() const { return is_editor() ? SLIC3R_APP_KEY : GCODEVIEWER_APP_KEY; }
-
-    //AngelScript::asIScriptEngine* get_script_engine() const { return m_script_engine.get(); }
+    std::string logo_name() const;
+    std::string dark_icon_name() const;
+    std::string light_icon_name() const;
 
     // To be called after the GUI is fully built up.
     // Process command line parameters cached in this->init_params,
@@ -286,13 +285,14 @@ public:
     void            bridge_tuning_dialog();
     void            over_bridge_dialog();
     void            calibration_cube_dialog();
-	void            calibration_retraction_dialog();
+    void            calibration_retraction_dialog();
     void            calibration_pressureadv_dialog();
     void            freecad_script_dialog();
     void            tiled_canvas_dialog();
     //void            support_tuning(); //have to do multiple, in a submenu
-    void            load_project(wxWindow *parent, wxString& input_file) const;
+    bool            load_project(wxWindow *parent, wxString& input_file) const;
     void            import_model(wxWindow *parent, wxArrayString& input_files) const;
+    void            import_model_hueforge(wxWindow* parent, wxString& input_file) const;
     void            import_zip(wxWindow* parent, wxString& input_file) const;
     void            load_gcode(wxWindow* parent, wxString& input_file) const;
 
@@ -360,6 +360,7 @@ public:
     std::unique_ptr<AppConfig> app_config;
 
     std::unique_ptr<PresetBundle> preset_bundle;
+    std::unique_ptr<wxBusyInfo>   wait_dialog;
 
     std::unique_ptr<PresetUpdater> preset_updater;
     MainFrame*      mainframe{ nullptr };
@@ -391,7 +392,15 @@ public:
 
     void            open_web_page_localized(const std::string &http_address);
     bool            may_switch_to_SLA_preset(const wxString& caption);
-    bool            run_wizard(ConfigWizard::RunReason reason, ConfigWizard::StartPage start_page = ConfigWizard::SP_WELCOME);
+
+    enum RunVendorBundleManage {
+        RVBM_NEVER,
+        RVBM_IF_EMPTY,
+        RVBM_ALWAYS,
+    };
+    bool run_wizard(ConfigWizard::RunReason reason,
+                    ConfigWizard::StartPage start_page = ConfigWizard::SP_WELCOME,
+                    RunVendorBundleManage bypass_bundle_install = RVBM_IF_EMPTY);
     void            show_desktop_integration_dialog();
     void            show_downloader_registration_dialog();
 
@@ -434,7 +443,7 @@ private:
     bool            config_wizard_startup();
     // Returns true if the configuration is fine. 
     // Returns true if the configuration is not compatible and the user decided to rather close the slicer instead of reconfiguring.
-	bool            check_updates(const bool verbose);
+	bool            check_updates(const bool verbose, int nb_updates = 0);
     void            on_version_read(wxCommandEvent& evt);
     // if the data from version file are already downloaded, shows dialogs to start download of new version of app
     void            app_updater(bool from_user);
@@ -447,6 +456,8 @@ private:
 
 DECLARE_APP(GUI_App)
 
+wxDECLARE_EVENT(EVT_CONFIG_UPDATER_SHOW_DIALOG, wxCommandEvent);
+wxDECLARE_EVENT(EVT_WIZARD_SHOW_DIALOG, wxCommandEvent);
 } // GUI
 } // Slic3r
 

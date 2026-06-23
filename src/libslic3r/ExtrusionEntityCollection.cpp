@@ -36,6 +36,7 @@ ExtrusionEntityCollection::ExtrusionEntityCollection(const ExtrusionPaths &paths
 
 ExtrusionEntityCollection& ExtrusionEntityCollection::operator= (const ExtrusionEntityCollection &other)
 {
+    this->m_property = other.m_property ? other.m_property->clone() : nullptr;
     this->m_no_sort = other.m_no_sort;
     this->m_can_reverse = other.m_can_reverse;
     this->m_id = other.m_id;
@@ -50,6 +51,31 @@ void ExtrusionEntityCollection::swap(ExtrusionEntityCollection &c)
     std::swap(this->m_no_sort, c.m_no_sort);
     std::swap(this->m_can_reverse, c.m_can_reverse);
     std::swap(this->m_id, c.m_id);
+}
+
+ExtrusionRole ExtrusionEntityCollection::role() const
+{
+    ExtrusionRole out{ ExtrusionRole::None };
+    for (const ExtrusionEntity *ee : m_entities) {
+        ExtrusionRole er = ee->role();
+        if (out == ExtrusionRole::None) {
+            out = er;
+        }else if (out != er) {
+            return ExtrusionRole::Mixed;
+        }
+    }
+    return out;
+}
+
+bool ExtrusionEntityCollection::has_role(ExtrusionRole test_role) const
+{
+    if (this->entities().empty())
+        return false;
+    for (const ExtrusionEntity *entity : this->entities())
+        if (entity->has_role(test_role)) {
+            return true;
+        }
+    return false;
 }
 
 void ExtrusionEntityCollection::clear()

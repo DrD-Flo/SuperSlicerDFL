@@ -485,6 +485,15 @@ double GraphData::interpolate(double x_value) const{
     return y_value;
 }
 
+double GraphData::inverse_interpolate(double y_value) const {
+    GraphData inverse = *this;
+    // inverse x & y
+    for (Vec2d &data_point : inverse.graph_points) {
+        std::swap(data_point.x(), data_point.y());
+    }
+    return inverse.interpolate(y_value);
+}
+
 bool GraphData::validate() const
 {
     if (this->begin_idx < 0 || this->end_idx < 0 || this->end_idx < this->begin_idx)
@@ -1435,7 +1444,19 @@ double ConfigBase::get_computed_value(const t_config_option_key &opt_key, int ex
         if (raw_opt->type() == coFloatOrPercent) {
             auto cofop = static_cast<const ConfigOptionFloatOrPercent*>(raw_opt);
             if (cofop->value == 0 && boost::ends_with(opt_key, "_extrusion_width")) {
-                 return Flow::extrusion_width(opt_key, *this, extruder_id);
+                int idx = extruder_id;
+                if (extruder_id < 0) {
+                    const ConfigOption* opt_extruder_id = nullptr;
+                    if ((opt_extruder_id = this->option("extruder")) == nullptr)
+                        if ((opt_extruder_id = this->option("current_extruder")) == nullptr
+                            || opt_extruder_id->get_int() < 0 || opt_extruder_id->get_int() >= uint16_t(-1)) {
+                            std::stringstream ss; ss << "Flow::extrusion_width(): " << opt_key << " need to has the extuder id to get the right value, but it's not available";
+                            throw ConfigurationError(ss.str());
+                        }
+                    extruder_id = opt_extruder_id->get_int();
+                    idx = extruder_id;
+                }
+                return Flow::extrusion_width(opt_key, *this, idx);
             }
             if (!cofop->percent)
                 return cofop->value;

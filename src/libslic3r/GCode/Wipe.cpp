@@ -125,20 +125,43 @@ std::string Wipe::wipe(GCodeGenerator &gcodegen, bool toolchange)
     const double xy_to_e    = this->calc_xy_to_e_ratio(gcodegen.writer(), extruder.id());
     /*const*/ double wipe_total_length = std::max(retract_length, gcodegen.config().wipe_min.get_abs_value(extruder.id(), retract_length / xy_to_e));
     if ( wipe_total_length > 0 && this->has_path()) {
+        const double path_dist = unscaled(Geometry::ArcWelder::path_length<coordf_t>(this->path()));
         // if wipe_min == 0, then don't try to go farther than the current path (else, set it to 100%)
         if (gcodegen.config().wipe_min.get_at(extruder.id()).value == 0) {
-            wipe_total_length = std::min(wipe_total_length, Geometry::ArcWelder::path_length<coordf_t>(this->path()));
+            wipe_total_length = std::min(wipe_total_length, path_dist);
+        }
+        bool can_return_via_loop = true;
+        const bool need_return = gcodegen.config().wipe_return.get_at(extruder.id());
+        if (need_return) {
+            can_return_via_loop = false;
+            if (m_path_is_loop) {
+                // if loop, try to vary speed to stop at the end
+                if (wipe_total_length > path_dist) {
+                    // managed after the first loop
+                    can_return_via_loop = true;
+                } else if (path_dist < wipe_total_length * 1.5) {
+                    // increase wipe to do one loop
+                    wipe_total_length = path_dist;
+                    can_return_via_loop = true;
+                }
+            }
         }
         double wipe_length = wipe_total_length;
         /*const*/double lift_length = extruder.id() < 0 ? 0 : gcodegen.config().wipe_lift_length.get_abs_value(extruder.id(), wipe_length);
         lift_length = std::min(lift_length, wipe_total_length);
+        if (gcodegen.writer().get_lift() > 0) {
+            // already lifted? weird, but don't lift more.
+            assert(false);
+            lift_length = 0;
+        }
         double no_lift_length = wipe_total_length - lift_length;
         assert(no_lift_length >= 0);
-        const double lift = extruder.id() < 0 ? 0 : gcodegen.config().wipe_lift.get_abs_value(extruder.id(), gcodegen.layer()->height);
-        const double lift_per_mm = lift / lift_length;
+        const double lift_mm = extruder.id() < 0 ? 0 : gcodegen.config().wipe_lift.get_abs_value(extruder.id(), gcodegen.layer()->unscaled_height());
+        const double lift_per_mm = lift_mm / lift_length;
         const double initial_z = gcodegen.writer().get_position().z();
+        assert(gcodegen.current_z_layer() && gcodegen.current_z_layer()->scaled_print_z() == Layer::scale_to_layer_coord(initial_z));
         double current_z = initial_z;
-        const double final_z = gcodegen.writer().get_position().z() + lift;
+        const double final_z = initial_z + lift_mm;
         auto         wipe_linear = [&gcode, &gcodegen, &retract_length, &wipe_length, &no_lift_length, &current_z, xy_to_e, use_firmware_retract, lift_per_mm, final_z]
         (const Vec2d &prev_quantized, Vec2d &p, bool &done)->bool { //return false if point is used, true if need to be recalled again
             bool partial_segment = false;
@@ -333,13 +356,17 @@ std::string Wipe::wipe(GCodeGenerator &gcodegen, bool toolchange)
             return partial_segment;
         };
         // Start with the current position, which may be different from the wipe path start in case of loop clipping.
-        Vec2d prev = gcodegen.point_to_gcode_quantized(gcodegen.last_pos_defined() ? gcodegen.last_pos() : path().front().point);
+        Point pt_prev = gcodegen.last_pos_defined() ? gcodegen.last_pos() : path().front().point;
+        Vec2d prev = gcodegen.point_to_gcode_quantized(pt_prev);
 #ifdef _DEBUG
         for (size_t i = 1; i < path().size(); ++i) {
             assert(!path()[i - 1].point.coincides_with_epsilon(path()[i].point));
         }
 #endif
+        ArcPolyline wiped;
         auto iterate_path = [&]() {
+            wiped.clear();
+            wiped.append(pt_prev);
             Vec2d p;
             auto end = this->path().end();
             size_t idx = 0;
@@ -349,9 +376,12 @@ std::string Wipe::wipe(GCodeGenerator &gcodegen, bool toolchange)
                 bool done = false;
                 while (it->linear() ? wipe_linear(prev, p, done) : wipe_arc(prev, p, *it/*unscaled<double>(it->radius), it->ccw()*/, done)) {
                     prev = p;
-                    if(done) return;
+                    if (done) {
+                        return;
+                    }
                     p = gcodegen.point_to_gcode(it->point + m_offset);
                 }
+                wiped.append(it->point);
                 // wipe has updated p into quantized-prev point for next loop
                 prev = p;
                 if(done) return;
@@ -359,7 +389,20 @@ std::string Wipe::wipe(GCodeGenerator &gcodegen, bool toolchange)
             }
         };
         ArcPolyline arcpoly(this->path());
-        iterate_path();
+        if (can_return_via_loop) {
+            // standard case, for no-return or return via loop.
+            iterate_path();
+        } else {
+            wipe_length = wipe_total_length / 2;
+            iterate_path();
+            gcode += "; return wipe\n";
+            wipe_length = wipe_total_length / 2;
+            Path reverse_path = wiped.get_arc();
+            Geometry::ArcWelder::reverse(reverse_path);
+            m_path = reverse_path;
+            iterate_path();
+            wipe_length = 0;
+        }
 
         // if the current path is very short, then use the boundaries (if any).
         if (wipe_length > wipe_total_length / 5 && m_boundaries && !m_boundaries->empty() && gcodegen.config().wipe_min.get_at(extruder.id()).value != 0) {
@@ -489,11 +532,19 @@ std::string Wipe::wipe(GCodeGenerator &gcodegen, bool toolchange)
         
         // if not enough, then use the same path again (in reverse if not a loop)
         size_t max_iteration = 3;
-        while (wipe_length > 0 && gcodegen.config().wipe_min.get_at(extruder.id()).value != 0 && max_iteration > 0) {
+        while (wipe_length > EPSILON && gcodegen.config().wipe_min.get_at(extruder.id()).value != 0 && max_iteration > 0) {
+            if (need_return) {
+                if (wipe_length < path_dist / 2) {
+                    // enough, don't do another one
+                    break;
+                } else {
+                    // do at least a full one
+                    wipe_length = std::max(wipe_length, path_dist);
+                }
+            }
             if (!m_path_is_loop) {
                 Geometry::ArcWelder::reverse(m_path);
             }
-            ArcPolyline arcpoly2(this->path());
             iterate_path();
             max_iteration--;
         }

@@ -150,7 +150,7 @@ void GLGizmoSimplify::add_simplify_suggestion_notification(
 
                 auto &manager = plater->canvas3D()->get_gizmos_manager();
                 bool  close_notification = true;
-                if(!manager.open_gizmo(GLGizmosManager::Simplify))
+                if(!manager.open_gizmo(GLGizmosManager::Simplify, true))
                     return close_notification;
                 GLGizmoSimplify* simplify = dynamic_cast<GLGizmoSimplify*>(manager.get_current());
                 if (simplify == nullptr) return close_notification;
@@ -375,7 +375,7 @@ void GLGizmoSimplify::on_render_input_window(float x, float y, float bottom_limi
 void GLGizmoSimplify::close() {
     // close gizmo == open it again
     GLGizmosManager &gizmos_mgr = m_parent.get_gizmos_manager();
-    gizmos_mgr.open_gizmo(GLGizmosManager::EType::Simplify);
+    gizmos_mgr.open_gizmo(GLGizmosManager::EType::Simplify, false);
 }
 
 bool GLGizmoSimplify::stop_worker_thread_request()
@@ -766,10 +766,9 @@ void GLGizmoSimplify::on_render()
             contour_shader->set_uniform("projection_matrix", camera.get_projection_matrix());
             const ColorRGBA color = glmodel.get_color();
             glmodel.set_color(ColorRGBA::WHITE());
-#if ENABLE_GL_CORE_PROFILE
-            if (!OpenGLManager::get_gl_info().is_core_profile())
-#endif // ENABLE_GL_CORE_PROFILE
+            if (OpenGLManager::get_gl_info().get_max_line_width() > 1) {
                 glsafe(::glLineWidth(1.0f));
+            }
 #if !ENABLE_OPENGL_ES
             glsafe(::glPolygonMode(GL_FRONT_AND_BACK, GL_LINE));
 #endif // !ENABLE_OPENGL_ES

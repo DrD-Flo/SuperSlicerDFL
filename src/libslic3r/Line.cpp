@@ -50,7 +50,7 @@ bool Line::intersection_infinite(const Line &other, Point* point) const
     return true;
 }
 
-coordf_t Line::perp_distance_to(const Point &point) const
+distf_t Line::perp_distance_to(const Point &point) const
 {
     const Line  &line = *this;
     const Vec2d  v  = (line.b - line.a).cast<double>();
@@ -140,7 +140,7 @@ BoundingBox get_extents(const Lines &lines)
 
 }
 
-Point Line::point_at(coordf_t distance) const {
+Point Line::point_at(distf_t distance) const {
     Point point;
     coordf_t len = this->length();
     point = this->a;
@@ -151,4 +151,41 @@ Point Line::point_at(coordf_t distance) const {
     return point;
 }
 
+distsqrf_t Line::distance_to_squared_abp(const Point &a, const Point &b, const Point &point, Point *nearest_point) {
+    const Vec2d v = ((b) - (a)).cast<double>();
+    const Vec2d va = (point - (a)).cast<double>();
+    const distsqrf_t l2 = v.squaredNorm();
+    if (l2 == 0.0) {
+        // a == b case
+        if (nearest_point) {
+            *nearest_point = a;
+        }
+        return va.squaredNorm();
+    }
+    // Consider the line extending the segment, parameterized as a + t (b - a).
+    // We find projection of this point onto the line.
+    // It falls where t = [(this-a) . (b-a)] / |b-a|^2
+    const double t = va.dot(v);
+    if (t <= 0.0) {
+        // beyond the 'a' end of the segment
+        if (nearest_point) {
+            *nearest_point = a;
+        }
+        return va.squaredNorm();
+    } else if (t >= l2) {
+        // beyond the 'b' end of the segment
+        if (nearest_point) {
+            *nearest_point = (b);
+        }
+        return (point - (b)).cast<double>().squaredNorm();
+    }
+
+    const Vec2d w = ((t / l2) * v).eval();
+    if (nearest_point) {
+        Vec2d a_dbl = (a).cast<double>();
+        Vec2d intersect_pt = a_dbl + w;
+        *nearest_point = Point(intersect_pt);
+    }
+    return (w - va).squaredNorm();
+}
 } // namespace Slic3r

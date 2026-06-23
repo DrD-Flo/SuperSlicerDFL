@@ -635,7 +635,7 @@ float arc_length(const Vec2f &start_pos, const Vec2f &end_pos, Vec2f &center_pos
 // returns the new end iterator.
 static inline Segments::iterator douglas_peucker_in_place(Segments::iterator begin, Segments::iterator end, const double tolerance)
 {
-    return douglas_peucker<int64_t>(begin, end, begin, tolerance, [](const Segment &s) { return s.point; });
+    return douglas_peucker_impl(begin, end, begin, tolerance, [](const Segment &s) { return s.point; });
 }
 
 Path fit_path(const Points &src_in, double tolerance, double fit_circle_percent_tolerance)
@@ -751,7 +751,7 @@ Path fit_path(const Points &src_in, double tolerance, double fit_circle_percent_
                     Line line(arc->start_point, arc->end_point);
                     bool arc_valid = false;
                     for (auto it2 = std::next(begin); it2 != std::prev(end); ++ it2)
-                        if (line_alg::distance_to_squared(line, *it2) > tolerance2) {
+                        if (line.distance_to_squared(*it2) > tolerance2) {
                             // Polyline could not be fitted by a line segment, thus the arc is considered valid.
                             arc_valid = true;
                             break;
@@ -919,7 +919,12 @@ void reverse(Path &path)
         assert(prev->orientation == Orientation::Unknown);
         for (auto it = std::next(prev); it != path.end(); ++ it) {
             prev->radius      = it->radius;
-            prev->orientation = it->orientation == Orientation::CCW ? Orientation::CW : Orientation::CCW;
+            if (prev->radius == 0) {
+                assert(it->orientation == Orientation::Unknown);
+                prev->orientation = Orientation::Unknown;
+            } else {
+                prev->orientation = it->orientation == Orientation::CCW ? Orientation::CW : Orientation::CCW;
+            }
 #ifdef _DEBUG
             prev->length = it->length;
             prev->center = it->center;
@@ -1063,7 +1068,7 @@ PathSegmentProjection point_to_path_projection(const Path &path, const Point &po
                 // Linear segment
                 Point proj;
                 // distance_to_squared() will possibly return the start or end point of a line segment.
-                if (double d2 = line_alg::distance_to_squared(Line(prev, it->point), point, &proj); d2 < out.distance2) {
+                if (double d2 = Line::distance_to_squared_abp(prev, it->point, point, &proj); d2 < out.distance2) {
                     out.point     = proj;
                     out.distance2 = d2;
                     out.center = {0, 0};

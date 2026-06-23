@@ -9,6 +9,14 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+    - name: New cmake
+      run: cmake --version
+    - name: Setup cmake
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: "3.31.x"
+    - name: Use cmake
+      run: cmake --version
     - name: Install Autoconf
       run: |
         brew update
@@ -30,7 +38,7 @@ jobs:
       id: cache-action
       uses: actions/cache@v3
       with:
-        key: macos_arm_debug_2.7
+        key: macos_arm_debug_2.7.63
         path: deps/build/destdir
     - if: steps.cache-action.outputs.cache-hit != 'true'
       name: build deps if new cache
@@ -42,11 +50,19 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+    - name: New cmake
+      run: cmake --version
+    - name: Setup cmake
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: "3.31.x"
+    - name: Use cmake
+      run: cmake --version
     - name: dep cache
       id: cache-action
       uses: actions/cache@v3
       with:
-        key: macos_arm_debug_2.7
+        key: macos_arm_debug_2.7.63
         path: deps/build/destdir
     - name: build slicer
       run: ./BuildMacOS.sh -basiv

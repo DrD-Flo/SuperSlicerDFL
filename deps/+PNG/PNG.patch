@@ -37,3 +37,4 @@ diff --color -urN libpng-1.6.35/pngrutil.c libpng-1.6.35-patched/pngrutil.c
 -
        if (ret == Z_OK)
           png_ptr->zowner = owner;
+

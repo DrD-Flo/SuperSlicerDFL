@@ -88,7 +88,7 @@ public:
     Polygons simplify_p(coord_t tolerance) const;
     ExPolygons simplify(coord_t tolerance) const;
     void simplify(coord_t tolerance, ExPolygons &expolygons) const;
-    void remove_point_too_near(const coord_t tolerance);
+    void remove_point_too_close(const coord_t tolerance);
     void medial_axis(double max_width, double min_width, ThickPolylines &polylines) const;
     void medial_axis(double max_width, double min_width, Polylines &polylines) const;
     Lines lines() const;
@@ -99,6 +99,7 @@ public:
     const Polygon& 	contour_or_hole(size_t idx) const 	{ return (idx == 0) ? this->contour : this->holes[idx - 1]; }
 
 #ifdef _DEBUGINFO
+#pragma UNOPTIMIZE
     void assert_valid() const {
         contour.assert_valid();
         assert(contour.is_counter_clockwise());
@@ -263,6 +264,19 @@ inline Linesf to_unscaled_linesf(const ExPolygons &src)
     return lines;
 }
 
+inline Points contours_to_points(const ExPolygons &src)
+{
+    Points points;
+    size_t count = 0;
+    for (const ExPolygon &expolygon : src) {
+        count += expolygon.contour.points.size();
+    }
+    points.reserve(count);
+    for (const ExPolygon &expolygon : src) {
+        append(points, expolygon.contour.points);
+    }
+    return points;
+}
 
 inline Points to_points(const ExPolygons &src)
 {
@@ -360,6 +374,11 @@ inline Polygons to_polygons(const ExPolygon &src)
     return polygons;
 }
 
+
+//inline Polygons to_polygons_unsafe(const ExPolygons &src) {
+//    // can be used for asserts, dsiplay, when it isn't fed into clipper
+//}
+
 inline Polygons to_polygons(const ExPolygons &src)
 {
     // FIXME: put "inside" polygon after the "outside" ones, so the holes of the "outside" don't erase the "inside" contour
@@ -451,6 +470,8 @@ inline ExPolygons to_expolygons(const Polygons &polys)
     return ex_polys;
 }
 
+// trasform a list of contour (ccw) into expolygons
+// polys.size() == return.size()
 inline ExPolygons to_expolygons(Polygons &&polys)
 {
     ExPolygons ex_polys;
@@ -462,6 +483,8 @@ inline ExPolygons to_expolygons(Polygons &&polys)
     return ex_polys;
 }
 
+// trasform a list of contour (ccw) into expolygons
+// polys.size() == return.size()
 inline Points to_points(const ExPolygon &expoly)
 {
     Points out;
@@ -521,6 +544,22 @@ inline void polygons_append(Polygons &dst, ExPolygons &&src)
     }
 }
 
+inline void expolygons_append(ExPolygons &dst, const Polygons &src) 
+{ 
+    for (const Polygon& poly: src) {
+        assert(poly.is_counter_clockwise());
+        dst.emplace_back(poly);
+    }
+}
+
+inline void expolygons_append(ExPolygons &dst, Polygons &&src) 
+{ 
+    for (Polygon& poly: src) {
+        assert(poly.is_counter_clockwise());
+        dst.emplace_back(std::move(poly));
+    }
+}
+
 inline void expolygons_append(ExPolygons &dst, const ExPolygons &src) 
 { 
     dst.insert(dst.end(), src.begin(), src.end());
@@ -570,9 +609,13 @@ bool has_duplicate_points(const ExPolygons &expolys);
 
 // remove any point that are at epsilon  (or resolution) 'distance' (douglas_peuckere algo for now) and all polygons that are too small to be valid
 // note: in the future, it may limited to removing points that just to close to other ones. If you want to simplify the geomtry, use expolygons_simplify.
+// so it remove points that are too close, and may or may not remove colinear points.
 void ensure_valid(ExPolygons &expolygons, coord_t resolution = SCALED_EPSILON);
 ExPolygons ensure_valid(ExPolygons &&expolygons, coord_t resolution = SCALED_EPSILON);
 ExPolygons ensure_valid(coord_t resolution, ExPolygons &&expolygons);
+// like ensure_valid but you're sure it won't remove colinear points.
+void remove_point_too_close(ExPolygons &expolygons, coord_t resolution = SCALED_EPSILON);
+ExPolygons remove_point_too_close(ExPolygons &&expolygons, coord_t resolution = SCALED_EPSILON);
 #ifdef _DEBUGINFO
 void assert_valid(const ExPolygons &expolygons);
 #else

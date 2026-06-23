@@ -59,6 +59,11 @@ namespace Slic3r {
         double  value;
         bool    percent;
 
+        double get_abs_value(double ratio_over) const {
+            return this->percent ? (ratio_over * this->value / 100) : this->value;
+        }
+        double get_float(size_t idx = 0) const { return get_abs_value(1.); }
+        bool is_percent(size_t idx = 0) const { return this->percent; }
     private:
         friend class cereal::access;
         template<class Archive> void serialize(Archive& ar) { ar(this->value); ar(this->percent); }
@@ -97,8 +102,9 @@ namespace Slic3r {
         // data is the useable part of the graph
         Pointfs data() const;
         size_t data_size() const;
-
+        
         double interpolate(double x_value) const;
+        double inverse_interpolate(double y_value) const;
 
         //return false if data are not good
         bool validate() const;
@@ -152,6 +158,11 @@ namespace Slic3r {
         std::vector<GraphData::GraphType> allowed_types;
         // the values when you click on the "reset" button (dynamically set to the current data stored in the setting)
         GraphData reset_vals;
+        // min & max enforced points. if no values here, no enforced points.
+        // if only one, only the min is enforced.
+        // if the first value has nan x, only the max is enforced
+        // if more than 2 values, other are ignored
+        Pointfs enforced_values;
     };
 }
 
@@ -624,6 +635,7 @@ public:
 
     virtual bool                operator==(const ConfigOption &rhs) const = 0;
     bool                        operator!=(const ConfigOption &rhs) const { return ! (*this == rhs); }
+    virtual bool                operator<(const ConfigOption &rhs) const = 0;
     virtual size_t              hash()          const throw() = 0;
     bool                        is_scalar()     const { return (int(this->type()) & int(coVectorType)) == 0; }
     bool                        is_vector()     const { return ! this->is_scalar(); }
@@ -684,6 +696,16 @@ public:
             && this->is_enabled() == rhs.is_enabled()
             && this->is_phony() == rhs.is_phony();
         // should compare all flags?
+    }
+
+    bool operator<(const ConfigOption &rhs) const override {
+        if (rhs.type() != this->type()) {
+            throw ConfigurationError("ConfigOptionSingle: Comparing incompatible types");
+        }
+        assert(dynamic_cast<const ConfigOptionSingle<T> *>(&rhs));
+        return this->is_enabled() < rhs.is_enabled() ||
+            (this->is_enabled() == rhs.is_enabled() &&
+             this->value < static_cast<const ConfigOptionSingle<T> *>(&rhs)->value);
     }
 
     bool operator==(const T &rhs) const throw() { return this->value == rhs; }
@@ -780,6 +802,7 @@ public:
     {
         return this->m_enabled == rhs.m_enabled;
     }
+
     ConfigOption *set_enabled(bool enabled, int32_t idx = -1) override
     {
         assert (m_enabled.size() == size());
@@ -1062,6 +1085,17 @@ public:
                this->m_values == static_cast<const ConfigOptionVector<T> *>(&rhs)->m_values;
     }
 
+    bool operator<(const ConfigOption &rhs) const override {
+        if (rhs.type() != this->type()) {
+            throw ConfigurationError("ConfigOptionVector: Comparing incompatible types");
+        }
+        assert(dynamic_cast<const ConfigOptionVector<T> *>(&rhs));
+        return this->m_values < static_cast<const ConfigOptionVector<T> *>(&rhs)->m_values ||
+            (this->m_values == static_cast<const ConfigOptionVector<T> *>(&rhs)->m_values &&
+             this->m_enabled < static_cast<const ConfigOptionVector<T> *>(&rhs)->m_enabled);
+        // should compare all flags?
+    }
+
     bool operator==(const std::vector<T> &rhs) const throw() { return this->is_enabled() == rhs.is_enabled() && this->m_values == rhs; }
     bool operator!=(const std::vector<T> &rhs) const throw() { return this->is_enabled() != rhs.is_enabled() || this->m_values != rhs; }
 
@@ -1211,13 +1245,6 @@ public:
     bool                    operator==(const ConfigOptionFloats &rhs) const throw() { return this->m_enabled == rhs.m_enabled && this->m_values == rhs.m_values; }
     bool operator<(const ConfigOptionFloats &rhs) const throw()
         { return this->m_enabled < rhs.m_enabled || (this->m_enabled == rhs.m_enabled && this->m_values < rhs.m_values); }
-    bool 					operator==(const ConfigOption &rhs) const override {
-        if (rhs.type() != this->type())
-            throw ConfigurationError("ConfigOptionFloats: Comparing incompatible types");
-        assert(dynamic_cast<const ConfigOptionVector<double>*>(&rhs));
-        return this->has_same_enabled(*static_cast<const ConfigOptionVector<double> *>(&rhs)) &&
-               this->m_values == static_cast<const ConfigOptionVector<double> *>(&rhs)->get_values();
-    }
     double                  get_float(size_t idx = 0) const override { return get_at(idx); }
 
     std::string serialize() const override
@@ -1612,6 +1639,7 @@ private:
 	template<class Archive> void serialize(Archive &ar) { ar(cereal::base_class<ConfigOptionFloats>(this)); }
 };
 
+// note: maybe should be a ConfigOptionSingle<FloatOrPercent>
 class ConfigOptionFloatOrPercent : public ConfigOptionPercent
 {
 public:
@@ -1628,6 +1656,12 @@ public:
             throw ConfigurationError("ConfigOptionFloatOrPercent: Comparing incompatible types");
         assert(dynamic_cast<const ConfigOptionFloatOrPercent*>(&rhs));
         return *this == *static_cast<const ConfigOptionFloatOrPercent*>(&rhs);
+    }
+    bool operator<(const ConfigOption &rhs) const override {
+        if (rhs.type() != this->type())
+            throw ConfigurationError("ConfigOptionFloatOrPercent: Comparing incompatible types");
+        assert(dynamic_cast<const ConfigOptionFloatOrPercent *>(&rhs));
+        return *this < *static_cast<const ConfigOptionFloatOrPercent *>(&rhs);
     }
     bool                        operator==(const ConfigOptionFloatOrPercent &rhs) const throw()
         { return this->is_enabled() == rhs.is_enabled() && this->value == rhs.value && this->percent == rhs.percent; }
@@ -1709,14 +1743,6 @@ public:
     ConfigOption*           clone() const override { assert(this->m_values.size() == this->m_enabled.size()); return new ConfigOptionFloatsOrPercents(*this); }
     bool                    operator==(const ConfigOptionFloatsOrPercents &rhs) const throw()
         { return this->m_enabled == rhs.m_enabled && this->m_values == rhs.m_values; }
-    bool                    operator==(const ConfigOption &rhs) const override
-    {
-        if (rhs.type() != this->type())
-            throw ConfigurationError("ConfigOptionFloatsOrPercents: Comparing incompatible types");
-        assert(dynamic_cast<const ConfigOptionVector<FloatOrPercent> *>(&rhs));
-        return this->has_same_enabled(*static_cast<const ConfigOptionVector<FloatOrPercent> *>(&rhs)) &&
-               this->m_values == static_cast<const ConfigOptionVector<FloatOrPercent> *>(&rhs)->get_values();
-    }
     bool                    operator<(const ConfigOptionFloatsOrPercents &rhs) const throw()
         { return this->m_enabled < rhs.m_enabled || (this->m_enabled == rhs.m_enabled && this->m_values < rhs.m_values); }
     double                  get_abs_value(size_t i, double ratio_over) const {
@@ -2335,6 +2361,14 @@ public:
         return this->is_enabled() == rhs.is_enabled() && this->value == (T)rhs.get_int();
     }
 
+    bool operator<(const ConfigOption &rhs) const override {
+        if (rhs.type() != this->type())
+            throw ConfigurationError("ConfigOptionEnum<T>: Comparing incompatible types");
+        // rhs could be of the following type: ConfigOptionEnumGeneric or ConfigOptionEnum<T>
+        return this->is_enabled() < rhs.is_enabled() ||
+            (this->is_enabled() == rhs.is_enabled() && this->value < (T) rhs.get_int());
+    }
+
     void set(const ConfigOption &rhs, int32_t idx = -1) override {
         if (rhs.type() != this->type())
             throw ConfigurationError("ConfigOptionEnum<T>: Assigning an incompatible type");
@@ -2408,6 +2442,14 @@ public:
             throw ConfigurationError("ConfigOptionEnumGeneric: Comparing incompatible types");
         // rhs could be of the following type: ConfigOptionEnumGeneric or ConfigOptionEnum<T>
         return this->is_enabled() == rhs.is_enabled() && this->value == rhs.get_int();
+    }
+
+    bool operator<(const ConfigOption &rhs) const override {
+        if (rhs.type() != this->type())
+            throw ConfigurationError("ConfigOptionEnumGeneric: Comparing incompatible types");
+        // rhs could be of the following type: ConfigOptionEnumGeneric or ConfigOptionEnum<T>
+        return this->is_enabled() < rhs.is_enabled() ||
+            (this->is_enabled() == rhs.is_enabled() && this->value < rhs.get_int());
     }
 
     void set_enum_int(int32_t val) override { this->value = val; }

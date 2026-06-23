@@ -27,7 +27,7 @@ AboutDialogLogo::AboutDialogLogo(wxWindow* parent)
     : wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize)
 {
     this->SetBackgroundColour(*wxWHITE);
-    this->logo = wxBitmap(from_u8(Slic3r::var(SLIC3R_APP_KEY"_192px.png")), wxBITMAP_TYPE_PNG);
+    this->logo = get_bmp_bundle(GUI_App::dark_mode() ? wxGetApp().light_icon_name() : wxGetApp().dark_icon_name(), 192)->GetBitmap(wxSize(192, 192));
     this->SetMinSize(this->logo.GetSize());
     
     this->Bind(wxEVT_PAINT, &AboutDialogLogo::onRepaint, this);
@@ -253,19 +253,33 @@ AboutDialog::AboutDialog()
     wxBoxSizer* vsizer = new wxBoxSizer(wxVERTICAL); 	
     hsizer->Add(vsizer, 2, wxEXPAND|wxLEFT, 20);
 
+    // title is in the logo
     // title
-    {
-        wxStaticText* title = new wxStaticText(this, wxID_ANY, wxGetApp().is_editor() ? SLIC3R_APP_NAME : GCODEVIEWER_APP_NAME, wxDefaultPosition, wxDefaultSize);
-        wxFont title_font = GUI::wxGetApp().bold_font();
-        title_font.SetFamily(wxFONTFAMILY_ROMAN);
-        title_font.SetPointSize(int(2.5 * title_font.GetPointSize()));//title_font.SetPointSize(24);
-        title->SetFont(title_font);
-        vsizer->Add(title, 0, wxALIGN_LEFT | wxTOP, 10);
-    }
+    //{
+    //    wxStaticText* title = new wxStaticText(this, wxID_ANY, wxGetApp().is_editor() ? SLIC3R_APP_NAME : GCODEVIEWER_APP_NAME, wxDefaultPosition, wxDefaultSize);
+    //    wxFont title_font = GUI::wxGetApp().bold_font();
+    //    title_font.SetFamily(wxFONTFAMILY_ROMAN);
+    //    title_font.SetPointSize(int(2.5 * title_font.GetPointSize()));//title_font.SetPointSize(24);
+    //    title->SetFont(title_font);
+    //    vsizer->Add(title, 0, wxALIGN_LEFT | wxTOP, 10);
+    //}
     
     // version
     {
         auto version_string = _L("Version")+ " " + std::string(SLIC3R_VERSION_FULL);
+        wxStaticText* version = new wxStaticText(this, wxID_ANY, version_string.c_str(), wxDefaultPosition, wxDefaultSize);
+        wxFont version_font = GetFont();
+        #ifdef __WXMSW__
+        version_font.SetPointSize(version_font.GetPointSize()-1);
+        #else
+            version_font.SetPointSize(11);
+        #endif
+        version->SetFont(version_font);
+        vsizer->Add(version, 0, wxALIGN_LEFT | wxBOTTOM, 10);
+    }
+    // id
+    {
+        auto version_string = _L("Slicer ID")+ " '" + std::string(SLIC3R_APP_KEY) + "'";
         wxStaticText* version = new wxStaticText(this, wxID_ANY, version_string.c_str(), wxDefaultPosition, wxDefaultSize);
         wxFont version_font = GetFont();
         #ifdef __WXMSW__

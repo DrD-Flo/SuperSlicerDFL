@@ -579,14 +579,14 @@ bool Selection::is_sla_compliant() const
 
 bool Selection::is_single_text() const
 {
-    if (!is_single_volume_or_modifier())
-      return false;
+    //if (!is_single_volume_or_modifier())
+    //  return false;
 
 
     const GLVolume* gl_volume = this->get_first_volume();
     if (gl_volume == nullptr || m_model->objects.size() <= gl_volume->object_idx() ||
         m_model->objects[gl_volume->object_idx()]->volumes.size() <= gl_volume->volume_idx()) {
-        assert(false); // shouldn't happen
+        // assert(false); // shouldn't happen // can happen on the wipetower
         return false;
     }
     const ModelVolume* model_volume = m_model->objects[gl_volume->object_idx()]->volumes[gl_volume->volume_idx()];
@@ -2273,13 +2273,13 @@ void Selection::render_bounding_box(const BoundingBoxf3& box, const Transform3d&
 
     glsafe(::glEnable(GL_DEPTH_TEST));
 
-#if ENABLE_GL_CORE_PROFILE
-    if (!OpenGLManager::get_gl_info().is_core_profile())
+    if (OpenGLManager::get_gl_info().get_max_line_width() > 1) {
         glsafe(::glLineWidth(2.0f * m_scale_factor));
+    }
+#if ENABLE_GL_CORE_PROFILE
 
     GLShaderProgram* shader = OpenGLManager::get_gl_info().is_core_profile() ? wxGetApp().get_shader("dashed_thick_lines") : wxGetApp().get_shader("flat");
 #else
-    glsafe(::glLineWidth(2.0f * m_scale_factor));
     GLShaderProgram* shader = wxGetApp().get_shader("flat");
 #endif // ENABLE_GL_CORE_PROFILE
     if (shader == nullptr)

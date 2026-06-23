@@ -291,6 +291,9 @@ std::shared_ptr<ConfigOptionsGroup> PreferencesDialog::create_options_group(cons
         assert(opt_key_idx.idx < 0);
         Field *field = optgroup->get_field(opt_key_idx);
         // very special cases
+        if (opt_key_idx.key == "notify_release") {
+            get_app_config()->set("version_online_seen", "");
+        }
         if (opt_key_idx.key == "use_custom_toolbar_size") {
             m_icon_size_sizer->ShowItems(boost::any_cast<bool>(value));
             refresh_og(m_optkey_to_optgroup["use_custom_toolbar_size"]);
@@ -805,6 +808,18 @@ void PreferencesDialog::build()
 		L("If enabled, use free camera. If not enabled, use constrained camera."),
 		app_config->get_bool("use_free_camera"));
 
+	append_bool_option(m_tabid_2_optgroups.back().back(), "3D_mouse_drag",
+		L("Right mouse drag pan in 3D"),
+		L("If enabled, when you use the right mouse button to drag the view, it drag in the camera plane."
+            "\nIf disabled, the pan works like for moving an object: you drag the view by locking the bed point to your mouse in the x/y plane. To move in the z direction, you need to press 'Shift' at the same time."),
+		app_config->get_bool("3D_mouse_drag"));
+
+	append_bool_option(m_tabid_2_optgroups.back().back(), "mouse_middle_target",
+		L("Use the mouse middle button to set the camera position"),
+		L("If enabled, clicking on the middle mouse button set the focus on the bed's point. You can then drag to set the Z coordinate."
+        "\nIf disabled, the middle button as the same behavior as the right button (pan on drag)."),
+		app_config->get_bool("mouse_middle_target"));
+
 	append_bool_option(m_tabid_2_optgroups.back().back(), "reverse_mouse_wheel_zoom",
 		L("Reverse direction of zoom with mouse wheel"),
 		L("If enabled, reverses the direction of zoom with mouse wheel"),
@@ -999,7 +1014,7 @@ void PreferencesDialog::build()
 		
 		append_bool_option(m_tabid_2_optgroups.back().back(), "show_layer_time_doubleslider",
 			L("Show layer time on the scroll bar"),
-			L("Add the layer height (after the layer height, or if it's hidden after the layer z position) next to a widget of the layer double-scrollbar."),
+			L("Add the layer time (after the layer height, or if it's hidden after the layer z position) next to a widget of the layer double-scrollbar."),
 			app_config->get_bool("show_layer_time_doubleslider"));
 		
 		append_bool_option(m_tabid_2_optgroups.back().back(), "show_layer_area_doubleslider",
@@ -1765,15 +1780,18 @@ void PreferencesDialog::create_settings_mode_color_widget(wxWindow* tab, std::sh
     // Mode color markers description
 	//check if we have enough colour picker
 	std::vector<std::pair<wxColourPickerCtrl**, AppConfig::Tag>> clr_pickers_2_color;
-    for (AppConfig::Tag &tag : get_app_config()->tags()) {
-		//create nullptr if not present yet
-		if(m_tag_color.find(tag.tag) == m_tag_color.end())
-			m_tag_color[tag.tag] = nullptr;
-	}
-	//now tags is fixed for the end of this method
-    for (AppConfig::Tag &tag : get_app_config()->tags()) {
-		clr_pickers_2_color.emplace_back(&m_tag_color[tag.tag], tag);
-	}
+    {
+        std::lock_guard<std::recursive_mutex> lk(get_app_config()->config_lock);
+        for (const AppConfig::Tag &tag : get_app_config()->tags()) {
+            //create nullptr if not present yet
+            if(m_tag_color.find(tag.tag) == m_tag_color.end())
+                m_tag_color[tag.tag] = nullptr;
+        }
+        //now tags is fixed for the end of this method
+        for (const AppConfig::Tag &tag : get_app_config()->tags()) {
+            clr_pickers_2_color.emplace_back(&m_tag_color[tag.tag], tag);
+        }
+    }
 	stb_sizer->Add(m_blinkers[opt_key], 0, wxRIGHT, 2);
 	GUI_Descriptions::FillSizerWithModeColorDescriptions(stb_sizer, parent, clr_pickers_2_color);
 	
@@ -1834,13 +1852,13 @@ void PreferencesDialog::create_settings_font_widget(wxWindow* tab, std::shared_p
 	auto revert_btn = new ScalableButton(parent, wxID_ANY, "undo");
 	revert_btn->SetToolTip(_L("Revert font to default"));
 	revert_btn->Bind(wxEVT_BUTTON, [size_sc, apply_font](wxEvent& event) {
-		wxFont font = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT);
+		wxFont font = wxGetApp().normal_font();
 		const int val = font.GetPointSize();
 	    size_sc->SetValue(val);
 		apply_font(val, font);
 		});
 	parent->Bind(wxEVT_UPDATE_UI, [size_sc](wxUpdateUIEvent& evt) {
-		const int def_size = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT).GetPointSize();
+		const int def_size = wxGetApp().normal_font().GetPointSize();
 		evt.Enable(def_size != size_sc->GetValue());
 	}, revert_btn->GetId());
 	

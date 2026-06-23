@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.13)
 project(Slic3r-native)
 
+# fix macos-15-intel's clang bug with angelscript
+if(APPLE AND CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
+    add_compile_definitions(AS_MAX_PORTABILITY)
+endif()
+
 add_subdirectory(build-utils)
 if (NOT APPLE)
     add_subdirectory(test-utils)
@@ -17,6 +22,7 @@ add_subdirectory(libigl)
 add_subdirectory(hints)
 add_subdirectory(qoi)
 add_subdirectory(libnest2d)
+add_subdirectory(quickdigest5)
 
 find_package(Qhull 7.2 REQUIRED)
 add_library(qhull INTERFACE)

@@ -274,6 +274,7 @@ namespace client
         void                set_i_lite(int v) { assert(this->type() != TYPE_STRING); Data tmp; tmp.i = v; m_data.set(tmp); m_type = TYPE_INT; }
         int                 as_i() const { return this->type() == TYPE_INT ? this->i() : int(this->d()); }
         int                 as_i_rounded() const { return this->type() == TYPE_INT ? this->i() : int(std::round(this->d())); }
+        int                 as_i_ceiled() const { return this->type() == TYPE_INT ? this->i() : int(std::ceil(this->d())); }
         double&             d()       { return m_data.d; }
         double              d() const { return m_data.d; }
         void                set_d(double v) { this->reset(); this->set_d_lite(v); }
@@ -381,6 +382,24 @@ namespace client
                 return expr(static_cast<int>(std::round(this->d())), start_pos, this->it_range.end());
             default:
                 this->throw_exception("Cannot round a non-numeric value.");
+            }
+            assert(false);
+            // Suppress compiler warnings.
+            return expr();
+        }
+
+        expr ceil(const Iterator start_pos) const
+        { 
+            switch (this->type()) {
+            case TYPE_EMPTY:
+                // Inside an if / else block to be skipped.
+                return expr();
+            case TYPE_INT:
+                return expr(this->i(), start_pos, this->it_range.end());
+            case TYPE_DOUBLE:
+                return expr(static_cast<int>(std::ceil(this->d())), start_pos, this->it_range.end());
+            default:
+                this->throw_exception("Cannot ceil a non-numeric value.");
             }
             assert(false);
             // Suppress compiler warnings.
@@ -1431,6 +1450,31 @@ namespace client
             }
             output.it_range = opt.it_range;
         }
+
+        // Return a boolean value, true if the scalar variable referenced by "opt" or "opt[index]" is enabled.
+        static void interpolate_graph(const MyContext *ctx, OptWithPos &opt, expr &valeur,  expr &output)
+        {
+            if (ctx->skipping()) {
+            } else if (opt.opt->is_vector()) {
+                if (! opt.has_index())
+                    ctx->throw_exception("Referencing a vector variable when scalar is expected", opt.it_range);
+                if (opt.opt->size() == 0)
+                    ctx->throw_exception("Indexing an empty vector variable", opt.it_range);
+                if (opt.opt->type() != ConfigOptionType::coGraphs)
+                    ctx->throw_exception("Interpolate on a variable that isn't a graph", opt.it_range);
+                expr::throw_if_not_numeric(valeur);
+                double val_x = valeur.type() == expr::Type::TYPE_DOUBLE ? (valeur.as_d()) : (valeur.as_i() * 1.);
+                output.set_d(((ConfigOptionGraphs*)opt.opt)->get_at(opt.index).interpolate(val_x));
+            } else {
+                assert(opt.opt->is_scalar());
+                if (opt.opt->type() != ConfigOptionType::coGraph)
+                    ctx->throw_exception("Interpolate on a variable that isn't a graph", opt.it_range);
+                expr::throw_if_not_numeric(valeur);
+                double val_x = valeur.type() == expr::Type::TYPE_DOUBLE ? (valeur.as_d()) : (valeur.as_i() * 1.);
+                output.set_d(((ConfigOptionGraph*)opt.opt)->value.interpolate(val_x));
+            }
+            output.it_range = opt.it_range;
+        }
         // Return a boolean value, true if an element of a variable referenced by "opt" or "opt[index]" is disabled.
         static void is_nil_test(const MyContext *ctx, OptWithPos &opt, expr &output)
         {
@@ -1795,8 +1839,12 @@ namespace client
         static void evaluate_index(expr &expr_index, int &output)
         {
             if (expr_index.type() != expr::TYPE_EMPTY) {
-                if (expr_index.type() != expr::TYPE_INT)                
-                    expr_index.throw_exception("Non-integer index is not allowed to address a vector variable.");
+                if (expr_index.type() != expr::TYPE_INT) {
+                    //allow fake int inside double (for custom variables)
+                    if (expr_index.type() != expr::TYPE_DOUBLE || expr_index.i() != expr_index.d()) {
+                        expr_index.throw_exception("Non-integer index is not allowed to address a vector variable.");
+                    }
+                }
                 output = expr_index.i();
             }
         }
@@ -2163,6 +2211,8 @@ namespace client
                 { out = value.unary_integer(out.it_range.begin()); }
         static void round(expr &value, expr &out)
                 { out = value.round(out.it_range.begin()); }
+        static void ceil(expr &value, expr &out)
+                { out = value.ceil(out.it_range.begin()); }
         // For indicating "no optional parameter".
         static void noexpr(expr &out) { out.reset(); }
 
@@ -2431,8 +2481,11 @@ namespace client
                                                                     [ px::bind(&expr::digits<true>, _val, _2, _3) ]
                 |   (kw["int"]   > '(' > conditional_expression(_r1) > ')') [ px::bind(&FactorActions::to_int,  _1, _val) ]
                 |   (kw["round"] > '(' > conditional_expression(_r1) > ')') [ px::bind(&FactorActions::round,   _1, _val) ]
+                |   (kw["ceil"] > '(' > conditional_expression(_r1) > ')') [ px::bind(&FactorActions::ceil,   _1, _val) ]
                 |   (kw["is_nil"] > '(' > variable_reference(_r1) > ')') [px::bind(&MyContext::is_nil_test, _r1, _1, _val)] // Deprecated same as !is_enabled
                 |   (kw["is_enabled"] > '(' > variable_reference(_r1) > ')') [px::bind(&MyContext::is_enabled_test, _r1, _1, _val)]
+                |   (kw["interpolate"] > '(' > variable_reference(_r1) > ',' > conditional_expression(_r1) > ')') 
+                                                        [ px::bind(&MyContext::interpolate_graph, _r1, _1, _2, _val) ]
                 |   (kw["one_of"] > '(' > one_of(_r1) > ')')        [ _val = _1 ]
                 |   (kw["empty"] > '(' > variable_reference(_r1) > ')') [px::bind(&MyContext::is_vector_empty, _r1, _1, _val)]
                 |   (kw["size"] > '(' > variable_reference(_r1) > ')') [px::bind(&MyContext::vector_size, _r1, _1, _val)]
@@ -2516,12 +2569,14 @@ namespace client
                 ("endif")
                 ("false")
                 ("global")
+                ("interpolate")
                 ("interpolate_table")
                 ("min")
                 ("max")
                 ("random")
                 ("repeat")
                 ("round")
+                ("ceil")
                 ("not")
                 ("one_of")
                 ("or")
@@ -2540,6 +2595,7 @@ namespace client
                 debug(text_block);
                 debug(macros);
                 debug(if_else_output);
+                debug(interpolate_graph);
                 debug(interpolate_table);
 //                debug(switch_output);
                 debug(legacy_variable_expansion);
@@ -2612,6 +2668,7 @@ namespace client
         qi::rule<Iterator, expr(const MyContext*), qi::locals<expr>, skipper> one_of;
         qi::rule<Iterator, expr(const MyContext*, const expr &param), skipper> one_of_list;
         // Evaluating the "interpolate_table" expression.
+        qi::rule<Iterator, expr(const MyContext*), skipper> interpolate_graph;
         qi::rule<Iterator, expr(const MyContext*), qi::locals<expr>, skipper> interpolate_table;
         qi::rule<Iterator, InterpolateTableContext(const MyContext*, const expr &param), skipper> interpolate_table_list;
 

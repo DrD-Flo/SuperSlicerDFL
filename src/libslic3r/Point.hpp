@@ -75,7 +75,7 @@ using Pointfs        = std::vector<Vec2d>;
 using Vec2ds         = std::vector<Vec2d>;
 using Pointf3s       = std::vector<Vec3d>;
 // for storing product
-using P2             = Eigen::Matrix<Coord2, 2, 1, Eigen::DontAlign>;
+//using P2             = Eigen::Matrix<Coord2, 2, 1, Eigen::DontAlign>;
 
 using VecOfPoints    = std::vector<Points, PointsAllocator<Points>>;
 
@@ -102,11 +102,52 @@ inline const auto &identity3d = identity<3, double>;
 inline coordf_t dot(const Vec2d &v1, const Vec2d &v2) { return v1.x() * v2.x() + v1.y() * v2.y(); }
 inline coordf_t dot(const Vec2d &v) { return v.x() * v.x() + v.y() * v.y(); }
 
-inline bool operator<(const Vec2d &lhs, const Vec2d &rhs) { return lhs.x() < rhs.x() || (lhs.x() == rhs.x() && lhs.y() < rhs.y()); }
+inline bool operator<(const Vec2d &lhs, const Vec2d &rhs) {
+    return lhs.x() < rhs.x() || (lhs.x() == rhs.x() && lhs.y() < rhs.y());
+}
+
+inline bool operator<(const std::vector<Vec2d> &lhs, const std::vector<Vec2d> &rhs) {
+    if (lhs.size() == rhs.size()) {
+        for (size_t i = 0; i < lhs.size(); i++) {
+            if (lhs[i] < rhs[i])
+                return true;
+            if (!(lhs[i] == rhs[i]))
+                return false;
+        }
+    }
+    return lhs.size() < rhs.size();
+}
+inline bool operator<(const Vec3d &lhs, const Vec3d &rhs) {
+    return lhs.x() < rhs.x() ||
+        (lhs.x() == rhs.x() && (lhs.y() < rhs.y() || (lhs.y() == rhs.y() && lhs.z() < rhs.z())));
+}
 
 inline distsqrf_t squared_norm(const Vec2crd &vec) {
     return vec.x()*coordf_t(vec.x()) + vec.y()*coordf_t(vec.y());
 }
+inline lengthsqr_t squared_int_norm(const Vec2crd &vec) {
+    // note: minimum can be 2 if both x and y are negative (negative shifting to 0 still produce 1 as -1 is full of 1).
+    // as we're computing the norm, we can use abs 
+    lengthsqr_t x = std::abs(vec.x()) >> SQUARE_BIT_REDUCTION;
+    lengthsqr_t y = std::abs(vec.y()) >> SQUARE_BIT_REDUCTION;
+    // x2 = x*x don't overflow
+    assert(x < std::numeric_limits<uint32_t>::max());
+    // y2 = y*y don't overflow
+    assert(y < std::numeric_limits<uint32_t>::max());
+    // x2 + y2 don't overflow
+    assert((x * x) / 2 + (y * y) / 2 < std::numeric_limits<uint64_t>::max() / 2);
+    return x * x + y * y;
+}
+
+// not sure of this usefulness...
+inline double dot_double(Vec2crd v1, Vec2crd v2) {
+    assert(is_approx(double(v1.dot(v2)), double(v1.x()) * double(v2.x()) + double(v1.y()) * double(v2.y()), 100.));
+    return double(v1.x()) * double(v2.x()) + double(v1.y()) * double(v2.y());
+}
+inline int64_t dot_int(Vec2crd v1, Vec2crd v2) {
+    return (v1.x() >> SQUARE_BIT_REDUCTION) * (v2.x() >> SQUARE_BIT_REDUCTION) + (v1.y() >> SQUARE_BIT_REDUCTION) * (v2.y() >> SQUARE_BIT_REDUCTION);
+}
+
 
 // Cross product of two 2D vectors.
 // None of the vectors may be of int32_t type as the result would overflow.
@@ -237,8 +278,9 @@ public:
     template<typename OtherDerived>
     Point(const Eigen::MatrixBase<OtherDerived> &other) : Vec2crd(other) {}
     static Point round(const Vec2d& rhs) { return Point(coord_t(std::round(rhs.x())), coord_t(std::round(rhs.y()))); }
-    static Point new_scale(coordf_t x, coordf_t y) { return Point(coord_t(scale_(x)), coord_t(scale_(y))); }
-    static Point new_scale(const Point &p) { return Point(scale_t(p.x()), scale_t(p.y())); }
+    static Point new_scale(double x, double y) { return Point(scale_d(x), scale_d(y)); }
+    // this one shouldn't exist.
+    //static Point new_scale(const Point &p) { return Point(scale_t(p.x()), scale_t(p.y())); }
     template<typename OtherDerived>
     static Point new_scale(const Eigen::MatrixBase<OtherDerived> &v) { return Point(scale_t(v.x()), scale_t(v.y())); }
 
@@ -252,8 +294,14 @@ public:
 
     Point& operator+=(const Point& rhs) { this->x() += rhs.x(); this->y() += rhs.y(); return *this; }
     Point& operator-=(const Point& rhs) { this->x() -= rhs.x(); this->y() -= rhs.y(); return *this; }
-	Point& operator*=(const double &rhs) { this->x() = coord_t(this->x() * rhs); this->y() = coord_t(this->y() * rhs); return *this; }
-    //Point operator*(const double &rhs) const { return Point(this->x() * rhs, this->y() * rhs); } //already exist outside
+    Point& operator*=(const double &rhs) {
+        assert(coord_t(this->x() * rhs) == coord_t(std::clamp(this->x() * rhs, double(std::numeric_limits<coord_t>::min()), double(std::numeric_limits<coord_t>::max()))));
+        assert(coord_t(this->y() * rhs) == coord_t(std::clamp(this->y() * rhs, double(std::numeric_limits<coord_t>::min()), double(std::numeric_limits<coord_t>::max()))));
+        this->x() = coord_t(std::clamp(this->x() * rhs, double(std::numeric_limits<coord_t>::min()), double(std::numeric_limits<coord_t>::max()))); 
+        this->y() = coord_t(std::clamp(this->y() * rhs, double(std::numeric_limits<coord_t>::min()), double(std::numeric_limits<coord_t>::max()))); 
+        return *this;
+    }
+    //Point operator*(const double &rhs); //already exist outside
 
     void   rotate(double angle) { this->rotate(std::cos(angle), std::sin(angle)); }
     void   rotate(double cos_a, double sin_a) {
@@ -270,8 +318,8 @@ public:
     Point  projection_onto(const Point &line_pa, const Point &line_pb) const;
     Point  interpolate(const double percent, const Point &p) const;
 
-    coordf_t distance_to(const Point &point) const { return (point - *this).cast<coordf_t>().norm(); }
-    coordf_t distance_to_square(const Point &point) const {
+    distf_t distance_to(const Point &point) const { return (point - *this).cast<distf_t>().norm(); }
+    distsqrf_t distance_to_square(const Point &point) const {
         coordf_t dx = double(point.x() - this->x());
         coordf_t dy = double(point.y() - this->y());
         return dx*dx + dy*dy;
@@ -289,7 +337,12 @@ inline bool operator<(const Point &l, const Point &r)
 
 inline Point operator* (const Point& l, const double &r)
 {
-    return {coord_t(l.x() * r), coord_t(l.y() * r)};
+    assert(coord_t(l.x() * r) == coord_t(std::clamp(l.x() * r, double(std::numeric_limits<coord_t>::min()), double(std::numeric_limits<coord_t>::max()))));
+    assert(coord_t(l.y() * r) == coord_t(std::clamp(l.y() * r, double(std::numeric_limits<coord_t>::min()), double(std::numeric_limits<coord_t>::max()))));
+    return {
+        coord_t(std::clamp(l.x() * r, double(std::numeric_limits<coord_t>::min()), double(std::numeric_limits<coord_t>::max()))),
+        coord_t(std::clamp(l.y() * r, double(std::numeric_limits<coord_t>::min()), double(std::numeric_limits<coord_t>::max())))
+    };
 }
 
 inline bool is_approx(const Point &p1, const Point &p2, coord_t epsilon = coord_t(SCALED_EPSILON))
@@ -381,13 +434,14 @@ inline bool has_duplicate_successive_points_closed(const Points &pts)
 // Collect adjecent(duplicit points)
 Points collect_duplicates(Points pts /* Copy */);
 
-inline bool shorter_then(const Point& p0, const coord_t len)
+inline bool shorter_then(const Vec2crd& p0, const coord_t len)
 {
     if (p0.x() > len || p0.x() < -len)
         return false;
     if (p0.y() > len || p0.y() < -len)
         return false;
-    return p0.cast<int64_t>().squaredNorm() <= Slic3r::sqr(int64_t(len));
+    //return squared_int_norm(p0) <= Slic3r::coord_int_sqr(len); // should do the same
+    return p0.cast<distsqrf_t>().squaredNorm() <= Slic3r::coord_sqr(len);
 }
 
 namespace int128 {
@@ -400,9 +454,10 @@ namespace int128 {
 }
 
 // To be used by std::unordered_map, std::unordered_multimap and friends.
+// >>6 because it's not useful to keep the epsilon part for a hash (/64).
 struct PointHash {
     size_t operator()(const Vec2crd &pt) const noexcept {
-        return coord_t((89 * 31 + int64_t(pt.x())) * 31 + pt.y());
+        return coord_t((89 * 31 + (int64_t(pt.x()) >> 6)) * 31 + (pt.y() >> 6));
     }
 };
 

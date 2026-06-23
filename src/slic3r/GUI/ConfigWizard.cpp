@@ -131,14 +131,17 @@ BundleMap BundleMap::load()
     BundleMap res;
 
     const auto vendor_dir = (boost::filesystem::path(Slic3r::data_dir()) / "vendor").make_preferred();
+#ifndef USE_GTHUB_PRESET_UPDATE
     const auto archive_dir = (boost::filesystem::path(Slic3r::data_dir()) / "cache" / "vendor").make_preferred();
     const auto rsrc_vendor_dir = (boost::filesystem::path(resources_dir()) / "profiles").make_preferred();
     const auto cache_dir = boost::filesystem::path(Slic3r::data_dir()) / "cache"; // for Index
+#endif
     // Load Prusa bundle from the datadir/vendor directory or from datadir/cache/vendor (archive) or from resources/profiles.
 #ifdef ALLOW_PRUSA_FIRST
     // prusa bundle mandatory check at startup
     auto prusa_bundle_path = (vendor_dir / ALLOW_PRUSA_FIRST).replace_extension(".ini");
     BundleLocation prusa_bundle_loc = BundleLocation::IN_VENDOR;
+#ifndef USE_GTHUB_PRESET_UPDATE
     if (! boost::filesystem::exists(prusa_bundle_path)) {
         prusa_bundle_path = (archive_dir / ALLOW_PRUSA_FIRST).replace_extension(".ini");
         prusa_bundle_loc = BundleLocation::IN_ARCHIVE;
@@ -147,6 +150,13 @@ BundleMap BundleMap::load()
         prusa_bundle_path = (rsrc_vendor_dir / PresetBundle::PRUSA_BUNDLE).replace_extension(".ini");
         prusa_bundle_loc = BundleLocation::IN_RESOURCES;
     }
+#else
+    if (!boost::filesystem::exists(prusa_bundle_path)) {
+        // auto-install
+        boost::filesystem::copy(boost::filesystem::path(resources_dir()) / "profiles" / ALLOW_PRUSA_FIRST,
+                                prusa_bundle_path);
+    }
+#endif
     {
         Bundle prusa_bundle;
         if (prusa_bundle.load(std::move(prusa_bundle_path), prusa_bundle_loc, true))
@@ -158,10 +168,15 @@ BundleMap BundleMap::load()
     // and then additionally from datadir/cache/vendor (archive) and resources/profiles.
     // Should we concider case where archive has older profiles than resources (shouldnt happen)? -> YES, it happens during re-configuration when running older PS after newer version
     typedef std::pair<const fs::path&, BundleLocation> DirData;
+#ifndef USE_GTHUB_PRESET_UPDATE
     std::vector<DirData> dir_list { {vendor_dir, BundleLocation::IN_VENDOR},  {archive_dir, BundleLocation::IN_ARCHIVE},  {rsrc_vendor_dir, BundleLocation::IN_RESOURCES} };
     for ( auto dir : dir_list) {
         if (!fs::exists(dir.first))
             continue;
+#else
+    DirData dir = {vendor_dir, BundleLocation::IN_VENDOR};
+    if (fs::exists(dir.first)) {
+#endif
       try {
         for (const auto &dir_entry : boost::filesystem::directory_iterator(dir.first)) {
             if (Slic3r::is_ini_file(dir_entry)) {
@@ -169,11 +184,12 @@ BundleMap BundleMap::load()
 
                 // Don't load this bundle if we've already loaded it.
                 if (res.find(id) != res.end()) { continue; }
-
+                
+#ifndef USE_GTHUB_PRESET_UPDATE
                 // Fresh index should be in archive_dir, otherwise look for it in cache 
                 // Then if not in archive or cache - it could be 3rd party profile that user just copied to vendor folder (both ini and cache)
                 
-                fs::path idx_path (cache_dir / (id + ".idx"));
+                fs::path idx_path (rsrc_vendor_dir / (id + ".idx"));
                 if (!boost::filesystem::exists(idx_path)) {
                     BOOST_LOG_TRIVIAL(error) << format("Missing index %1% when loading bundle %2%. Going to search for it in cache folder.", idx_path.string(), id);
                     idx_path = fs::path(cache_dir / (id + ".idx"));
@@ -201,6 +217,7 @@ BundleMap BundleMap::load()
                     continue;
                 }
                 const auto recommended = recommended_it->config_version;
+#endif
                 VendorProfile vp;
                 try {
                     vp = VendorProfile::from_ini(dir_entry, true);
@@ -209,9 +226,11 @@ BundleMap BundleMap::load()
                     BOOST_LOG_TRIVIAL(error) << format("Could not load bundle %1% due to corrupted profile file %2%. Message: %3%", id, dir_entry.path().string(), e.what());
                     continue;
                 }
+#ifndef USE_GTHUB_PRESET_UPDATE
                 // Don't load
                 if (vp.config_version > recommended)
                     continue;
+#endif
 
                 Bundle bundle;
                 if (bundle.load(dir_entry.path(), dir.second))
@@ -328,7 +347,7 @@ PrinterPicker::PrinterPicker(wxWindow *parent, const VendorProfile &vendor, wxSt
                 % model.thumbnail
                 % vendor.id
                 % model.id;
-            load_bitmap(Slic3r::var(PRINTER_PLACEHOLDER), bitmap, bitmap_width);
+            load_bitmap(Slic3r::get_icon_file(PRINTER_PLACEHOLDER), bitmap, bitmap_width);
         }
         
         wxStaticText* title = new wxStaticText(this, wxID_ANY, from_u8(model.name), wxDefaultPosition, wxDefaultSize, wxALIGN_LEFT);
@@ -599,14 +618,26 @@ PageWelcome::PageWelcome(ConfigWizard *parent)
     , cbox_integrate(append(
         new wxCheckBox(this, wxID_ANY, _L("Perform desktop integration (Sets this binary to be searchable by the system)."))
     ))
+    , bt_new_vendor(append(
+        new wxButton(this, wxID_ANY, _L("Add more vendors"))))
+    , run_reason(ConfigWizard::RunReason::RR_USER)
 {
     welcome_text->Hide();
-    cbox_reset->Hide();
-    cbox_integrate->Hide();    
+    bt_new_vendor->Hide();
+    cbox_integrate->Hide();
+    bt_new_vendor->Bind(wxEVT_BUTTON, [this, parent](wxCommandEvent &) {
+        ConfigWizard::RunReason rr = this->run_reason;
+        parent->EndModal(wxID_CANCEL);
+        wxCommandEvent *evt = new wxCommandEvent(EVT_WIZARD_SHOW_DIALOG);
+        // set args for GUI_App::run_wizard
+        evt->SetInt(int(rr) + 8*(GUI_App::RunVendorBundleManage::RVBM_ALWAYS));
+        GUI::wxGetApp().QueueEvent(evt);
+    });
 }
 
 void PageWelcome::set_run_reason(ConfigWizard::RunReason run_reason)
 {
+    this->run_reason = run_reason;
     const bool data_empty = run_reason == ConfigWizard::RR_DATA_EMPTY;
     welcome_text->Show(data_empty);
     cbox_reset->Show(!data_empty);
@@ -1488,7 +1519,7 @@ PageDownloader::PageDownloader(ConfigWizard* parent)
     : ConfigWizardPage(parent, _L("Downloads from URL"), _L("Downloads"))
 {
     const AppConfig* app_config = get_app_config();
-    auto boldfont = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT);
+    auto boldfont = wxGetApp().bold_font();
     boldfont.SetWeight(wxFONTWEIGHT_BOLD);
 
     append_spacer(VERTICAL_SPACING);
@@ -1732,7 +1763,7 @@ PageVendors::PageVendors(ConfigWizard *parent)
 
     append_text(wxString::Format(_L("Pick another vendor supported by %s"), SLIC3R_APP_NAME) + ":");
 
-    auto boldfont = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT);
+    auto boldfont = wxGetApp().bold_font();
     boldfont.SetWeight(wxFONTWEIGHT_BOLD);
     // Copy vendors from bundle map to vector, so we can sort it without case sensitivity
     std::vector<std::pair<std::wstring, const VendorProfile*>> vendors;
@@ -1756,8 +1787,12 @@ PageVendors::PageVendors(ConfigWizard *parent)
             wizard_p()->on_3rdparty_install(vendor, cbox->IsChecked());
         });
 
-        const auto &acvendors = appconfig.vendors();
-        const bool enabled = acvendors.find(vendor->id) != acvendors.end();
+        /*const*/ bool enabled;
+        {
+            std::lock_guard<std::recursive_mutex> lk(appconfig.config_lock);
+            const AppConfig::VendorMap &acvendors = appconfig.vendors();
+            enabled = acvendors.find(vendor->id) != acvendors.end();
+        }
         if (enabled) {
             cbox->SetValue(true);
 
@@ -2098,7 +2133,7 @@ void PageTemperatures::apply_custom_config(DynamicPrintConfig &config)
 
 ConfigWizardIndex::ConfigWizardIndex(wxWindow *parent)
     : wxScrolledWindow(parent)
-    , bg(ScalableBitmap(parent, SLIC3R_APP_KEY "_192px_transparent.png", 192))
+    , bg(ScalableBitmap(parent, get_bmp_bundle(GUI_App::dark_mode() ? wxGetApp().light_icon_name() : wxGetApp().dark_icon_name(), 192)->GetBitmap(wxSize(192, 192)), 192))
     , bullet_black(ScalableBitmap(parent, "bullet_black.png"))
     , bullet_blue(ScalableBitmap(parent, "bullet_blue.png"))
     , bullet_white(ScalableBitmap(parent, "bullet_white.png"))
@@ -3058,8 +3093,16 @@ static std::string get_first_added_preset(const std::map<std::string, std::strin
 bool ConfigWizard::priv::apply_config(AppConfig *app_config, PresetBundle *preset_bundle, const PresetUpdater *updater, bool& apply_keeped_changes)
 {
     wxString header, caption = _L("Configuration is edited in ConfigWizard");
-    const auto enabled_vendors = appconfig_new.vendors();
-    const auto enabled_vendors_old = app_config->vendors();
+    /*const*/ AppConfig::VendorMap enabled_vendors;
+    /*const*/ AppConfig::VendorMap enabled_vendors_old;
+    {
+        std::lock_guard<std::recursive_mutex> lk(appconfig_new.config_lock);
+        enabled_vendors = appconfig_new.vendors();
+    }
+    {
+        std::lock_guard<std::recursive_mutex> lk(app_config->config_lock);
+        enabled_vendors_old = app_config->vendors();
+    }
 
     bool suppress_sla_printer = model_has_multi_part_objects(wxGetApp().model());
     PrinterTechnology preferred_pt = ptAny;
@@ -3122,6 +3165,9 @@ bool ConfigWizard::priv::apply_config(AppConfig *app_config, PresetBundle *prese
     if (!check_unsaved_preset_changes)
         act_btns |= ActionButtons::SAVE;
 
+#ifndef USE_GTHUB_PRESET_UPDATE
+    ///////////////////////// -supermerill: old prusa code for the old way to update profiles /////////////////////////
+    ///////////////////////// not used anymore 
     // Install bundles from resources or cache / vendor if needed:
     std::vector<std::string> install_bundles;
     for (const auto &pair : bundles) {
@@ -3155,7 +3201,7 @@ bool ConfigWizard::priv::apply_config(AppConfig *app_config, PresetBundle *prese
     if (!check_unsaved_preset_changes)
         if ((check_unsaved_preset_changes = install_bundles.size() > 0))
             header = _L_PLURAL("A new vendor was installed and one of its printers will be activated", "New vendors were installed and one of theirs printers will be activated", install_bundles.size());
-
+#endif
 #ifdef __linux__
     // Desktop integration on Linux
     BOOST_LOG_TRIVIAL(debug) << "ConfigWizard::priv::apply_config integrate_desktop" << page_welcome->integrate_desktop()  << " perform_registration_linux " << page_downloader->m_downloader->get_perform_registration_linux();
@@ -3192,17 +3238,21 @@ bool ConfigWizard::priv::apply_config(AppConfig *app_config, PresetBundle *prese
     if (check_unsaved_preset_changes &&
         !wxGetApp().check_and_keep_current_preset_changes(caption, header, act_btns, &apply_keeped_changes))
         return false;
-
+    
+#ifndef USE_GTHUB_PRESET_UPDATE
+    ///////////////////////// -supermerill: old prusa code for the old way to update profiles /////////////////////////
+    ///////////////////////// not used anymore 
     if (install_bundles.size() > 0) {
         // Install bundles from resources or cache / vendor.
         // Don't create snapshot - we've already done that above if applicable.
         
-        bool install_result = updater->install_bundles_rsrc_or_cache_vendor(std::move(install_bundles), false);
+        bool install_result = install_bundles_rsrc_or_cache_vendor(std::move(install_bundles), false);
         if (!install_result)
             return false;
     } else {
         BOOST_LOG_TRIVIAL(info) << "No bundles need to be installed from resources or cache / vendor";
     }
+#endif
 
     if (page_welcome->reset_user_profile()) {
         BOOST_LOG_TRIVIAL(info) << "Resetting user profiles...";
@@ -3312,7 +3362,10 @@ bool ConfigWizard::priv::apply_config(AppConfig *app_config, PresetBundle *prese
 
     app_config->set_vendors(appconfig_new);
 
-    app_config->set("notify_release", page_update->version_check ? "all" : "none");
+    if (app_config->get("notify_release") != std::string(page_update->version_check ? "release" : "none")) {
+        app_config->set("notify_release", page_update->version_check ? "release" : "none");
+        app_config->set("version_online_seen", "");
+    }
     app_config->set("preset_update", page_update->preset_update ? "1" : "0");
     app_config->set("export_sources_full_pathnames", page_reload_from_disk->full_pathnames ? "1" : "0");
 

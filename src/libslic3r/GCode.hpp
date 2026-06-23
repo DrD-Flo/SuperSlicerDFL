@@ -36,6 +36,7 @@
 #include "GCode/RetractWhenCrossingPerimeters.hpp"
 // #include "GCode/SmoothPath.hpp"
 #include "GCode/SpiralVase.hpp"
+#include "GCode/TemperatureMover.hpp"
 #include "GCode/ToolOrdering.hpp"
 #include "GCode/Wipe.hpp"
 #include "GCode/WipeTowerIntegration.hpp"
@@ -101,11 +102,23 @@ namespace GCode {
 struct ObjectLayerToPrint
 {
     ObjectLayerToPrint() : object_layer(nullptr), support_layer(nullptr) {}
-    const Layer* 		object_layer;
-    const SupportLayer* support_layer;
-    const Layer* 		layer()   const { return (object_layer != nullptr) ? object_layer : support_layer; }
-    const PrintObject* 	object()  const { return (this->layer() != nullptr) ? this->layer()->object() : nullptr; }
-    coordf_t            print_z() const { return (object_layer != nullptr && support_layer != nullptr) ? 0.5 * (object_layer->print_z + support_layer->print_z) : this->layer()->print_z; }
+    const Layer        *object_layer;
+    const SupportLayer *support_layer;
+    // if filled, it restrict the islands needed to be printed (can be in support or/and object)
+    // used as adress check, so you can store nullptr.
+    std::set<const LayerSliceIsland*> islands;
+    // if mmu, extruder order override
+    std::vector<uint16_t> extruders_order;
+    // wipetower managment, for parallel object/islands
+    bool allow_wipe_tower = true; // allow to print wipetoer & finish wieptower layer
+    coord_t finish_wipe_tower_until = 0; // before printing anything, finish all unfinish wp layer until this z (should be <= _print_z())
+    const Layer        *layer() const { return (object_layer != nullptr) ? object_layer : support_layer; }
+    const PrintObject  *object() const { return (this->layer() != nullptr) ? this->layer()->object() : nullptr; }
+    coord_t _print_z() const {
+        assert(object_layer == nullptr || support_layer == nullptr ||
+               object_layer->scaled_print_z() == support_layer->scaled_print_z());
+        return this->layer()->scaled_print_z();
+    }
 };
 
 struct PrintObjectInstance
@@ -119,7 +132,7 @@ struct PrintObjectInstance
 
 } // namespace GCode
 
-class GCodeGenerator : ExtrusionVisitorConst {
+class GCodeGenerator : ExtrusionVisitorConst, ExtrusionPropertyVisitorConst {
 
 public:
     GCodeGenerator();
@@ -133,7 +146,7 @@ public:
     const Vec2d&    origin() const { return m_origin; }
     void            set_origin(const Vec2d &pointf);
     void            set_origin(const coordf_t x, const coordf_t y) { this->set_origin(Vec2d(x, y)); }
-    uint16_t        last_extruder() const { return m_writer.tool() ? m_writer.tool()->id() : size_t(0); }
+    uint16_t        last_extruder(uint16_t def = 0) const { return m_writer.tool() ? uint16_t(m_writer.tool()->id()) : def; }
     const Point&    last_pos() const { assert(m_last_pos); return *m_last_pos; }
     bool            last_pos_defined() const { return m_last_pos.has_value(); }
     void            set_last_pos(const Point &pos) { m_last_pos = pos; }
@@ -172,6 +185,7 @@ public:
     Point           gcode_to_point(const Vec2d &point) const;
     const FullPrintConfig &config() const { return m_config; }
     const Layer*    layer() const { return m_layer; }
+    const Layer*    current_z_layer() const { return m_pos_layer; }
     GCodeWriter&    writer() { return m_writer; }
     const GCodeWriter& writer() const { return m_writer; }
     PlaceholderParser& placeholder_parser() { return m_placeholder_parser_integration.parser; }
@@ -241,10 +255,16 @@ private:
     };
     void            _do_export(Print &print, GCodeOutputStream &file, ThumbnailsGeneratorCallback thumbnail_cb);
     void            _move_to_print_object(std::string& gcode_out, const Print& print, size_t finished_objects, uint16_t initial_extruder_id);
-    void            _init_multiextruders(const Print& print, std::string& gcode_out, GCodeWriter& writer, const ToolOrdering& tool_ordering, const std::string& custom_gcode);
+    void            _init_multiextruders(const Print& print, std::string& gcode_out, GCodeWriter& writer, const std::vector<ToolOrdering>& tool_ordering, const std::string& custom_gcode);
 
-    static ObjectsLayerToPrint         		                     collect_layers_to_print(const PrintObject &object, Print::StatusMonitor &status_monitor);
-    static std::vector<std::pair<coordf_t, ObjectsLayerToPrint>> collect_layers_to_print(const Print &print, Print::StatusMonitor &status_monitor);
+    static ObjectsLayerToPrint                                  collect_layers_to_print(const PrintObject &object, Print::StatusMonitor &status_monitor);
+    static std::vector<std::pair<coord_t, ObjectsLayerToPrint>> collect_layers_to_print(const Print &print, Print::StatusMonitor &status_monitor);
+    static std::vector<ObjectsLayerToPrint> separate_islands(const ObjectsLayerToPrint object_layers,
+                                                             const coord_t start_e,
+                                                             const Point last_position,
+                                                             const coord_t max_height,
+                                                             const std::vector<GraphData> &extruder_min_dist,
+                                                             const uint16_t current_extruder_id);
 
 
     LayerResult process_layer(
@@ -268,7 +288,7 @@ private:
         Print::StatusMonitor                                          &status_monitor,
         const ToolOrdering                                            &tool_ordering,
         const std::vector<const PrintInstance*>                       &print_object_instances_ordering,
-        const std::vector<std::pair<coordf_t, ObjectsLayerToPrint>>   &layers_to_print,
+        const std::vector<std::pair<coord_t, ObjectsLayerToPrint>>    &layers_to_print,
         std::string                                                   &preamble,
         GCodeOutputStream                                             &output_stream);
     // Process all layers of a single object instance (sequential mode) with a parallel pipeline:
@@ -285,19 +305,33 @@ private:
     
     void            set_extruders(const std::vector<uint16_t> &extruder_ids);
     std::string     preamble();
-    std::string change_layer(double print_z);
+    std::string change_layer(coord_t from_z, coord_t to_z);
 
     std::string      visitor_gcode;
     bool             visitor_flipped; //TODO use instead of reverse() at extrude_entity
     bool             visitor_in_use = false;
+    std::string      visitor_root_state = ""; // to know what kind of thing we're doing.
     std::string_view visitor_comment;
     double           visitor_speed;
-    virtual void use(const ExtrusionPath &path) override { visitor_gcode += extrude_path(path, visitor_comment, visitor_speed); };
-    virtual void use(const ExtrusionPath3D &path3D) override { visitor_gcode += extrude_path_3D(path3D, visitor_comment, visitor_speed); };
-    virtual void use(const ExtrusionMultiPath &multipath) override { visitor_gcode += extrude_multi_path(multipath, visitor_comment, visitor_speed); };
-    virtual void use(const ExtrusionMultiPath3D &multipath) override { visitor_gcode += extrude_multi_path3D(multipath, visitor_comment, visitor_speed); };
-    virtual void use(const ExtrusionLoop &loop) override { visitor_gcode += extrude_loop(loop, visitor_comment, visitor_speed); };
+    virtual void use(const ExtrusionPath &path) override;
+    virtual void use(const ExtrusionPath3D &path3D) override;
+    virtual void use(const ExtrusionMultiPath &multipath) override;
+    virtual void use(const ExtrusionMultiPath3D &multipath) override;
+    virtual void use(const ExtrusionLoop &loop) override;
     virtual void use(const ExtrusionEntityCollection &collection) override;
+    virtual void use(const ExtrusionNop &command) override;
+    void start_using_extrusion(const ExtrusionEntity &entity);
+    void end_using_extrusion(const ExtrusionEntity &entity);
+
+    virtual void default_use(const ExtrusionProperty&) override;
+    virtual void use(const ExtrusionMultiProperties&) override;
+    virtual void use(const ExtrusionPropertySpeed&) override;
+    virtual void use(const ExtrusionPropertyCustomGcode&) override;
+    virtual void use(const ExtrusionPropertyModifier&) override;
+    virtual void use(const ExtrusionPropertySpecialCommand&) override;
+    //virtual void use(const ExtrusionPropertyOverhang&) override; // no need for this one
+    virtual void use(const ExtrusionPropertyZOffset&) override;
+
     std::string     extrude_entity(const ExtrusionEntityReference &entity, const std::string_view description, double speed = -1.);
     std::string     extrude_loop(const ExtrusionLoop &loop, const std::string_view description, double speed = -1.);
     std::string     extrude_loop_vase(const ExtrusionPaths& normal_loop_paths, const ExtrusionLoop &original_loop, const std::string_view description, double speed = -1.);
@@ -359,9 +393,9 @@ private:
     // if no m_region, then it will take the default region config from print_object
     // if no print_object, then it will take the default region config from print
     void set_region_for_extrude(const Print &print, const PrintObject *print_object, const LayerRegion *layerm, std::string &gcode);
-    void extrude_perimeters(const ExtrudeArgs &print_args, const LayerIsland &island, std::string &gcode);
-    void extrude_infill(const ExtrudeArgs &print_args, const LayerIsland &island, bool is_infill_first, std::string &gcode);
-    void extrude_ironing(const ExtrudeArgs &print_args, const LayerIsland &island, std::string &gcode);
+    void extrude_perimeters(const ExtrudeArgs &print_args, const LayerRegionIsland &island, std::string &gcode);
+    void extrude_infill(const ExtrudeArgs &print_args, const LayerRegionIsland &island, bool is_infill_first, std::string &gcode);
+    void extrude_ironing(const ExtrudeArgs &print_args, const LayerRegionIsland &island, std::string &gcode);
     void extrude_skirt(ExtrusionLoop &loop_src, const ExtrusionFlow &extrusion_flow_override, std::string &gcode, const std::string_view description);
     std::string     extrude_support(const ExtrusionEntityReferences &support_fills);
     bool            shall_print_this_extrusion_collection(const ExtrudeArgs &              print_args,
@@ -381,7 +415,7 @@ private:
      );
     Polyline        travel_to(std::string& gcode, const Point &end_point, ExtrusionRole role);
     void            write_travel_to(std::string& gcode, Polyline& travel, std::string comment);
-    std::vector<coord_t> get_travel_elevation(Polyline& travel, double z_change);
+    std::vector<coord_t> get_travel_elevation(Polyline& travel, coord_t z_change);
     //std::string     travel_to_first_position(const Vec3crd& point);
     bool            can_cross_perimeter(const Polyline& travel, bool offset);
     bool            needs_retraction(const Polyline &travel, ExtrusionRole role = ExtrusionRole::None, coordf_t max_min_dist = 0);
@@ -389,14 +423,19 @@ private:
     std::string     retract_and_wipe(bool toolchange = false, bool inhibit_lift = false);
     std::string     unretract() { return m_writer.unlift() + m_writer.unretract(); }
     // enforce lift_min
-    void            set_extra_lift(const float previous_print_z, const int layer_id, const PrintConfig& print_config, GCodeWriter & writer, int extruder_id);
-    std::string     set_extruder(uint16_t extruder_id, double print_z, bool no_toolchange = false);
-    std::string     toolchange(uint16_t extruder_id, double print_z);
+    void            set_extra_lift(const coord_t previous_print_z, const int layer_id, const PrintConfig& print_config, GCodeWriter & writer, int extruder_id);
+    std::string     set_extruder(uint16_t extruder_id, coord_t print_z, bool no_toolchange = false);
+    std::string     toolchange(uint16_t extruder_id, coord_t print_z);
     bool line_distancer_is_required(const std::vector<uint16_t>& extruder_ids);
 
     // Cache for custom seam enforcers/blockers for each layer.
     SeamPlacer                          m_seam_placer;
     bool                                m_seam_perimeters = false;
+    // area unpraticable for the nozzle ot move on on this layer if Z lower than print_z.
+    bool                                m_need_layer_collision_already_printed = false;
+    std::vector<std::pair<ArcPolylines, coord_t>>  m_layer_collision_already_printed_2_width;
+    void init_layer_for_collision_check(const Layer *object_layer);
+    void add_travel_obstacle(const ObjectsLayerToPrint &layer_group);
     public:
     /* Origin of print coordinates expressed in unscaled G-code coordinates.
        This affects the input arguments supplied to the extrude*() and travel_to()
@@ -447,7 +486,11 @@ private:
     AvoidCrossingPerimeters             m_avoid_crossing_perimeters;
     JPSPathFinder                       m_avoid_crossing_curled_overhangs;
     RetractWhenCrossingPerimeters       m_retract_when_crossing_perimeters;
+    // m_travel_obstacle_tracker works on this layer's extrusions.
     GCode::TravelObstacleTracker        m_travel_obstacle_tracker;
+    // m_travel_obstacles track tall objects for sequential printing.
+    // contains the expolygon & the height of it
+    std::map<coord_t, std::pair<ExPolygons, BoundingBox>>  m_z_to_obstacles;
     bool                                m_enable_loop_clipping;
     // If enabled, the G-code generator will put following comments at the ends
     // of the G-code lines: _EXTRUDE_SET_SPEED, _WIPE, _BRIDGE_FAN_START, _BRIDGE_FAN_END, _BRIDGE_INTERNAL_FAN_START, _BRIDGE_INTERNAL_FAN_END
@@ -458,7 +501,9 @@ private:
     bool                                m_enable_extrusion_role_markers;
     int                                 m_check_markers = 0;
     // HACK to avoid multiple Z move.
+    // FIXME: force a lift?
     std::string                         m_delayed_layer_change;
+    coord_t                             m_delayed_layer_change_current_print_z;
     // Keeps track of the last extrusion role passed to the processor
     GCodeExtrusionRole                  m_last_processor_extrusion_role;
     // For Progress bar indicator, in sequential mode (complete objects)
@@ -477,9 +522,11 @@ private:
     // Current layer processed. In sequential printing mode, only a single copy will be printed.
     // In non-sequential mode, all its copies will be printed.
     const Layer*                        m_layer;
+    // layer at our current position, can be different than m_layer before the wipe & retract & delayed layer change
+    const Layer*                        m_pos_layer;
     // last layers printed at our current Z, to 
     std::vector<const Layer*>           m_last_object_layers;
-    coordf_t                            m_last_layers_z{ 0.0 };
+    coord_t                             m_last_layers_z{ 0 };
     const PrintRegion*                  m_region = nullptr;
     // m_layer is an object layer and it is being printed over raft surface.
     bool                                m_object_layer_over_raft;    // idx of the current instance printed. (or the last one)
@@ -506,18 +553,29 @@ private:
         uint16_t last_extruder;
         coord_t diameter;
     }                                   m_layer_slices_offseted{ {},{},nullptr, 0};
-    double                              m_volumetric_speed;
+    // one per extruder
+    std::vector<double>                 m_volumetric_speed_mm3_per_s;
     // Support for the extrusion role markers. Which marker is active?
     GCodeExtrusionRole                  m_last_extrusion_role;
     // Not know the gapfill role for retract_lift_top
     GCodeExtrusionRole                  m_last_not_gapfill_extrusion_role;
     // Support for G-Code Processor
-    double                              m_last_height{ 0.0 };
-    double                              m_last_layer_z{ 0.0 };
-    double                              m_max_layer_z{ 0.0 };
-    double                              m_last_width{ 0.0 };
+    coord_t                             m_last_height_{ 0 };
+    coord_t                             m_last_layer_z_{ 0 };
+    coord_t                             m_max_layer_z_{ 0 };
+    float                               m_last_path_flow_width{ 0 };
+    // filament used since the beginning for each extruder, updated after the before_layer_gcode. in mm
+    std::vector<double>                 m_last_layer_used_filament;
     // to pass between before_xtrude and after_extrude.
     double                              m_overhang_fan_override{ -1.0 };
+    // from extrusion properties.
+    std::vector<const ExtrusionEntity*> m_current_entity;
+    std::vector<std::pair<const ExtrusionEntity*, const ExtrusionPropertySpeed*>> m_speed_override;
+    std::vector<std::pair<const ExtrusionEntity*, const ExtrusionPropertyModifier*>> m_modifier_override;
+    std::vector<std::pair<const ExtrusionEntity*, coord_t>> m_z_override;
+    std::vector<int16_t>                m_saved_temp;
+    bool                                m_force_unretract{false};
+    bool                                m_no_gcodeviewer_tag{false};
 #if ENABLE_GCODE_VIEWER_DATA_CHECKING
     double                              m_last_mm3_per_mm;
 #endif // ENABLE_GCODE_VIEWER_DATA_CHECKING
@@ -525,11 +583,12 @@ private:
     const PrintInstance*                m_last_instance {nullptr};
     std::optional<Point>                m_last_pos;
 
-    // for ramping lift: if enabled, and this is set, then you will need to move Z at the next travel.
-    // note: rampng lift and these kind of trick should eb reworked & improve when the gcode creation will be split in multiplt subsystem, these working on a chain of "command" objects. That way it should be easier to move the Z / travel accrodingly.
+    // for ramping lift: this is set, then you will need to move Z at the next travel (from this z to the current alyer).
+    // note: rampng lift and these kind of trick should be reworked & improve when the gcode creation will be split in multiplt subsystem, these working on a chain of "command" objects. That way it should be easier to move the Z / travel accrodingly.
     // the dangerous thing with it is when you cancel an object, then the Z move and the travel need to be dealt with correctly. currently, it's a pain to to do that.
-    std::optional<double>               m_new_z_target = {};
-    double                              m_next_lift_min{0};
+    // note2: if 0 or negative, it just enforce the current z before the travel.
+    std::optional<coord_t>              _m_force_move_z_from = {};
+    coord_t                             _m_next_lift_min{0};
 
     double                              m_current_perimeter_extrusion_width = 0.4;
     std::optional<unsigned>             m_layer_change_extruder_id;
@@ -539,6 +598,7 @@ private:
     int32_t                             m_last_command_buffer_used = 0;
     std::string                         m_last_description;
     double                              m_last_speed_mm_per_sec;
+    bool                                m_need_z_reset_after_path_3D = false;
 
     std::unique_ptr<CoolingBuffer>      m_cooling_buffer;
     std::unique_ptr<SpiralVase>         m_spiral_vase;
@@ -546,12 +606,13 @@ private:
     int32_t                             m_spiral_vase_layer = 0;
     std::unique_ptr<GCodeFindReplace>   m_find_replace;
     std::unique_ptr<PressureEqualizer>  m_pressure_equalizer;
-    std::unique_ptr<GCode::WipeTowerIntegration> m_wipe_tower;
+    std::map<coord_t, std::shared_ptr<WipeTowerLayer>> m_wipe_tower_layers;
+    std::shared_ptr<WipeTowerLayer>     m_wipe_tower_current_layer;
     // to get extruded volume, for stats
     const WipeTowerData                *m_wipe_tower_data;
 
     // Heights (print_z) at which the skirt has already been extruded.
-    std::vector<coordf_t>               m_skirt_done;
+    std::vector<coord_t>                m_skirt_done;
     // Has the brim been extruded already? Brim is being extruded only for the first object of a multi-object print.
     std::map<std::pair<const PrintObject *, int>, bool>  m_brim_done;
     // Flag indicating whether the nozzle temperature changes from 1st to 2nd layer were performed.
@@ -580,17 +641,19 @@ private:
 
     //some post-processing on the file, with their data class
     std::unique_ptr<FanMover> m_fan_mover;
+    std::unique_ptr<TemperatureMover> m_temperature_mover;
 
     std::function<void()> m_throw_if_canceled = [](){};
 
     double                    _compute_e_per_mm(const ExtrusionPath &path);
-    std::string               _extrude(const ExtrusionPath &path, const std::string_view description, double speed = -1);
-    void                      _extrude_line(std::string& gcode_str, const Line& line, const double e_per_mm, const std::string_view comment, ExtrusionRole role);
+    std::string               _extrude(ExtrusionPath &path, const std::string_view description, double speed = -1);
+    void                      _extrude_line(std::string& gcode_str, const Line& line, const double e_per_mm, const std::string_view comment, ExtrusionRole role, coord_t delta_z=0);
     void                      _extrude_line_cut_corner(std::string& gcode_str, const Line& line, const double e_per_mm, const std::string_view comment, Point& last_pos, const double path_width);
     std::string               _before_extrude(const ExtrusionPath &path, const std::string_view description, double speed = -1);
     std::string               _travel_before_extrude(const ExtrusionPath &path, const std::string_view description, double speed_mm_s = -1);
     double_t                  _compute_speed_mm_per_sec(const ExtrusionPath &path_attrs, const double speed, double &fan_speed, std::string *comment) const;
     std::pair<double, double> _compute_acceleration(const ExtrusionPath &path);
+    std::pair<double, double> _compute_pressure_advance(const ExtrusionPath &path);
     std::string               _after_extrude(const ExtrusionPath &path);
     void print_machine_envelope(GCodeOutputStream &file, const Print &print);
     int32_t _compute_first_layer_bed_temperature(const Print &print);
@@ -613,8 +676,6 @@ private:
     bool cooldwon_marker_no_slowdown_section = false;;
     static void cooldown_marker_init();
 };
-
-std::vector<const PrintInstance*> sort_object_instances_by_model_order(const Print& print);
 
 }
 

@@ -134,9 +134,7 @@ struct AMFParserContext
     static const char* get_not_null_attribute(const char** atts, const char* id) {
         const char* str = get_attribute(atts, id);
         if (str == nullptr) {
-            char error_buf[1024];
-            ::sprintf(error_buf, "Error, missing tag %s", id);
-            throw Slic3r::FileIOError(error_buf);
+            throw Slic3r::FileIOError("Error, missing tag " + std::string(id));
         }
         return str;
     }
@@ -715,7 +713,7 @@ void AMFParserContext::endElement(const char * /* name */)
         CustomGCode::Type type  = static_cast<CustomGCode::Type>(atoi(m_value[3].c_str()));
         const std::string& extra= m_value[4];
 
-        m_model.custom_gcode_per_print_z.gcodes.push_back(CustomGCode::Item{print_z, type, extruder, color, extra});
+        m_model.custom_gcode_per_print_z.gcodes.push_back(CustomGCode::Item{Layer::scale_to_layer_coord(print_z), type, extruder, color, extra});
 
         for (std::string& val: m_value)
             val.clear();
@@ -1011,9 +1009,10 @@ bool extract_model_from_archive(mz_zip_archive& archive, const mz_zip_archive_fi
             CallbackData* data = (CallbackData*)pOpaque;
             if (!XML_Parse(data->parser, (const char*)pBuf, (int)n, (file_ofs + n == data->stat.m_uncomp_size) ? 1 : 0) || data->ctx.error())
             {
-                char error_buf[1024];
-                ::sprintf(error_buf, "Error (%s) while parsing '%s' at line %d", data->ctx.error_message(), data->stat.m_filename, (int)XML_GetCurrentLineNumber(data->parser));
-                throw Slic3r::FileIOError(error_buf);
+                std::string error_msg = "Error (" + std::string(data->ctx.error_message()) + 
+                                       ") while parsing '" + std::string(data->stat.m_filename) + 
+                                       "' at line " + std::to_string((int)XML_GetCurrentLineNumber(data->parser));
+                throw Slic3r::FileIOError(error_msg);
             }
 
             return n;
@@ -1354,7 +1353,7 @@ bool store_amf(std::string &path, Model *model, const DynamicPrintConfig *config
         {
             pt::ptree& code_tree = main_tree.add("code", "");
             // store custom_gcode_per_print_z gcodes information 
-            code_tree.put("<xmlattr>.print_z"   , code.print_z  );
+            code_tree.put("<xmlattr>.print_z"   , unscaled(code.print_z_)  );
             code_tree.put("<xmlattr>.type"      , static_cast<int>(code.type));
             code_tree.put("<xmlattr>.extruder"  , code.extruder );
             code_tree.put("<xmlattr>.info"      , code.color    );

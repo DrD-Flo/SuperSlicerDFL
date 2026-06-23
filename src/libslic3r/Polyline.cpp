@@ -53,7 +53,7 @@ Lines Polyline::lines() const
 }
 
 // removes the given distance from the end of the polyline
-void Polyline::clip_end(coordf_t distance)
+void Polyline::clip_end(distf_t distance)
 {
     while (distance > 0) {
         Vec2d  last_point = this->last_point().cast<coordf_t>();
@@ -61,7 +61,7 @@ void Polyline::clip_end(coordf_t distance)
         if (this->points.empty())
             break;
         Vec2d  v    = this->last_point().cast<coordf_t>() - last_point;
-        coordf_t lsqr = v.squaredNorm();
+        distsqrf_t lsqr = v.squaredNorm();
         if (lsqr > distance * distance) {
             this->points.push_back(Point::round(last_point + v * (distance / sqrt(lsqr))));
             return;
@@ -71,7 +71,7 @@ void Polyline::clip_end(coordf_t distance)
 }
 
 // removes the given distance from the start of the polyline
-void Polyline::clip_start(coordf_t distance)
+void Polyline::clip_start(distf_t distance)
 {
     this->reverse();
     this->clip_end(distance);
@@ -79,14 +79,14 @@ void Polyline::clip_start(coordf_t distance)
         this->reverse();
 }
 
-void Polyline::extend_end(coordf_t distance)
+void Polyline::extend_end(distf_t distance)
 {
     // relocate last point by extending the last segment by the specified length
     Vec2d v = (this->points.back() - *(this->points.end() - 2)).cast<coordf_t>().normalized();
     this->points.back() += Point::round(v * distance);
 }
 
-void Polyline::extend_start(coordf_t distance)
+void Polyline::extend_start(distf_t distance)
 {
     // relocate first point by extending the first segment by the specified length
     Vec2d v = (this->points.front() - this->points[1]).cast<coordf_t>().normalized();
@@ -95,7 +95,7 @@ void Polyline::extend_start(coordf_t distance)
 
 /* this method returns a collection of points picked on the polygon contour
    so that they are evenly spaced according to the input distance */
-Points Polyline::equally_spaced_points(coordf_t distance) const
+Points Polyline::equally_spaced_points(distf_t distance) const
 {
     Points points;
     points.emplace_back(this->first_point());
@@ -172,7 +172,7 @@ void Polyline::split_at(const Point &point, Polyline* p1, Polyline* p2) const
     Point  prev = this->points.front();
     for (auto it = this->points.cbegin() + 1; it != this->points.cend(); ++it) {
         Point proj;
-        if (double d2 = line_alg::distance_to_squared(Line(prev, *it), point, &proj); d2 < min_dist2) {
+        if (double d2 = Line::distance_to_squared_abp(prev, *it, point, &proj); d2 < min_dist2) {
             min_dist2 = d2;
             min_point_it = it;
         }
@@ -187,6 +187,49 @@ void Polyline::split_at(const Point &point, Polyline* p1, Polyline* p2) const
     if (*min_point_it == point)
         ++ min_point_it;
     p2->points.insert(p2->points.end(), min_point_it, this->points.cend());
+}
+
+Polyline Polyline::split_at(distf_t dist) {
+    if (dist <= SCALED_EPSILON) {
+        Polyline me = *this;
+        clear();
+        return me;
+    }
+
+    Point pt_split = points.front();
+    size_t next_point_idx = 1;
+    while (dist > SCALED_EPSILON && next_point_idx < size()) {
+        distsqrf_t dist_sqr = points[next_point_idx - 1].distance_to_square(points[next_point_idx]);
+        if (dist_sqr < Slic3r::sqr(SCALED_EPSILON + dist)) {
+            dist -= std::sqrt(dist_sqr);
+            ++next_point_idx;
+        } else {
+            pt_split = Line(points[next_point_idx - 1], points[next_point_idx]).point_at(dist);;
+            dist = 0;
+            break;
+        }
+    }
+
+    if (pt_split == points.front()) {
+        if (next_point_idx < size()) {
+            // just over an existing point
+            Polyline second_part;
+            second_part.points.insert(second_part.points.end(), points.begin() + next_point_idx, points.end());
+            points.resize(next_point_idx + 1);
+            return second_part;
+        } else {
+            // too long
+            return Polyline();
+        }
+    } else {
+        // mid point
+        Polyline second_part;
+        second_part.points.push_back(pt_split);
+        second_part.points.insert(second_part.points.end(), points.begin() + next_point_idx, points.end());
+        points.resize(next_point_idx + 1);
+        points.back() = pt_split;
+        return second_part;
+    }
 }
 
 bool Polyline::is_straight() const
@@ -216,6 +259,12 @@ BoundingBox get_extents(const Polylines &polylines)
     }
     return bb;
 }
+
+Polyline reverse_polyline(const Polyline &polyline) {
+    Polyline p2 = polyline;
+    p2.reverse();
+    return p2;
+};
 
 // Return True when erase some otherwise False.
 bool remove_same_neighbor(Polyline &polyline) {
@@ -328,7 +377,7 @@ std::pair<int, Point> foot_pt(const Points &polyline, const Point &pt)
     auto  it_proj = polyline.begin();
     for (++ it; it != polyline.end(); ++ it) {
         Point foot_pt;
-        if (double d2 = line_alg::distance_to_squared(Line(prev, *it), pt, &foot_pt); d2 < d2_min) {
+        if (double d2 = Line::distance_to_squared_abp(prev, *it, pt, &foot_pt); d2 < d2_min) {
             d2_min      = d2;
             foot_pt_min = foot_pt;
             it_proj     = it;
@@ -350,7 +399,7 @@ ThickLines ThickPolyline::thicklines() const
 }
 
 // Removes the given distance from the end of the ThickPolyline
-void ThickPolyline::clip_end(coordf_t distance)
+void ThickPolyline::clip_end(distf_t distance)
 {
     assert(this->points_width.size() == this->points.size());
     if (! this->empty()) {
@@ -380,14 +429,14 @@ void ThickPolyline::clip_end(coordf_t distance)
     assert(this->points_width.size() == this->points.size());
     }
 }
-void ThickPolyline::extend_end(coordf_t distance)
+void ThickPolyline::extend_end(distf_t distance)
 {
     // relocate last point by extending the last segment by the specified length
     Vec2d v = (this->points.back() - *(this->points.end() - 2)).cast<coordf_t>().normalized();
     this->points.back() += Point::round(v * distance);
 }
 
-void ThickPolyline::extend_start(coordf_t distance)
+void ThickPolyline::extend_start(distf_t distance)
 {
     // relocate first point by extending the first segment by the specified length
     Vec2d v = (this->points.front() - this->points[1]).cast<coordf_t>().normalized();
@@ -744,15 +793,21 @@ void ArcPolyline::append(ArcPolyline &&src) {
 
 void ArcPolyline::append(const Geometry::ArcWelder::Segment &arc)
 {
-    assert(arc.radius == 0 || !this->empty());
-    assert(arc.radius != 0 || arc.orientation == Geometry::ArcWelder::Orientation::Unknown);
+    assert(arc.linear() || !this->empty());
+    assert(!arc.linear() || arc.orientation == Geometry::ArcWelder::Orientation::Unknown);
     this->m_path.push_back(arc);
-    if (arc.radius != 0) {
+    if (!arc.linear()) {
         this->m_only_strait = false;
     }
 #ifdef _DEBUG
     if (this->m_path.size() > 1) {
         this->m_path.back().length = Geometry::ArcWelder::segment_length<coordf_t>(this->m_path[this->m_path.size() - 2], this->m_path.back());
+        if (!arc.linear() && arc.center == Point()) {
+            this->m_path.back().center =
+                Geometry::ArcWelder::arc_center_scalar(this->m_path[this->m_path.size() - 2].point,
+                                                       this->m_path.back().point, this->m_path.back().radius,
+                                                       this->m_path.back().ccw());
+        }
     }
 #endif
     assert(is_valid());
@@ -819,7 +874,7 @@ int ArcPolyline::find_point(const Point &point, coordf_t epsilon) const
     }
 }
 
-bool ArcPolyline::at_least_length(coordf_t length) const
+bool ArcPolyline::at_least_length(distf_t length) const
 {
     for (size_t i = 1; length > 0 && i < m_path.size(); ++ i)
         length -= Geometry::ArcWelder::segment_length<double>(m_path[i - 1], m_path[i]);
@@ -839,7 +894,7 @@ std::pair<int, Point> ArcPolyline::foot_pt(const Point &pt) const
         Point prev    = m_path.front().point;
         for (size_t idx = 1; idx < m_path.size(); ++idx) {
             Point foot_pt;
-            if (double d2 = line_alg::distance_to_squared(Line(prev, m_path[idx].point), pt, &foot_pt); d2 < d2_min) {
+            if (double d2 = Line::distance_to_squared_abp(prev, m_path[idx].point, pt, &foot_pt); d2 < d2_min) {
                 d2_min      = d2;
                 foot_pt_min = foot_pt;
                 foot_idx_min = idx;
@@ -853,11 +908,11 @@ std::pair<int, Point> ArcPolyline::foot_pt(const Point &pt) const
         //assert(result.segment_id + 1 < m_path.size() ||
         //       (m_path.back().point.distance_to(pt) - std::sqrt(result.distance2)) < SCALED_EPSILON);
         // else check that if on strait segment, it's proj into it.
-        assert(result.segment_id + 1 == m_path.size() || m_path[result.segment_id + 1].radius != 0 ||
+        assert(result.segment_id + 1 == m_path.size() || !m_path[result.segment_id + 1].linear() ||
                result.point.distance_to(
                    result.point.projection_onto(m_path[result.segment_id].point, m_path[result.segment_id + 1].point)) < SCALED_EPSILON);
         // else check that it's on the arc
-        assert(result.segment_id + 1 == m_path.size() || m_path[result.segment_id + 1].radius == 0
+        assert(result.segment_id + 1 == m_path.size() || m_path[result.segment_id + 1].linear()
             || m_path[result.segment_id + 1].point == result.point || m_path[result.segment_id].point == result.point
             || Geometry::ArcWelder::point_to_path_projection({m_path[result.segment_id], m_path[result.segment_id + 1]},
                                                                       result.point,
@@ -900,7 +955,7 @@ void ArcPolyline::pop_back()
     assert(is_valid());
 }
 
-void ArcPolyline::clip_start(coordf_t dist)
+void ArcPolyline::clip_start(distf_t dist)
 {
     Geometry::ArcWelder::clip_start(m_path, dist);
     if (!m_only_strait)
@@ -908,7 +963,7 @@ void ArcPolyline::clip_start(coordf_t dist)
     assert(is_valid());
 }
 
-void ArcPolyline::clip_end(coordf_t dist)
+void ArcPolyline::clip_end(distf_t dist)
 {
     Geometry::ArcWelder::clip_end(m_path, dist);
     if (!m_only_strait)
@@ -916,7 +971,7 @@ void ArcPolyline::clip_end(coordf_t dist)
     assert(is_valid());
 }
 
-void ArcPolyline::split_at(coordf_t distance, ArcPolyline &p1, ArcPolyline &p2) const
+void ArcPolyline::split_at(distf_t distance, ArcPolyline &p1, ArcPolyline &p2) const
 {
     assert(p1.empty());
     assert(p2.empty());
@@ -1047,7 +1102,7 @@ void ArcPolyline::split_at(coordf_t distance, ArcPolyline &p1, ArcPolyline &p2) 
     }
 #ifdef _DEBUG
     assert(p1.m_path.back().point == p2.m_path[0].point);
-    if (p1.size() > 1 && p2.size() > 1 && (p1.m_path.back().radius != 0 || p2.m_path[1].radius != 0) ) {
+    if (p1.size() > 1 && p2.size() > 1 && (!p1.m_path.back().linear() || !p2.m_path[1].linear()) ) {
         assert(std::abs(p1.m_path.back().radius) == std::abs(p2.m_path[1].radius));
         assert(p1.m_path.back().length ==0 && p2.m_path[1].length > 0);
         coordf_t length_old_p1 = p1.m_path.back().length;
@@ -1103,8 +1158,8 @@ void ArcPolyline::split_at(Point &point, ArcPolyline &p1, ArcPolyline &p2) const
     //find the line to split at
     Geometry::ArcWelder::PathSegmentProjection result = Geometry::ArcWelder::point_to_path_projection(m_path, point);
     assert(result.segment_id + 1 < this->m_path.size());
-    assert(result.center != Point(0, 0) || this->m_path[result.segment_id + 1].radius == 0); // if no radius, then no center
-    assert(result.center == Point(0, 0) || this->m_path[result.segment_id + 1].radius != 0); // if center defined, then the radius isn't null
+    assert(result.center != Point(0, 0) || this->m_path[result.segment_id + 1].linear()); // if no radius, then no center
+    assert(result.center == Point(0, 0) || !this->m_path[result.segment_id + 1].linear()); // if center defined, then the radius isn't null
     // the point to add is between m_path[result.segment_id] and m_path[result.segment_id + 1]
     //split and update point
     p1.clear();
@@ -1166,7 +1221,7 @@ void ArcPolyline::split_at(Point &point, ArcPolyline &p1, ArcPolyline &p2) const
     point = result.point;
 
     if (p1.m_path[p1.size() - 2].point.coincides_with_epsilon(p1.m_path.back().point)) {
-        if (p1.m_path.back().radius == 0 ||
+        if (p1.m_path.back().linear() ||
             Geometry::ArcWelder::arc_length(p1.m_path[p1.size() - 2].point, p1.m_path.back().point,
                                             p1.m_path.back().radius)) {
             // too close to each other
@@ -1186,7 +1241,7 @@ void ArcPolyline::split_at(Point &point, ArcPolyline &p1, ArcPolyline &p2) const
         }
     }
     if (p2.m_path.front().point.coincides_with_epsilon(p2.m_path[1].point)) {
-        if (p2.m_path[1].radius == 0 ||
+        if (p2.m_path[1].linear() ||
             Geometry::ArcWelder::arc_length(p2.m_path.front().point, p2.m_path[1].point,
                                             p2.m_path[1].radius)) {
             // too close to each other
@@ -1237,7 +1292,7 @@ bool ArcPolyline::split_at_index(const size_t index, ArcPolyline &p1, ArcPolylin
 }
 
 //TODO: find a way to avoid duplication of get_point_from_end / get_point_from_begin
-Point ArcPolyline::get_point_from_begin(coord_t distance) const {
+Point ArcPolyline::get_point_from_begin(distf_t distance) const {
     size_t idx = 1;
     while (distance > 0 && idx < m_path.size()) {
         const Geometry::ArcWelder::Segment last = m_path[idx - 1];
@@ -1246,7 +1301,7 @@ Point ArcPolyline::get_point_from_begin(coord_t distance) const {
             // Linear segment
             Vec2d  v    = (current.point - last.point).cast<double>();
             double lsqr = v.squaredNorm();
-            if (lsqr >= sqr(distance)) {
+            if (lsqr >= coord_sqr(distance)) {
                 // Length to go is zero.
                 return last.point + Point::round(v * (distance / sqrt(lsqr)));
             }
@@ -1272,7 +1327,7 @@ Point ArcPolyline::get_point_from_begin(coord_t distance) const {
     return m_path[idx - 1].point;
 }
 
-Point ArcPolyline::get_point_from_end(coord_t distance) const {
+Point ArcPolyline::get_point_from_end(distf_t distance) const {
     size_t idx = m_path.size() - 1;
     while (distance > 0 && idx > 0) {
         const Geometry::ArcWelder::Segment last = m_path[idx];
@@ -1281,7 +1336,7 @@ Point ArcPolyline::get_point_from_end(coord_t distance) const {
             // Linear segment
             Vec2d  v    = (current.point - last.point).cast<double>();
             double lsqr = v.squaredNorm();
-            if (lsqr >= sqr(distance)) {
+            if (lsqr >= coord_sqr(distance)) {
                 // Length to go is zero.
                 return last.point + Point::round(v * (distance / sqrt(lsqr)));
             }
@@ -1309,30 +1364,38 @@ Point ArcPolyline::get_point_from_end(coord_t distance) const {
 
 void ArcPolyline::set_front(const Point &p) {
     assert(!m_path.empty());
-    m_path.front().point = p;
-    if (m_path.size() > 1) {
+    if (m_path.size() > 1 && m_path.front().point != p &&
+        (m_path[1].radius != 0 || m_path[1].orientation != Geometry::ArcWelder::Orientation::Unknown)) {
+        // should have been discretized before
+        assert(false);
         m_path[1].radius = 0.f;
         m_path[1].orientation = Geometry::ArcWelder::Orientation::Unknown;
     }
+    m_path.front().point = p;
     assert(is_valid());
 }
 
 void ArcPolyline::set_back(const Point &p) {
     assert(!m_path.empty());
+    if (m_path.size() > 1 && m_path.back().point != p &&
+        (m_path.back().radius != 0 || m_path.back().orientation != Geometry::ArcWelder::Orientation::Unknown)) {
+        // should have been discretized before
+        assert(false);
+        m_path.back().radius = 0.f;
+        m_path.back().orientation = Geometry::ArcWelder::Orientation::Unknown;
+    }
     m_path.back().point = p;
-    m_path.back().radius = 0.f;
-    m_path.back().orientation = Geometry::ArcWelder::Orientation::Unknown;
     assert(is_valid());
 }
 
 Polyline ArcPolyline::to_polyline(coord_t deviation/*=0*/) const {
     Polyline poly_out;
     if (!empty()) {
-        assert(m_path.front().radius == 0);
+        assert(m_path.front().linear());
         if (deviation > 0 || m_only_strait || m_path.size() < 2) {
             assert(m_only_strait == not_arc(*this));
             for (const Geometry::ArcWelder::Segment &seg : m_path)
-                if (seg.radius == 0 || m_only_strait) {
+                if (seg.linear() || m_only_strait) {
                     poly_out.append(seg.point);
                 } else if(deviation == 0) {
                     assert(false);
@@ -1365,7 +1428,7 @@ Polyline ArcPolyline::to_polyline(coord_t deviation/*=0*/) const {
         } else {
 
             for (const Geometry::ArcWelder::Segment &seg : m_path) {
-                if (seg.radius == 0) {
+                if (seg.linear()) {
                     assert(poly_out.empty() || !poly_out.back().coincides_with_epsilon(seg.point));
                     poly_out.append(seg.point);
                 } else {
@@ -1501,7 +1564,7 @@ int ArcPolyline::simplify_straits(coordf_t min_tolerance,
                     Point current = m_path[idxs[i+1]].point;
                     Point next = m_path[idxs[i+2]].point;
                     // check deviation
-                    coordf_t deviation = Line::distance_to(current, previous, next);
+                    coordf_t deviation = std::sqrt(Line::distance_to_squared_abp(previous, next, current));
                     if (deviation > min_tolerance) {
                         weights[i] = 0;
                     } else {
@@ -1593,10 +1656,10 @@ int ArcPolyline::simplify_straits(coordf_t min_tolerance,
         idxs.push_back(idx_end);
         line_length.push_back(new_seg_length);
         buffer_length += new_seg_length;
-        bool previous_is_arc = m_path[idx_end -1].radius != 0;
+        bool previous_is_arc = !m_path[idx_end -1].linear();
         if(previous_is_arc)
             assert(arc.empty() || arc.back() == 1);
-        if (m_path[idx_end].radius == 0) {
+        if (m_path[idx_end].linear()) {
             arc.push_back(previous_is_arc ? 2 : 0);
         } else {
             if (!previous_is_arc && !arc.empty()) {
@@ -1673,13 +1736,13 @@ void ArcPolyline::simplify_straits(const coordf_t min_tolerance,
 
     for (size_t idx_pt = 1; idx_pt < this->m_path.size() - 1; ++idx_pt) {
         // only erase point between two strait segment
-        if (m_path[idx_pt].radius == 0 && m_path[idx_pt + 1].radius == 0) {
+        if (m_path[idx_pt].linear() && m_path[idx_pt + 1].linear()) {
             // Get previous & next point
             Point previous = m_path[idx_pt - 1].point;
             Point current = m_path[idx_pt].point;
             Point next = m_path[idx_pt + 1].point;
             // check deviation
-            coordf_t deviation = Line::distance_to(current, previous, next);
+            coordf_t deviation = std::sqrt(Line::distance_to_squared_abp(previous, next, current));
             //if deviation is small enough and the distance is too small
             if (deviation < min_tolerance &&
                 (min_point_distance_sqr < previous.distance_to_square(current) ||
@@ -1704,21 +1767,21 @@ void ArcPolyline::make_arc(ArcFittingType with_fitting_arc, coordf_t tolerance, 
         size_t idx_end_mpath;
         path.push_back(m_path.front());
         pts.push_back(m_path.front().point);
-        assert(path.empty() || path.front().radius == 0);
+        assert(path.empty() || path.front().linear());
         for (idx_end_mpath = 1; idx_end_mpath < m_path.size(); ++idx_end_mpath) {
-            if (m_path[idx_end_mpath].radius == 0) {
+            if (m_path[idx_end_mpath].linear()) {
                 assert(pts.empty() || !pts.back().coincides_with_epsilon(m_path[idx_end_mpath].point));
                 pts.push_back(m_path[idx_end_mpath].point);
             }
             // if current point is arc, make arc on the strait section before it (if enough points)
             // or if it's the last point of the path, do it on the last strait section (if enough points)
-            if (m_path[idx_end_mpath].radius != 0 || idx_end_mpath + 1 >= m_path.size()) {
+            if (!m_path[idx_end_mpath].linear() || idx_end_mpath + 1 >= m_path.size()) {
                 for(int ii=1;ii<pts.size();++ii) assert(!pts[ii-1].coincides_with_epsilon(pts[ii]));
-                assert(m_path[idx_end_mpath].radius == 0 || !pts.back().coincides_with_epsilon(m_path[idx_end_mpath].point));
+                assert(m_path[idx_end_mpath].linear() || !pts.back().coincides_with_epsilon(m_path[idx_end_mpath].point));
                 // less than 3 points: don't use
                 if (pts.size() > 2) {
                     // remove strait sections
-                    assert(path.empty() || path.front().radius == 0);
+                    assert(path.empty() || path.front().linear());
                     // do arc fitting
                     if (with_fitting_arc == ArcFittingType::Bambu) {
                         // === use BBS method ===
@@ -1781,7 +1844,7 @@ void ArcPolyline::make_arc(ArcFittingType with_fitting_arc, coordf_t tolerance, 
                                 assert(false);
                             }
                         }
-                        assert(path.empty() || path.front().radius == 0);
+                        assert(path.empty() || path.front().linear());
 #if _DEBUG
                         for (size_t i = 1; i < m_path.size(); ++i) {
                             Geometry::ArcWelder::Segment &seg = m_path[i];
@@ -1795,13 +1858,13 @@ void ArcPolyline::make_arc(ArcFittingType with_fitting_arc, coordf_t tolerance, 
                         // === use ArcWelder ===
                         Geometry::ArcWelder::Path result = Geometry::ArcWelder::fit_path(pts, tolerance, fit_percent_tolerance);
                         assert(result.size() > 1);
-                        assert(result.front().radius == 0);
+                        assert(result.front().linear());
                         assert(path.empty() || path.back().point == result.front().point);
-                        assert(!path.empty() || result.front().radius == 0);
+                        assert(!path.empty() || result.front().linear());
 #ifdef _DEBUG
                         Point prev = path.empty() ? result.front().point : path.back().point;
                         for (auto &seg : result) {
-                            if(seg.radius != 0){
+                            if (!seg.linear()) {
                                 Vec2d center = Slic3r::Geometry::ArcWelder::arc_center(prev.cast<coordf_t>(), seg.point.cast<coordf_t>(), double(seg.radius), seg.ccw());
                                 double angle = Slic3r::Geometry::ArcWelder::arc_angle(prev.cast<coordf_t>(), seg.point.cast<coordf_t>(), double(seg.radius));
                                 double ccw_angle = angle_ccw(prev - Point::round(center), seg.point - Point::round(center));
@@ -1823,7 +1886,7 @@ void ArcPolyline::make_arc(ArcFittingType with_fitting_arc, coordf_t tolerance, 
                             assert(path.back().point.coincides_with_epsilon(result.front().point));
                             path.insert(path.end(), result.begin() + 1, result.end());
                         }
-                        assert(path.empty() || path.front().radius == 0);
+                        assert(path.empty() || path.front().linear());
                     }
                     //assert(idx_end_mpath > 0 && m_path[idx_end_mpath].point == path.back().point);
                 } else {
@@ -1834,7 +1897,7 @@ void ArcPolyline::make_arc(ArcFittingType with_fitting_arc, coordf_t tolerance, 
                     }
                 }
                 assert(path.back().point == pts.back());
-                if (m_path[idx_end_mpath].radius != 0) {
+                if (!m_path[idx_end_mpath].linear()) {
                     // add arc
                     path.push_back(m_path[idx_end_mpath]);
                 }
@@ -1848,7 +1911,7 @@ void ArcPolyline::make_arc(ArcFittingType with_fitting_arc, coordf_t tolerance, 
         this->m_only_strait = not_arc(*this);
         assert(is_valid());
     } else {
-        auto it_end = douglas_peucker<double>(this->m_path.begin(), this->m_path.end(), this->m_path.begin(), tolerance,
+        auto it_end = douglas_peucker_impl(this->m_path.begin(), this->m_path.end(), this->m_path.begin(), tolerance,
                                         [](const Geometry::ArcWelder::Segment &s) { return s.point; });
         if (it_end != this->m_path.end()) {
             size_t new_size = size_t(it_end-this->m_path.begin());
@@ -1859,15 +1922,19 @@ void ArcPolyline::make_arc(ArcFittingType with_fitting_arc, coordf_t tolerance, 
 }
 
 bool ArcPolyline::is_valid() const {
+    assert(m_path[0].linear() && m_path[0].orientation == Geometry::ArcWelder::Orientation::Unknown);
+    for (size_t i = 1; i < m_path.size(); ++i) {
+        assert(!m_path[i].linear() || m_path[i].orientation == Geometry::ArcWelder::Orientation::Unknown);
+    }
 #ifdef _DEBUG
-    assert(m_path.empty() || m_path.front().radius == 0);
+    assert(m_path.empty() || m_path.front().linear());
     double min_radius = 0;
     double max_radius = 0;
     Point first_center;
     for (size_t i = 1; i < m_path.size(); ++i) {
         if(!this->is_3D)
             assert(!m_path[i - 1].point.coincides_with_epsilon(m_path[i].point));
-        if (m_path[i].radius != 0) {
+        if (!m_path[i].linear()) {
             Vec2d center = Slic3r::Geometry::ArcWelder::arc_center(m_path[i-1].point.cast<coordf_t>(), m_path[i].point.cast<coordf_t>(), coordf_t(m_path[i].radius), m_path[i].ccw());
             double angle = Slic3r::Geometry::ArcWelder::arc_angle(m_path[i-1].point.cast<coordf_t>(), m_path[i].point.cast<coordf_t>(), coordf_t(m_path[i].radius));
             double ccw_angle = angle_ccw(m_path[i-1].point.cast<coordf_t>() - center, m_path[i].point.cast<coordf_t>()   - center);

@@ -4,9 +4,12 @@ group:Name and Size
 	setting:idx:tool_name
 	setting:idx:nozzle_diameter
 	update_nozzle_diameter
-group:Layer height limits
-	setting:idx:min_layer_height
-	setting:idx:max_layer_height
+group:Limits
+	line:Layer height limits
+		setting:idx:min_layer_height
+		setting:idx:max_layer_height
+	end_line
+	setting:idx:extruder_clearance
 group:Offsets (for multi-extruder printers)
 	setting:idx:extruder_offset
 	setting:idx:extruder_temperature_offset
@@ -42,6 +45,7 @@ group:Retraction wipe
 	setting:idx:wipe_speed
 	setting:idx:retract_before_wipe
 	setting:idx:wipe_only_crossing
+	setting:idx:wipe_return
 group:General wipe
 	line:Wipe inside
 		setting:idx:label$At start:wipe_inside_start
@@ -58,8 +62,12 @@ group:General wipe
 		setting:idx:label$_:sidetext_width$5:seam_gap
 		setting:idx:label$for external perimeters:sidetext_width$5:seam_gap_external
 	end_line
+group:others
+    setting:idx:temperature_heat_speed
 group:Retraction when tool is disabled (advanced settings for multi-extruder setups)
 	setting:label$Minimum retraction:idx:retract_length_toolchange
 	setting:label$Extra unretraction:idx:retract_restart_extra_toolchange
+	setting:idx:retract_restart_wipe_toolchange
+	setting:idx:retract_restart_toolchange_on_perimeter
 group:Preview
 	reset_to_filament_color

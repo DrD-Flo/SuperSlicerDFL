@@ -152,6 +152,8 @@ set(SLIC3R_SOURCES
     Format/SL1.cpp
     Format/SL1_SVG.hpp
     Format/SL1_SVG.cpp
+    Format/HFP.cpp
+    Format/HFP.hpp
     Format/AnycubicSLA.hpp
     Format/AnycubicSLA.cpp
     Format/CWS.hpp
@@ -196,12 +198,16 @@ set(SLIC3R_SOURCES
     GCode/SeamPlacer.hpp
     #GCode/SmoothPath.cpp
     #GCode/SmoothPath.hpp
+    GCode/TemperatureMover.cpp
+    GCode/TemperatureMover.hpp
     GCode/ToolOrdering.cpp
     GCode/ToolOrdering.hpp
     GCode/Wipe.cpp
     GCode/Wipe.hpp
     GCode/WipeTower.cpp
     GCode/WipeTower.hpp
+    GCode/WipeTower2.cpp
+    GCode/WipeTower2.hpp
     GCode/WipeTowerIntegration.cpp
     GCode/WipeTowerIntegration.hpp
     GCode/GCodeProcessor.cpp
@@ -367,7 +373,10 @@ set(SLIC3R_SOURCES
     PNGReadWrite.cpp
     QuadricEdgeCollapse.cpp
     QuadricEdgeCollapse.hpp
+    RegionSettings.cpp
+    RegionSettings.hpp
     Semver.cpp
+    Semver.hpp
     ShortEdgeCollapse.cpp
     ShortEdgeCollapse.hpp
     ShortestPath.cpp
@@ -437,6 +446,8 @@ set(SLIC3R_SOURCES
     MTUtils.hpp
     Zipper.hpp
     Zipper.cpp
+    Orient.cpp
+    Orient.hpp
     MinAreaBoundingBox.hpp
     MinAreaBoundingBox.cpp
     miniz_extension.hpp
@@ -617,6 +628,7 @@ target_link_libraries(libslic3r
     JPEG::JPEG
     qoi
     LibBGCode::bgcode_convert
+	quickdigest5
     )
 
 if (APPLE)
