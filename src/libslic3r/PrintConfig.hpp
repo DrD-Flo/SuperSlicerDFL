@@ -174,6 +174,7 @@ enum SupportMaterialPattern {
     smpRectilinear,
     smpRectilinearGrid,
     smpHoneycomb,
+    smpConcentric,
 };
 
 enum SupportMaterialStyle {

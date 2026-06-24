@@ -223,7 +223,8 @@ CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(SlicingMode)
 static const t_config_enum_values s_keys_map_SupportMaterialPattern {
     { "rectilinear",        smpRectilinear },
     { "rectilinear-grid",   smpRectilinearGrid },
-    { "honeycomb",          smpHoneycomb }
+    { "honeycomb",          smpHoneycomb },
+    { "concentric",         smpConcentric }
 };
 CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(SupportMaterialPattern)
 
@@ -6707,7 +6708,8 @@ void PrintConfigDef::init_fff_params()
     def->set_enum<SupportMaterialPattern>({
         { "rectilinear",        L("Rectilinear") },
         { "rectilinear-grid",   L("Rectilinear grid") },
-        { "honeycomb",          L("Honeycomb") }
+        { "honeycomb",          L("Honeycomb") },
+        { "concentric",         L("Concentric") }
     });
     def->mode = comAdvancedE | comPrusa;
     def->set_default_value(new ConfigOptionEnum<SupportMaterialPattern>(smpRectilinear));

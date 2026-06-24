@@ -2132,32 +2132,32 @@ void generate_support_toolpaths(
                     filler->z             = (double)support_layer.unscaled_print_z();
                     float    supp_density = support_params.interface_density;
                     double   filler_spacing;
-                    // if first layer and solid first layer : draw concentric with 100% density
-                    if (support_layer.id() == 0 && layer_ex.layer->scaled_bottom_z() <= 0) {
-                        filler         = filler_first_layer.get();
-                        supp_density   = float(config.raft_first_layer_density.get_abs_value(1.));
-                        interface_flow = support_params.first_layer_flow;
-                        filler->angle  = 0;
-                        filler_spacing = interface_flow.spacing();
+                    // The first layer on the bed used to be drawn dense (raft_first_layer_density)
+                    // with its own angle (0) and spacing, which left it shifted from the layers above
+                    // so it tore off / stayed on the bed (especially with TPU). Use the same angle,
+                    // spacing and density as the layers above so the pattern lines up; only widen the
+                    // flow (first_layer_flow) below for bed adhesion.
+                    if (raft_top_interface_idx == support_layer_id) {
+                        filler->angle  = support_params.raft_angle_interface + ((support_layer_id - slicing_params.base_raft_layers) *
+                                                                support_params.interface_angle_incr);
+                        supp_density   = interface_as_base ? support_params.support_density : support_params.interface_density;
+                        filler_spacing = interface_as_base ? support_params.raft_flow.spacing() :
+                                                             support_params.raft_interface_flow.spacing();
                     } else {
-                        if (raft_top_interface_idx == support_layer_id) {
-                            filler->angle  = support_params.raft_angle_interface + ((support_layer_id - slicing_params.base_raft_layers) *
-                                                                    support_params.interface_angle_incr);
-                            supp_density   = interface_as_base ? support_params.support_density : support_params.interface_density;
-                            filler_spacing = interface_as_base ? support_params.raft_flow.spacing() :
-                                                                 support_params.raft_interface_flow.spacing();
-                        } else {
-                            filler->angle  = interface_as_base ?
-                                                 // If zero interface layers are configured, use the same angle as for the base layers.
-                                                suppport_angle :
-                                                // Use interface angle for the interface layers.
-                                                support_params.interface_angle + interface_angle_delta;
-                            supp_density   = interface_as_base ? support_params.support_density : support_params.interface_density;
-                            filler_spacing = interface_as_base ? support_params.support_material_flow.spacing() :
-                                                                 support_params.support_material_interface_flow.spacing();
-                        }
-                        filler->link_max_length = scale_t(filler_spacing * link_max_length_factor / supp_density);
+                        filler->angle  = interface_as_base ?
+                                             // If zero interface layers are configured, use the same angle as for the base layers.
+                                            suppport_angle :
+                                            // Use interface angle for the interface layers.
+                                            support_params.interface_angle + interface_angle_delta;
+                        supp_density   = interface_as_base ? support_params.support_density : support_params.interface_density;
+                        filler_spacing = interface_as_base ? support_params.support_material_flow.spacing() :
+                                                             support_params.support_material_interface_flow.spacing();
                     }
+                    // First layer on the bed: keep the pattern aligned with the layers above (angle,
+                    // spacing and density unchanged), only widen the flow for better bed adhesion.
+                    if (support_layer.id() == 0 && layer_ex.layer->scaled_bottom_z() <= 0)
+                        interface_flow = support_params.first_layer_flow;
+                    filler->link_max_length = scale_t(filler_spacing * link_max_length_factor / supp_density);
                 
                     //filler->angle = interface_as_base ?
                     //        // If zero interface layers are configured, use the same angle as for the base layers.
@@ -2228,16 +2228,14 @@ void generate_support_toolpaths(
                 bool  done    = false;
                 if (base_layer.layer->scaled_bottom_z() <= 0) {
                     // Base flange (the 1st layer).
-                    filler                  = filler_first_layer.get();
-                    filler->angle           = Geometry::deg2rad(float(config.support_material_angle.value + 90.));
-                    density                 = float(config.raft_first_layer_density.get_abs_value(1.f));
-                    filler->link_max_length = scale_t(filler_spacing * link_max_length_factor / density);
-                    flow = support_params.first_layer_flow;
-                    // use the proper spacing for first layer as we don't need to align
-                    // its pattern to the other layers
-                    //FIXME When paralellizing, each thread shall have its own copy of the fillers.
-                    filler_spacing          = flow.spacing();
-                    filler->link_max_length = scale_t(filler_spacing * link_max_length_factor / density);
+                    // Keep the same filler/angle/spacing/density as the layers above so the first
+                    // layer lines up with them. Otherwise the first layer is shifted and gets left
+                    // behind when removing the support (especially with TPU). Only the flow is widened
+                    // (first_layer_flow) for bed adhesion; line centers stay aligned because
+                    // filler_spacing and density are unchanged.
+                    filler->angle           = suppport_angle;
+                    flow                    = support_params.first_layer_flow;
+                    filler->link_max_length = scale_t(filler_spacing * link_max_length_factor / support_params.support_density);
                 } else if (config.support_material_style.value == SupportMaterialStyle::smsOrganic) {
                     tree_supports_generate_paths(base_layer.extrusions, base_layer.polygons_to_extrude(), flow, support_params);
                     done = true;
