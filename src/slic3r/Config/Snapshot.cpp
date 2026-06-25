@@ -464,6 +464,7 @@ const Snapshot&	SnapshotDB::take_snapshot(AppConfig &app_config, Snapshot::Reaso
             } catch (const std::runtime_error & /* err */) {
             }
             snapshot.vendor_configs.emplace_back(std::move(cfg));
+            ++ it;
         }
         if (vendor_map.size() != app_config.vendors().size()) {
             app_config.set_vendors(vendor_map);

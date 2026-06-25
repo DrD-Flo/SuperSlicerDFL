@@ -4027,12 +4027,16 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
             //}
         }
         if (evt.MiddleDown() && wxGetApp().app_config->get_bool("mouse_middle_target")) {
-            // set camera target to ray pos at z=0
-            Camera& camera = wxGetApp().plater()->get_camera();
-            camera.set_target(_mouse_to_bed_3d(pos));
-            m_show_z_axle = true;
-            m_show_xy_plane = true;
-            m_dirty = true;
+            // Set the camera focus to the clicked point, but only when the click lands on
+            // actual geometry. Clicking over empty space used to project onto the z=0 bed
+            // plane, which at grazing camera angles jumps the view to a far-off point.
+            const SceneRaycaster::HitResult hit = m_scene_raycaster.hit(pos.cast<double>(), wxGetApp().plater()->get_camera(), nullptr);
+            if (hit.is_valid()) {
+                Camera& camera = wxGetApp().plater()->get_camera();
+                camera.set_target(hit.position.cast<double>());
+                m_show_xy_plane = true;
+                m_dirty = true;
+            }
         }
     }
     else if (evt.Dragging() && evt.LeftIsDown() /*&& !evt.CmdDown()*/ && m_layers_editing.state == LayersEditing::Unknown &&

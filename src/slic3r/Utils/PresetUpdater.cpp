@@ -629,6 +629,11 @@ void VendorSync::sort_available() {
             best_available_slicer_version = version.slicer_version;
         }
     }
+    // `best` is a raw pointer into available_profiles, which may have been reallocated by an
+    // emplace_back (the local-resources path populates+sorts first, then the GitHub-tags path
+    // appends+sorts) or reordered by the std::sort above. Recompute it from scratch so we never
+    // dereference a stale/dangling pointer (was a segfault in semver_compare).
+    best = nullptr;
     for (VendorAvailable &version : available_profiles) {
         if (version.slicer_version == best_available_slicer_version) {
             if (best == nullptr || best->config_version < version.config_version) {

@@ -10,6 +10,7 @@ all_repositories= [
 	"https://github.com/SuperSlicer-org/Voron-Profile.git",
 	"https://github.com/SuperSlicer-org/Creality-Profile.git",
 	"https://github.com/SuperSlicer-org/PrusaResearch-Profile.git",
+	"https://github.com/DrD-Flo/DFL-Printers-Profile.git",
 ]
 
 if len(sys.argv) < 2:
