@@ -3651,7 +3651,6 @@ void GLCanvas3D::on_render_timer(wxTimerEvent& evt)
     // m_dirty = true; 
     // wxWakeUpIdle(); 
     if (still_mouse_down && !m_show_z_axle && !m_show_xy_plane) {
-            m_show_z_axle = true;
             m_show_xy_plane = true;
             m_dirty = true;
     }
@@ -4165,7 +4164,7 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
                     camera.set_target(camera.get_target() + orig - cur_pos);
                 } else {
                     if (!evt.ShiftDown()) {
-                        m_show_z_axle = true;
+                        m_show_z_axle = false;
                         m_show_xy_plane = false;
                         const Vec3d cur_pos = _mouse_to_bed_3d(pos);
                         const Vec3d orig = _mouse_to_bed_3d(m_mouse.drag.start_position_2D);
