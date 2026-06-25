@@ -165,8 +165,9 @@ jobs:
     - name: Generate installer version
       shell: powershell
       run: |
-        $fullVersion = (Get-Content version.inc | Select-String -Pattern 'set\(SLIC3R_VERSION_FULL \"(.*?)\"\)' | ForEach-Object { $_.Matches.Groups[1].Value })
-        $env:InstallerVersion = "$fullVersion" -replace '\.0', '.'
+        # MSI Product/@Version must be x.x.x.x with each field 0-65534. Use SLIC3R_RC_VERSION_DOTS
+        # (resolved 4-part numeric, e.g. 2.7.63.0); SLIC3R_VERSION_FULL is a CMake template + -beta tag.
+        $env:InstallerVersion = (Get-Content version.inc | Select-String -Pattern 'set\(SLIC3R_RC_VERSION_DOTS \"(.*?)\"\)' | ForEach-Object { $_.Matches.Groups[1].Value })
         echo "InstallerVersion=$env:InstallerVersion" >> $env:GITHUB_ENV
         $env:ReleaseSuffix = ""
         echo "ReleaseSuffix=$env:ReleaseSuffix" >> $env:GITHUB_ENV
