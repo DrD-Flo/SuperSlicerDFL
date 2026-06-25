@@ -167,7 +167,11 @@ boost::filesystem::path clean_absolute_path(const boost::filesystem::path &path)
     // note: lexically_normal() already do make_preferred()
     fixpath = fixpath.lexically_normal();
 #ifndef _WIN32
-    fixpath = boost::filesystem::canonical(fixpath);
+    // canonical() throws (No such file or directory) if the path does not exist yet, e.g. a
+    // per-version data dir about to be created on first run. weakly_canonical() resolves the
+    // existing leading portion and lexically-normalizes the non-existent remainder, matching the
+    // graceful non-existent-path handling the WIN32 branch below already implements.
+    fixpath = boost::filesystem::weakly_canonical(fixpath);
 #else
     if (!fixpath.empty() && fixpath.string().front() != '\\') {
         if (boost::filesystem::exists(fixpath)) {

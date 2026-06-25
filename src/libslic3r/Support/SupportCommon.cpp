@@ -2118,7 +2118,12 @@ void generate_support_toolpaths(
                     bool raft_contact      = interface_layer_type == InterfaceLayerType::RaftContact;
                     //FIXME Bottom interfaces are extruded with the briding flow. Some bridging layers have its height slightly reduced, therefore
                     // the bridging flow does not quite apply. Reduce the flow to area of an ellipse? (A = pi * a * b)
-                    Fill *filler = interface_layer_type == InterfaceLayerType::TopContact ?    filler_top_interface.get() :
+                    // When there are no interface layers, top/bottom contacts and intermediate
+                    // interfaces are drawn "as base": use the base support fill pattern (e.g.
+                    // concentric) instead of the hardcoded rectilinear intermediate filler, so the
+                    // bottom-most (first) layer of a support column matches the body above it.
+                    Fill *filler = interface_as_base ?                                          filler_support.get() :
+                                   interface_layer_type == InterfaceLayerType::TopContact ?    filler_top_interface.get() :
                                    interface_layer_type == InterfaceLayerType::BottomContact ? filler_bottom_interface.get():
                                                                                                filler_intermediate_interface.get();
                     if (raft_contact)

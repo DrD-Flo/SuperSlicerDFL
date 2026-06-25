@@ -626,7 +626,13 @@ bool AppConfig::init_root_data_dir(const std::string &default_app_data_path) {
 
 void AppConfig::set_new_installation(ConfigurationEntry new_install){
     m_data_dir = new_install;
-    set_data_dir(m_data_dir.get_config_path(this->get_root_data_dir()).string());
+    boost::filesystem::path config_path = m_data_dir.get_config_path(this->get_root_data_dir());
+    // The "New configuration" choice in choose_app_dir() does not pre-create the per-version
+    // config directory (only the "copy/reuse existing" choices do). Ensure it exists before we
+    // point the data dir at it, otherwise a fresh install (no prior config) crashes when the
+    // not-yet-created directory is canonicalized. create_directories() is a no-op if it exists.
+    boost::filesystem::create_directories(config_path);
+    set_data_dir(config_path.string());
     this->m_all_slic3r_installed.push_back(new_install);
     this->save_installed_repo();
 }
