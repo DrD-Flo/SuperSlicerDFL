@@ -157,6 +157,15 @@ jobs:
         $licenseContent = Get-Content ..\LICENSE -Raw
         $rtfContent = "{\rtf1\ansi\deff0 {\fonttbl {\f0 Times New Roman;}}{\f0\fs20 " + $licenseContent.Replace('\', '\\').Replace("`n", "\par ") + "}}"
         $rtfContent | Out-File -FilePath "package\LICENSE.rtf" -Encoding ASCII
+    - name: Remove portable marker from MSI payload
+      # The empty "configuration" folder marks a *portable* install (config/snapshots stored next
+      # to the exe). A perMachine MSI installs into Program Files, which is not writable by standard
+      # users, so shipping the marker there causes "Access is denied" at runtime. Drop it before
+      # harvesting so MSI installs use AppData. The portable zip artifact (uploaded above) keeps it.
+      shell: cmd
+      working-directory: ./build
+      run: |
+        if exist package\configuration rmdir /S /Q package\configuration
     - name: Harvest files for MSI
       shell: cmd
       working-directory: ./build

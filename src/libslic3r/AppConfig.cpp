@@ -584,16 +584,40 @@ bool AppConfig::init_root_data_dir(const std::string &default_app_data_path) {
     // Windows : "C:\Users\username\AppData\Roaming\Slic3r" or "C:\Documents and Settings\username\Application
     // Data\Slic3r" Mac : "~/Library/Application Support/Slic3r"
 
-    // check if there is a "configuration" directory
+    // A "configuration" directory next to the executable/resources switches SuperSlicer into
+    // "portable" mode: config, profiles and snapshots are stored alongside the app instead of in
+    // the user's AppData. That only makes sense when the location is actually writable. A perMachine
+    // MSI install drops the app (and an empty marker "configuration" folder) into Program Files,
+    // which is UAC-protected for standard users; using it as the data root then fails later with
+    // "Access is denied" (e.g. when taking a config snapshot before a vendor profile update). So only
+    // honor a local "configuration" folder when we can really write to it, otherwise fall back to the
+    // system AppData location.
+    auto usable_portable_dir = [](const boost::filesystem::path &dir) -> bool {
+        boost::system::error_code ec;
+        if (!boost::filesystem::exists(dir, ec) || !boost::filesystem::is_directory(dir, ec))
+            return false;
+        // Probe writability by creating (and removing) a temporary sub-directory. This is the exact
+        // operation that fails for the UAC-protected Program Files case, and going through
+        // boost::filesystem keeps it Unicode-safe for non-ASCII install paths on Windows.
+        boost::filesystem::path probe = dir / ".write_test.tmp";
+        boost::filesystem::remove_all(probe, ec); // clean any stale leftover, ignore errors
+        bool writable = boost::filesystem::create_directory(probe, ec) && !ec;
+        boost::filesystem::remove_all(probe, ec);
+        return writable;
+    };
+
+    // check if there is a writable "configuration" directory
 #ifdef __APPLE__
     //... next to the app bundle on MacOs
-    if (boost::filesystem::exists(boost::filesystem::path{resources_dir()} / ".." / ".." / ".." / "configuration")) {
-        m_data_dir_root = ((boost::filesystem::path{resources_dir()} / ".." / ".." / ".." / "configuration").string());
+    if (boost::filesystem::path apple_cfg = boost::filesystem::path{resources_dir()} / ".." / ".." / ".." / "configuration";
+        usable_portable_dir(apple_cfg)) {
+        m_data_dir_root = apple_cfg.string();
     } else
 #endif
         //... next to the resources directory
-        if (boost::filesystem::exists(boost::filesystem::path{resources_dir()} / ".." / "configuration")) {
-        m_data_dir_root = ((boost::filesystem::path{resources_dir()} / ".." / "configuration").string());
+        if (boost::filesystem::path local_cfg = boost::filesystem::path{resources_dir()} / ".." / "configuration";
+            usable_portable_dir(local_cfg)) {
+        m_data_dir_root = local_cfg.string();
     } else {
         // use system's data dir location
         m_data_dir_root = (default_app_data_path);
