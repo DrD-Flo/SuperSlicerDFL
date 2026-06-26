@@ -655,8 +655,14 @@ void PresetUpdater::end_updating() {
             this->callback_update_preset = [](int) {};
         }
         // nobody increase it and the min is 0 so no race condition here.
-        // end of synhc, emit callback
-        saved_callback_update_preset(int(get_profile_count_to_update()));
+        // end of synch, emit callback. end_updating() can run on a background Http thread (the GitHub
+        // sync on_complete callback), but this callback updates the GUI (busy window, dialog) which
+        // must run on the main thread -- marshal it with CallAfter. Was a "Must only be used from the
+        // main thread" SIGTRAP when clicking "Force check for updates".
+        const int nb_to_update = int(get_profile_count_to_update());
+        GUI::wxGetApp().CallAfter([saved_callback_update_preset, nb_to_update]() {
+            saved_callback_update_preset(nb_to_update);
+        });
         //wxCommandEvent *evt = new wxCommandEvent(EVT_CONFIG_UPDATER_SYNC_DONE);
         //evt->SetInt(profiles_to_update);
         //evt_handler->QueueEvent(evt);

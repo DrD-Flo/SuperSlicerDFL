@@ -1084,10 +1084,15 @@ UpdateConfigDialog::UpdateConfigDialog(wxWindow *parent, PresetUpdater &data, co
                               hscroll->GetBestVirtualSize().GetHeight() + 180)));
 
     wxGetApp().UpdateDlgDarkUI(this);
+#ifndef __WXOSX__
+    // On macOS, SetBackgroundColour on a native wxButton renders it green but stops it firing
+    // wxEVT_BUTTON, so the "Upgrade to X" button looked green and did nothing. Apply the colour cue
+    // only where it's click-safe (Windows/Linux); macOS keeps the normal, working native button.
     wxColour pale_green(127,250,127);
     for (wxButton *bt : bts_green_color) {
         bt->SetBackgroundColour(pale_green);
     }
+#endif
     this->CenterOnParent();
 }
 
@@ -1099,10 +1104,13 @@ void UpdateConfigDialog::rebuild_ui() {
     //don't fit to not change size
 
     wxGetApp().UpdateDlgDarkUI(this);
+#ifndef __WXOSX__
+    // See build_ui(): SetBackgroundColour breaks native wxButton clicks on macOS.
     wxColour pale_green(127,250,127);
     for (wxButton *bt : bts_green_color) {
         bt->SetBackgroundColour(pale_green);
     }
+#endif
     Layout();
     Thaw();
     Refresh();
