@@ -65,7 +65,6 @@ done
         mkdir pack/@SLIC3R_APP_KEY@
         mkdir pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app
         mkdir pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents
-        mkdir pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/_CodeSignature
         mkdir pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/Frameworks
         mkdir pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/MacOS
 
@@ -178,6 +177,10 @@ done
             otool -L pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app/Contents/MacOS/@SLIC3R_APP_KEY@
             echo "END otool"
         fi
+
+        echo "codesign (ad-hoc):"
+        codesign --force --deep --sign - pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app
+        codesign --verify --deep --strict pack/@SLIC3R_APP_KEY@/@SLIC3R_APP_KEY@.app && echo "codesign ok" || echo "codesign verify failed"
 #     } &> $ROOT/Build.log # Capture all command output
     echo -e "\n ... done\n"
 
