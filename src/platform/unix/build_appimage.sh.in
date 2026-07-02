@@ -10,8 +10,9 @@
 # 20 Nov 2023, wschadow, minor changes
 #
 
-#old fuse2 tool APPIMAGETOOLURL="https://github.com/AppImage/AppImageKit/releases/latest/download/appimagetool-x86_64.AppImage"
-APPIMAGETOOLURL="https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage"
+ARCH=$(uname -m)
+#old fuse2 tool APPIMAGETOOLURL="https://github.com/AppImage/AppImageKit/releases/latest/download/appimagetool-${ARCH}.AppImage"
+APPIMAGETOOLURL="https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-${ARCH}.AppImage"
 
 APP_IMAGE="@SLIC3R_APP_KEY@_ubu64.AppImage"
 
@@ -36,6 +37,6 @@ MimeType=model/stl;application/vnd.ms-3mfdocument;application/prs.wavefront-obj;
 EOF
 
 ../appimagetool.AppImage .
-mv @SLIC3R_APP_KEY@-x86_64.AppImage ${APP_IMAGE}
+mv @SLIC3R_APP_KEY@-${ARCH}.AppImage ${APP_IMAGE}
 chmod +x ${APP_IMAGE}
 rm -fr usr
