@@ -494,7 +494,11 @@ elseif(TARGET expat::expat)
     target_link_libraries(libexpat INTERFACE expat::expat)
 endif ()
 
-find_package(PNG REQUIRED)
+# Force Module mode (CMake's bundled FindPNG.cmake): some distros (e.g. Debian 13)
+# ship a system PNGConfig.cmake, which would otherwise be preferred due to
+# CMAKE_FIND_PACKAGE_PREFER_CONFIG and resolve to the system libpng instead of
+# the vendored static libpng built with PNG_PREFIX=prusaslicer_.
+find_package(PNG REQUIRED MODULE)
 
 set(OpenGL_GL_PREFERENCE "LEGACY")
 find_package(OpenGL REQUIRED)
