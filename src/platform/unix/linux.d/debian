@@ -2,6 +2,7 @@
 REQUIRED_DEV_PACKAGES=(
     appstream
     autoconf
+    automake
     build-essential
     cmake
 	desktop-file-utils
