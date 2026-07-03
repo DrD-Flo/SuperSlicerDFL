@@ -3316,11 +3316,20 @@ void PrintObject::replaceSurfaceType(SurfaceType st_to_replace, SurfaceType st_r
     BOOST_LOG_TRIVIAL(info) << "overextrude over Bridge...";
     coord_t scaled_resolution = std::max(SCALED_EPSILON, scale_t(print()->config().resolution.value));
 
+    // check if a filament modifies the over-bridge flow on top of the print setting
+    const ConfigOptionPercents &filament_ratio = print()->config().filament_over_bridge_flow_ratio;
+    bool filament_over_bridge_mod = false;
+    for (size_t extruder_idx = 0; extruder_idx < filament_ratio.size(); ++extruder_idx)
+        if (filament_ratio.get_abs_value(extruder_idx, 1.) != 1.) {
+            filament_over_bridge_mod = true;
+            break;
+        }
+
     for (size_t region_id = 0; region_id < this->num_printing_regions(); ++region_id) {
         const PrintRegion& region = this->printing_region(region_id);
 
         // skip over-bridging in case there are no modification
-        if (region.config().over_bridge_flow_ratio.get_abs_value(1) == 1) continue;
+        if (region.config().over_bridge_flow_ratio.get_abs_value(1) == 1 && !filament_over_bridge_mod) continue;
 
         for (LayerPtrs::iterator layer_it = m_layers.begin(); layer_it != m_layers.end(); ++layer_it) {
             // skip first layer

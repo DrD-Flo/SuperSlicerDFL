@@ -411,6 +411,9 @@ std::vector<SurfaceFill> group_fills(const Layer &layer, const LayerSliceIsland&
                 //adjust spacing/density (to over-extrude when needed)
                 if (surface.has_mod_overBridge()) {
                     params.density = float(region_config.over_bridge_flow_ratio.get_abs_value(1));
+                    // apply the per-filament modifier on top of the print setting, like filament_fill_top_flow_ratio
+                    if (params.extruder > 0)
+                        params.density *= float(layer.object()->print()->config().filament_over_bridge_flow_ratio.get_abs_value(params.extruder - 1, 1.));
                 }
 
                 //note: same as getRoleFromSurfaceType()

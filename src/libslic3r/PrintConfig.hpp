@@ -1157,6 +1157,7 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionFloatsOrPercents,    filament_first_layer_pa_over_raft))
     ((ConfigOptionFloatsOrPercents,    filament_gap_fill_pa))
     ((ConfigOptionFloatsOrPercents,    filament_infill_pa))
+    ((ConfigOptionPercents,            filament_over_bridge_flow_ratio))
     ((ConfigOptionFloatsOrPercents,    filament_ironing_pa))
     ((ConfigOptionFloats,              filament_load_time))
     ((ConfigOptionFloats,              filament_loading_speed))

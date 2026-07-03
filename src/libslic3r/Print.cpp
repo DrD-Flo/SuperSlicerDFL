@@ -394,6 +394,9 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver& /* ne
             steps.emplace_back(psSkirtBrim);
         } else if (opt_key == "seam_gap" || opt_key == "seam_gap_external") {
             osteps.emplace_back(posInfill);
+        } else if (opt_key == "filament_over_bridge_flow_ratio") {
+            osteps.emplace_back(posPrepareInfill);
+            osteps.emplace_back(posInfill);
         }
         else if (opt_key == "avoid_crossing_curled_overhangs")
             osteps.emplace_back(posEstimateCurledExtrusions);
