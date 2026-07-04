@@ -4063,6 +4063,33 @@ bool GUI_App::run_wizard(ConfigWizard::RunReason reason, ConfigWizard::StartPage
             return false;
     }
 #endif
+    // Auto-install the DFL-Printers vendor bundle and pre-check only the Voron 300 0.6mm
+    // variant so a fresh launch lands on a ready-to-use setup, without the user having to
+    // click "Install x.y.z" in the bundle dialog or tick that checkbox in the wizard.
+    if (bypass_bundle_install != RunVendorBundleManage::RVBM_NEVER) {
+        static const std::string dfl_vendor_id = "DFL-Printers";
+        static const std::string dfl_default_model_id = "Voron_300";
+        static const std::string dfl_default_variant = "0.6";
+        this->preset_updater->reload_all_vendors();
+        std::lock_guard<std::recursive_mutex> guard(this->preset_updater->all_vendors_mutex);
+        auto it = this->preset_updater->all_vendors.find(dfl_vendor_id);
+        if (it != this->preset_updater->all_vendors.end() && !it->second.is_installed) {
+            const VendorAvailable *to_install = it->second.best;
+            if (to_install == nullptr) {
+                for (const VendorAvailable &vendor_loc : it->second.available_profiles) {
+                    if (vendor_loc.local_file.find(Slic3r::resources_dir()) != std::string::npos) {
+                        to_install = &vendor_loc;
+                        break;
+                    }
+                }
+            }
+            if (to_install != nullptr) {
+                this->preset_updater->install_vendor(dfl_vendor_id, *to_install, [](const std::string &) {});
+                app_config->set_variant(dfl_vendor_id, dfl_default_model_id, dfl_default_variant, true);
+                app_config->save();
+            }
+        }
+    }
 #ifndef ALLOW_PRUSA_FIRST
     // if nothing installed, show the installation dialog first
     bool is_synch = this->preset_updater->is_synch;
