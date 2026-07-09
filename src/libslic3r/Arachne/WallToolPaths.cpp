@@ -34,7 +34,7 @@ WallToolPaths::WallToolPaths(const Polygons& outline, const coord_t bead_spacing
     , inset_count(inset_count)
     , wall_0_inset(wall_0_inset)
     , layer_height(layer_height)
-    , print_thin_walls(Slic3r::Arachne::fill_outline_gaps)
+    , print_thin_walls(print_region_config.gap_fill_enabled.value)
     , min_feature_size(scaled<coord_t>(print_region_config.min_feature_size.value))
     , min_bead_width(scaled<coord_t>(print_region_config.min_bead_width.value))
     , small_area_length(static_cast<double>(bead_width_0) / 2.)
