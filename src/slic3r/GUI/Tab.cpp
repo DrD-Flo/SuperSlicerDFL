@@ -48,6 +48,9 @@
 #include "PresetComboBoxes.hpp"
 #include "PresetHints.hpp"
 #include "slic3r/Utils/Http.hpp"
+#ifdef __WXOSX__
+#include "slic3r/Utils/MacDarkMode.hpp"
+#endif
 #include "slic3r/Utils/PrintHost.hpp"
 #include "slic3r/Utils/Serial.hpp"
 #include "SavePresetDialog.hpp"
@@ -377,6 +380,12 @@ void Tab::create_preset_tab()
     m_page_view->SetSizer(m_page_sizer);
     m_page_view->SetScrollbars(1, 20, 1, 2);
     m_hsizer->Add(m_page_view, 1, wxEXPAND | wxLEFT, 5);
+#ifdef __WXOSX__
+    // Since macOS 14 subviews are no longer clipped to their parent's bounds,
+    // so the page content scrolled out of view would be drawn over the header
+    // (preset combo, mode buttons, tab bar) above the scrolled window.
+    mac_set_clips_to_bounds(m_page_view->GetHandle());
+#endif
 
     m_btn_compare_preset->Bind(wxEVT_BUTTON, ([this](wxCommandEvent e) { compare_preset(); }));
     m_btn_save_preset->Bind(wxEVT_BUTTON, ([this](wxCommandEvent e) {

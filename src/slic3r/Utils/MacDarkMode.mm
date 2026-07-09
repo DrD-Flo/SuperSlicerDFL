@@ -33,6 +33,21 @@ double mac_max_scaling_factor()
     return scaling;
 }
 
+void mac_set_clips_to_bounds(void* view)
+{
+#if defined(MAC_OS_VERSION_14_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_VERSION_14_0
+    // Since macOS 14 views no longer clip their drawing to their bounds by
+    // default, which lets the content of scrolled windows be drawn over the
+    // sibling controls above them.
+    if (@available(macOS 14.0, *)) {
+        NSView* nsview = (__bridge NSView*)view;
+        nsview.clipsToBounds = YES;
+    }
+#else
+    (void)view;
+#endif
+}
+
 }
 }
 
