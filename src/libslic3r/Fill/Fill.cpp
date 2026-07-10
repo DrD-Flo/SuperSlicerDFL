@@ -368,16 +368,17 @@ std::vector<SurfaceFill> group_fills(const Layer &layer, const LayerSliceIsland&
                     params.density = 1.f;
                     params.pattern = region_config.solid_fill_pattern.value;
                     params.connection = region_config.infill_connection_solid.value;
-                    params.add_gap_fill = region_config.infill_filled_solid.value;
+                    // gap_fill_enabled is the master switch: when off, no gap fill anywhere, not even in infill.
+                    params.add_gap_fill = region_config.gap_fill_enabled.value && region_config.infill_filled_solid.value;
                     if (surface.has_pos_top()) {
                         params.pattern = region_config.top_fill_pattern.value;
                         params.connection = region_config.infill_connection_top.value;
-                        params.add_gap_fill = region_config.infill_filled_top.value;
+                        params.add_gap_fill = region_config.gap_fill_enabled.value && region_config.infill_filled_top.value;
                     }
                     if (surface.has_pos_bottom()) {
                         params.pattern = region_config.bottom_fill_pattern.value;
                         params.connection = region_config.infill_connection_bottom.value;
-                        params.add_gap_fill = region_config.infill_filled_bottom.value;
+                        params.add_gap_fill = region_config.gap_fill_enabled.value && region_config.infill_filled_bottom.value;
                     }
                     //FIXME for non-thick bridges, shall we allow a bottom surface pattern?
                     if (is_bridge) {

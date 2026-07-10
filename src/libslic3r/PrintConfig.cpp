@@ -3212,7 +3212,9 @@ void PrintConfigDef::init_fff_params()
     def->full_label = L("Enable Gap fill");
     def->category = OptionCategory::perimeter;
     def->tooltip = L("Enable gap fill algorithm. It will extrude small lines between perimeters "
-        "when there is not enough space for another perimeter or an infill.");
+        "when there is not enough space for another perimeter or an infill."
+        "\nThis is the master switch for all gap fill: when disabled, it also disables the "
+        "'GapFill for ... infill areas' options and, with the Arachne generator, the widening of too-thin features.");
     def->mode = comAdvancedE | comPrusa;
     def->aliases = { "gap_fill" }; //superslicer 2.3 or older
     def->set_default_value(new ConfigOptionBool(true));
