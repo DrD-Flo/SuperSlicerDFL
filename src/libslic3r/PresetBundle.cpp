@@ -1909,9 +1909,11 @@ void PresetBundle::update_compatible(PresetSelectCompatibleType select_other_pri
                 return 0;
             int match_quality = PreferedProfileMatch::operator()(preset);
             if (match_quality < std::numeric_limits<int>::max()) {
-                match_quality += 1;
+                // An explicit default_print_profile name match must outrank a mere layer height match,
+                // otherwise a same-layer-height profile of a different family hijacks the selection.
+                match_quality = 1 + match_quality * 100;
                 if (m_prefered_layer_height > 0. && std::abs(preset.config.opt_float("layer_height") - m_prefered_layer_height) < 0.0005)
-                    match_quality *= 10;
+                    match_quality += 10;
             }
             return match_quality;
         }

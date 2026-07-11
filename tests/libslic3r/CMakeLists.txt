@@ -62,3 +62,10 @@ endif()
 
 # catch_discover_tests(${_TEST_NAME}_tests TEST_PREFIX "${_TEST_NAME}: ")
 add_test(${_TEST_NAME}_tests ${_TEST_NAME}_tests ${CATCH_EXTRA_ARGS})
+
+# Standalone executable so the preset bundle regression tests stay buildable
+# independently of the API drift accumulated in the main suite above.
+add_executable(preset_bundle_tests test_preset_bundle.cpp)
+target_link_libraries(preset_bundle_tests test_common libslic3r)
+set_property(TARGET preset_bundle_tests PROPERTY FOLDER "tests")
+add_test(preset_bundle_tests preset_bundle_tests ${CATCH_EXTRA_ARGS})
