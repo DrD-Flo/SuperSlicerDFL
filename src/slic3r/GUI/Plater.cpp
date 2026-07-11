@@ -6734,6 +6734,9 @@ bool Plater::load_files(const wxArrayString& filenames, bool delete_after_load/*
                 if ((boost::algorithm::iends_with(filename, ".3mf") && !(is_project_3mf(it->string()) || is_project_bambu_3mf(it->string()))) ||
                     (boost::algorithm::iends_with(filename, ".amf") && !boost::algorithm::iends_with(filename, ".zip.amf")))
                     load_type = ProjectDropDialog::LoadType::LoadGeometry;
+                else if (wxGetApp().get_mode() < comExpert)
+                    // Only expert mode offers opening as a project / importing the config; use File > Open Project for that.
+                    load_type = ProjectDropDialog::LoadType::LoadGeometry;
                 else {
                     if (wxGetApp().app_config->get_bool("show_drop_project_dialog")) {
                         ProjectDropDialog dlg(filename);

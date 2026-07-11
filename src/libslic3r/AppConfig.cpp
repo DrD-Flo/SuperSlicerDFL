@@ -141,7 +141,7 @@ void AppConfig::set_defaults()
             set("show_drop_project_dialog", "1");
 
         if (get("drop_project_action").empty())
-            set("drop_project_action", "1");
+            set("drop_project_action", "2");
 
         if (get("freecad_path").empty() || get("freecad_path") == ".") {
             set("freecad_path", ".");
