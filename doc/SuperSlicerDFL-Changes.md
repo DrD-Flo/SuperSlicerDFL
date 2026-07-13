@@ -95,6 +95,32 @@ work, not fork-specific changes, and are excluded below.
   silently skipping all Linux artifacts because the workflow looked for
   `SuperSlicerDFL-linux-x64-GTK3.tgz` while the build produced `SuperSlicer-linux-x64-GTK3.tgz`).
 - **`create_release.py`**: fixed the release script reusing an existing output directory across runs.
+- **In-app application updates**: wired the built-in app updater (inherited from PrusaSlicer via
+  upstream) to the DFL fork so users no longer download installers manually. `SLIC3R_GITHUB` /
+  `SLIC3R_DOWNLOAD` in `version.inc` now point at `DrD-Flo/SuperSlicerDFL`, so the startup check and
+  the "Check for Application Updates" menu query this fork's GitHub releases. Release-tag parsing
+  (`AppUpdater.cpp`) tolerates prefixed tags (e.g. `summer-2.7.63.0`), asset matching is
+  case-insensitive (matches `SuperSlicer-windows.msi` / `SuperSlicer-macOS-*.dmg`), Apple Silicon
+  detection uses `__aarch64__` (the old `__arm__` check made arm Macs download the intel dmg), and the
+  post-download Finder open uses the actual dmg volume name instead of a hardcoded
+  `/Volumes/PrusaSlicer`.
+
+  Release requirements for the updater to work:
+  - **Versioning scheme (upstream parity)**: the first three components track the upstream SuperSlicer
+    base (`2.7.63`); the fourth component is the DFL release counter. Bump only the fourth component
+    (`2.7.63.1`, `2.7.63.2`, ...) in `SLIC3R_RC_VERSION` / `SLIC3R_RC_VERSION_DOTS` for each DFL
+    release, and reset it to `.0` when merging a newer upstream base. This keeps the fork's version
+    from ever passing upstream's, while still giving the updater a strictly increasing version.
+    Both comparisons involved handle this: the app's semver compare treats `2.7.63 < 2.7.63.1 <
+    2.7.64.0`, and the MSI upgrades across fourth-component-only bumps because Windows Installer
+    ignores the fourth field and `winInstaller.wxs.in` sets `AllowSameVersionUpgrades="yes"`.
+  - Never re-release the same version under a `-2` tag suffix: the parser reads `-N` as a semver
+    prerelease, which sorts below the plain version, so users would never be offered it. Bump the
+    fourth component instead.
+  - Prefer plain numeric tags (e.g. `2.7.63.1`); prefixed tags still parse but keep the version part
+    canonical.
+  - Keep the release asset naming: `*windows*.msi`, `*macOS-arm*.dmg`, `*macOS-intel*.dmg` (matched
+    case-insensitively on `win`/`msi`, `macos`/`arm`/`dmg`).
 
 ## 5. Upstream hardening carried ahead of a tagged release
 

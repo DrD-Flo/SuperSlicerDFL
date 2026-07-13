@@ -10,6 +10,7 @@
 #include <thread>
 #include <string>
 
+#include <boost/algorithm/string.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/log/trivial.hpp>
 #include <boost/nowide/fstream.hpp>
@@ -49,7 +50,7 @@ namespace {
 		std::string msg;
 		bool res = GUI::create_process(path, std::wstring(), msg);
 		if (!res) {
-			std::string full_message = GUI::format(_u8L("Running downloaded instaler of %1% has failed:\n%2%"), SLIC3R_APP_NAME, msg);
+			std::string full_message = GUI::format(_u8L("Running downloaded installer of %1% has failed:\n%2%"), SLIC3R_APP_NAME, msg);
 			BOOST_LOG_TRIVIAL(error) << full_message; // lm: maybe UI error msg?  // dk: bellow. (maybe some general show error evt would be better?)
 			wxCommandEvent* evt = new wxCommandEvent(EVT_SLIC3R_APP_DOWNLOAD_FAILED);
 			evt->SetString(full_message);
@@ -76,8 +77,8 @@ namespace {
 			// attach downloaded dmg file
             const char* argv1[] = { "hdiutil", "attach", path.string().c_str(), nullptr };
             ::wxExecute(const_cast<char**>(argv1), wxEXEC_ASYNC, nullptr);
-            // open inside attached as a folder in finder
-            const char* argv2[] = { "open", "/Volumes/PrusaSlicer", nullptr };
+            // open inside attached as a folder in finder (volume name = SLIC3R_APP_KEY, set by BuildMacOSImage.sh)
+            const char* argv2[] = { "open", "/Volumes/" SLIC3R_APP_KEY, nullptr };
 			::wxExecute(const_cast<char**>(argv2), wxEXEC_ASYNC, nullptr);
 			return true;
 		}
@@ -376,9 +377,10 @@ void AppUpdater::priv::version_check(const std::string& version_check_url)
 // github verison
 #if VERSION_FROM_GITHUB
 //parse the string, if it doesn't contain a valid version string, return invalid version.
+// Uses regex_search so tags with a prefix (e.g. "summer-2.7.63.0" or "v2.8.0") still yield a version.
 Semver get_version(const std::string &str, const std::regex &regexp) {
 	std::smatch match;
-	if (std::regex_match(str, match, regexp)) {
+	if (std::regex_search(str, match, regexp)) {
 		std::string version_cleaned = match[0];
 		const std::optional<Semver> version = Semver::parse(version_cleaned);
 		if (version.has_value()) {
@@ -888,21 +890,23 @@ void AppUpdater::sync_download()
             }
             for (auto json_asset : root) {
                 std::string name = json_asset.second.get<std::string>("name");
+                // match case-insensitively: release assets use mixed case (e.g. "SuperSlicer-macOS-arm.dmg")
+                const std::string name_lc = boost::algorithm::to_lower_copy(name);
 #ifdef _WIN32
                 //windows
-                if (name.find("win") != std::string::npos && 
-                    (input_data.replace_current ? name.find("zip") != std::string::npos : name.find("msi") != std::string::npos))
+                if (name_lc.find("win") != std::string::npos &&
+                    (input_data.replace_current ? name_lc.find("zip") != std::string::npos : name_lc.find("msi") != std::string::npos))
 #elif __APPLE__
                 //macos
-#if defined(__arm__) || defined(_M_ARM)
-                if (name.find("macos") != std::string::npos && name.find("arm") != std::string::npos && name.find("dmg") != std::string::npos)
+#if defined(__aarch64__) || defined(__arm64__) || defined(_M_ARM64)
+                if (name_lc.find("macos") != std::string::npos && name_lc.find("arm") != std::string::npos && name_lc.find("dmg") != std::string::npos)
 #else
-                if (name.find("macos") != std::string::npos && name.find("arm") == std::string::npos && name.find("dmg") != std::string::npos)
+                if (name_lc.find("macos") != std::string::npos && name_lc.find("arm") == std::string::npos && name_lc.find("dmg") != std::string::npos)
 #endif
 #else
                 //linux
-                if (name.find("ubuntu") != std::string::npos ||
-                    name.find("linux") != std::string::npos && name.find("appimage") != std::string::npos)
+                if (name_lc.find("ubuntu") != std::string::npos ||
+                    name_lc.find("linux") != std::string::npos && name_lc.find("appimage") != std::string::npos)
 #endif
                 {
                     input_data.url = json_asset.second.get<std::string>("browser_download_url");
