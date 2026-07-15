@@ -48,6 +48,12 @@ work, not fork-specific changes, and are excluded below.
 - **Concentric support pattern**: added `smpConcentric` as a new `support_material_pattern` option
   (alongside Rectilinear / Rectilinear grid / Honeycomb), generating support material as concentric
   contours instead of a linear/grid infill.
+- **`internal_bridge_over_infill`**: new per-region bool (default on, matching upstream behavior) that
+  controls whether the first solid layer laid over sparse infill is converted into internal bridge
+  infill (`PrintObject::bridge_over_infill()`).
+  When disabled, such surfaces print as regular solid infill instead.
+  Exposed in Print Settings > Infill > Advanced, saved with print presets, and honored per
+  object/volume via modifier settings.
 
 ## 3. GUI fixes
 

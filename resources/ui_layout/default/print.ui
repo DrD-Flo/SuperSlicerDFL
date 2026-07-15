@@ -247,6 +247,7 @@ group:sidetext_width$5:Advanced
 		setting:solid_infill_below_width
 		setting:internal_bridge_min_width
 	end_line
+	setting:internal_bridge_over_infill
 	line:Anchor solid infill by X mm
 		setting:label_width$8:width$5:external_infill_margin
 		setting:label_width$6:width$5:bridged_infill_margin

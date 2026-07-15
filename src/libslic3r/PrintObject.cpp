@@ -1585,6 +1585,7 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "infill_only_where_needed"
             || opt_key == "internal_bridge_expansion"
             || opt_key == "internal_bridge_min_width"
+            || opt_key == "internal_bridge_over_infill"
             || opt_key == "ironing"
             || opt_key == "ironing_type"
             || opt_key == "over_bridge_flow_ratio"
@@ -3391,6 +3392,20 @@ void PrintObject::bridge_over_infill()
 {
     BOOST_LOG_TRIVIAL(info) << "Bridge over infill - Start" << log_memory_info();
 
+    {
+        bool has_region_with_bridge_over_infill = false;
+        for (size_t region_idx = 0; region_idx < this->num_printing_regions(); ++region_idx) {
+            if (this->printing_region(region_idx).config().internal_bridge_over_infill.value) {
+                has_region_with_bridge_over_infill = true;
+                break;
+            }
+        }
+        if (!has_region_with_bridge_over_infill) {
+            BOOST_LOG_TRIVIAL(info) << "Bridge over infill - End (disabled for all regions)" << log_memory_info();
+            return;
+        }
+    }
+
     struct CandidateSurface
     {
         CandidateSurface(const Surface     *original_surface,
@@ -3498,6 +3513,8 @@ void PrintObject::bridge_over_infill()
                 }
 
                 for (const LayerRegion *region : layer->regions()) {
+                    if (!region->region().config().internal_bridge_over_infill.value)
+                        continue;
                     coord_t region_internal_bridge_min_width = scale_t(region->region().config().internal_bridge_min_width.get_abs_value(unscaled(spacing)));
                     SurfacesPtr region_internal_solids = region->fill_surfaces().filter_by_type(stPosInternal | stDensSolid);
                     for (const Surface *srf : region_internal_solids) {

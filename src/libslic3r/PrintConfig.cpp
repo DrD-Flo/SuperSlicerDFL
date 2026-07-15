@@ -3869,6 +3869,16 @@ void PrintConfigDef::init_fff_params()
     def->mode = comExpert | comSuSi;
     def->set_default_value(new ConfigOptionFloatOrPercent(300, true));
 
+    def = this->add("internal_bridge_over_infill", coBool);
+    def->label = L("Bridge over sparse infill");
+    def->category = OptionCategory::infill;
+    def->tooltip = L("When a solid surface is created over a sparse infill area, print its first layer as an internal bridge"
+                    " (bridge flow, speed and fan) so it can span the gaps between the infill lines."
+                    "\nIf disabled, such surfaces are printed as regular solid infill, which may sag into the infill gaps:"
+                    " consider a denser infill or a dense infill layer ('infill_dense') to support it instead.");
+    def->mode = comExpert | comSuSi;
+    def->set_default_value(new ConfigOptionBool(true));
+
     def = this->add("internal_bridge_speed", coFloatOrPercent);
     def->label = L("Internal Bridge Infill speed");
     def->category = OptionCategory::speed;
@@ -10614,6 +10624,7 @@ std::unordered_set<std::string> prusa_export_to_remove_keys = {
 "internal_bridge_expansion",
 "internal_bridge_fan_speed",
 "internal_bridge_min_width",
+"internal_bridge_over_infill",
 "internal_bridge_speed",
 "ironing_acceleration",
 "ironing_angle",
