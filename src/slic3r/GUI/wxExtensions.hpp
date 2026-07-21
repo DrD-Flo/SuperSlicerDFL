@@ -78,6 +78,9 @@ wxBitmapBundle* get_empty_bmp_bundle(int width, int height);
 wxBitmapBundle* get_solid_bmp_bundle(int width, int height, const std::string& color);
 
 std::vector<wxBitmapBundle*> get_extruder_color_icons(bool thin_icon = false);
+// Same as get_extruder_color_icons(), but colors each extruder by its nozzle_diameter (E3D Revo-style
+// diameter color coding) instead of by assigned filament color.
+std::vector<wxBitmapBundle*> get_nozzle_diameter_color_icons(bool thin_icon = false);
 
 namespace Slic3r {
 namespace GUI {

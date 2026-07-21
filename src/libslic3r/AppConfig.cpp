@@ -210,6 +210,12 @@ void AppConfig::set_defaults()
         if (get("tabs_as_menu").empty())
             set("tabs_as_menu", "0");
 
+        // Without an explicit layout choice MainFrame::layout defaults to ESettingsLayout::Tabs on
+        // Windows and ESettingsLayout::Old on other platforms (MainFrame.cpp). Force the same
+        // single-"Platter"-tab layout as macOS/Linux here so the UI is consistent across platforms.
+        if (get("old_settings_layout_mode").empty())
+            set("old_settings_layout_mode", "1");
+
         if (get("suppress_round_corners").empty())
             set("suppress_round_corners", "1");
 
@@ -282,7 +288,7 @@ void AppConfig::set_defaults()
            set("notify_release", "all"); // or "none" or "release"
 
         if (get("auto_switch_preview").empty())
-            set("auto_switch_preview", "platter");
+            set("auto_switch_preview", "always");
 
 #if ENABLE_ENVIRONMENT_MAP
         if (get("use_environment_map").empty())
