@@ -287,6 +287,13 @@ void AppConfig::set_defaults()
        if (get("notify_release").empty())
            set("notify_release", "all"); // or "none" or "release"
 
+        // Every existing datadir already has this key persisted at the old shipped default
+        // ("platter", which never switches back to the 3D editor after invalidating a slice), so
+        // the empty-check below is a no-op for upgrades. Migrate that old default forward; a user
+        // who deliberately wants "platter"/"never"/"gcode" can re-pick it in Preferences.
+        if (get("auto_switch_preview") == "platter")
+            set("auto_switch_preview", "always");
+
         if (get("auto_switch_preview").empty())
             set("auto_switch_preview", "always");
 
