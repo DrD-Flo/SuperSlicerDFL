@@ -518,15 +518,8 @@ wxBitmapBundle* PresetComboBox::get_bmp(  std::string bitmap_key, bool wide_icon
             // Paint a red flag for incompatible presets.
             bmps.emplace_back(is_compatible ? get_empty_bmp_bundle(norm_icon_width, icon_height) : m_bitmapIncompatible);
 
-        if (m_type == Preset::TYPE_FFF_FILAMENT && !filament_rgb.empty()) {
-            // Paint the color bars.
-            bmps.emplace_back(get_solid_bmp_bundle(is_single_bar ? wide_icon_width : norm_icon_width, icon_height, filament_rgb));
-            if (!is_single_bar)
-                bmps.emplace_back(get_solid_bmp_bundle(thin_icon_width, icon_height, extruder_rgb));
-            // Paint a lock at the system presets.
-            bmps.emplace_back(get_empty_bmp_bundle(space_icon_width, icon_height));
-        }
-        else
+        // Filament presets show the plain spool icon (like every other preset type) rather than a
+        // filament color bar - the color is now conveyed by the nozzle/extruder selector instead.
         {
             // Paint the color bars.
             bmps.emplace_back(get_empty_bmp_bundle(thin_space_icon_width, icon_height));

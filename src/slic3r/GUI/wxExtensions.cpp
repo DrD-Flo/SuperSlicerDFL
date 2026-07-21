@@ -14,6 +14,8 @@
 
 
 #include "libslic3r/AppConfig.hpp"
+#include "libslic3r/PresetBundle.hpp"
+#include "libslic3r/PrintConfig.hpp"
 
 #include "BitmapCache.hpp"
 #include "GUI.hpp"
@@ -551,6 +553,40 @@ std::vector<wxBitmapBundle*> get_extruder_color_icons(bool thin_icon/* = false*/
     return bmps;
 }
 
+// Best-effort placeholder mapping of nozzle diameter (mm) -> E3D Revo-style sock color.
+// Not verified against an authoritative E3D color chart - adjust the hex values below if they
+// don't match your physical nozzles.
+static std::string nozzle_diameter_color(double diameter_mm)
+{
+    static const std::vector<std::pair<double, std::string>> diameter_colors = {
+        { 0.25, "#B22222" }, // red
+        { 0.30, "#9B30FF" }, // purple
+        { 0.40, "#1E90FF" }, // blue
+        { 0.50, "#228B22" }, // green
+        { 0.60, "#FFD700" }, // yellow
+        { 0.80, "#FF8C00" }, // orange
+        { 1.00, "#808080" }, // grey
+        { 1.20, "#000000" }, // black
+    };
+    for (const auto& [diameter, color] : diameter_colors)
+        if (std::abs(diameter - diameter_mm) < 0.01)
+            return color;
+    return "#808080";
+}
+
+std::vector<wxBitmapBundle*> get_nozzle_diameter_color_icons(bool thin_icon/* = false*/)
+{
+    std::vector<wxBitmapBundle*> bmps;
+    const Slic3r::DynamicPrintConfig& config = Slic3r::GUI::wxGetApp().preset_bundle->printers.get_edited_preset().config;
+    if (!config.has("nozzle_diameter"))
+        return bmps;
+
+    for (double diameter : config.option<Slic3r::ConfigOptionFloats>("nozzle_diameter")->get_values())
+        bmps.emplace_back(get_solid_bmp_bundle(thin_icon ? 16 : 32, 16, nozzle_diameter_color(diameter)));
+
+    return bmps;
+}
+
 
 void apply_extruder_selector(Slic3r::GUI::BitmapComboBox** ctrl, 
                              wxWindow* parent,
@@ -559,7 +595,7 @@ void apply_extruder_selector(Slic3r::GUI::BitmapComboBox** ctrl,
                              wxSize size/* = wxDefaultSize*/,
                              bool use_thin_icon/* = false*/)
 {
-    std::vector<wxBitmapBundle*> icons = get_extruder_color_icons(use_thin_icon);
+    std::vector<wxBitmapBundle*> icons = get_nozzle_diameter_color_icons(use_thin_icon);
 
     if (!*ctrl) {
         *ctrl = new Slic3r::GUI::BitmapComboBox(parent, wxID_ANY, wxEmptyString, pos, size, 0, nullptr, wxCB_READONLY);
