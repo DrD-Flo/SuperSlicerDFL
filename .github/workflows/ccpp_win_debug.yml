@@ -88,6 +88,11 @@ jobs:
     - name: update submodule profiles
       working-directory: ./resources/profiles
       run: git submodule update --init
+    - name: Get version
+      shell: powershell
+      run: |
+        $env:InstallerVersion = (Get-Content version.inc | Select-String -Pattern 'set\(SLIC3R_RC_VERSION_DOTS \"(.*?)\"\)' | ForEach-Object { $_.Matches.Groups[1].Value })
+        echo "InstallerVersion=$env:InstallerVersion" >> $env:GITHUB_ENV
     - name: change date in version
       shell: powershell
       run: |
@@ -179,5 +184,5 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: debug_${{ github.event.repository.name }}-win64
+        name: debug_${{ github.event.repository.name }}-${{ env.InstallerVersion }}-win64
         path: build/package/

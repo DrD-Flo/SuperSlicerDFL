@@ -50,6 +50,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+    - name: Get version
+      run: |
+        VERSION=$(sed -n 's/.*SLIC3R_RC_VERSION_DOTS "\(.*\)".*/\1/p' version.inc)
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
     - name: New cmake
       run: cmake --version
     - name: Setup cmake
@@ -69,10 +73,10 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: nightly_${{ github.event.repository.name }}-macOS-arm.dmg
+        name: debug_${{ github.event.repository.name }}-${{ env.VERSION }}-macOS-arm.dmg
         path: build/${{ github.event.repository.name }}-macOS-arm.dmg
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: nightly_${{ github.event.repository.name }}-macOS-arm.tgz
+        name: debug_${{ github.event.repository.name }}-${{ env.VERSION }}-macOS-arm.tgz
         path: build/${{ github.event.repository.name }}-macOS-arm.tgz

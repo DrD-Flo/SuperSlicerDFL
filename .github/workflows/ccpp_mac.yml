@@ -50,6 +50,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+    - name: Get version
+      run: |
+        VERSION=$(sed -n 's/.*SLIC3R_RC_VERSION_DOTS "\(.*\)".*/\1/p' version.inc)
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
     - name: New cmake
       run: cmake --version
     - name: Setup cmake
@@ -80,10 +84,10 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: nightly_${{ github.event.repository.name }}-macOS-intel.tgz
+        name: nightly_${{ github.event.repository.name }}-${{ env.VERSION }}-macOS-intel.tgz
         path: build/${{ github.event.repository.name }}-macOS-intel.tgz
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: nightly_${{ github.event.repository.name }}-macOS-intel.dmg
+        name: nightly_${{ github.event.repository.name }}-${{ env.VERSION }}-macOS-intel.dmg
         path: build/${{ github.event.repository.name }}-macOS-intel.dmg
