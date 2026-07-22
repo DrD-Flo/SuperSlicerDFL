@@ -553,20 +553,18 @@ std::vector<wxBitmapBundle*> get_extruder_color_icons(bool thin_icon/* = false*/
     return bmps;
 }
 
-// Best-effort placeholder mapping of nozzle diameter (mm) -> E3D Revo-style sock color.
-// Not verified against an authoritative E3D color chart - adjust the hex values below if they
-// don't match your physical nozzles.
+// Mapping of nozzle diameter (mm) -> E3D Revo silicone sock color, per E3D's published color
+// coding (https://e3d-online.com/blogs/news/revo-nozzle-features): "Nozzle sizes are colour
+// coded pink (0.15), yellow (0.25), red (0.4), blue (0.6) and green (0.8)". Diameters E3D does
+// not color-code (0.2, 0.3, 0.35, 0.5, 0.75, 1.0+, High Flow sizes, etc.) fall back to grey.
 static std::string nozzle_diameter_color(double diameter_mm)
 {
     static const std::vector<std::pair<double, std::string>> diameter_colors = {
-        { 0.25, "#B22222" }, // red
-        { 0.30, "#9B30FF" }, // purple
-        { 0.40, "#1E90FF" }, // blue
-        { 0.50, "#228B22" }, // green
-        { 0.60, "#FFD700" }, // yellow
-        { 0.80, "#FF8C00" }, // orange
-        { 1.00, "#808080" }, // grey
-        { 1.20, "#000000" }, // black
+        { 0.15, "#FF69B4" }, // pink
+        { 0.25, "#FFD700" }, // yellow
+        { 0.40, "#DC143C" }, // red
+        { 0.60, "#1E90FF" }, // blue
+        { 0.80, "#228B22" }, // green
     };
     for (const auto& [diameter, color] : diameter_colors)
         if (std::abs(diameter - diameter_mm) < 0.01)
