@@ -10,6 +10,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+    - name: Get version
+      run: |
+        VERSION=$(sed -n 's/.*SLIC3R_RC_VERSION_DOTS "\(.*\)".*/\1/p' version.inc)
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
     - name: Setup cmake
       uses: jwlawson/actions-setup-cmake@v1.13
       with:
@@ -36,10 +40,10 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: nightly_${{ github.event.repository.name }}-linux-x64-GTK2.tgz
+        name: nightly_${{ github.event.repository.name }}-${{ env.VERSION }}-linux-x64-GTK2.tgz
         path: build/SuperSlicer-linux-x64-GTK2.tgz
     - name: Upload appimage
       uses: actions/upload-artifact@v4
       with:
-        name: nightly_${{ github.event.repository.name }}-linux-x64-GTK2.AppImage
+        name: nightly_${{ github.event.repository.name }}-${{ env.VERSION }}-linux-x64-GTK2.AppImage
         path: build/SuperSlicer-linux-x64-GTK2.AppImage

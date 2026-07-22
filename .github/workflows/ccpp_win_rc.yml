@@ -36,6 +36,24 @@ jobs:
     - name: update submodule profiles
       working-directory: ./resources/profiles
       run: git submodule update --remote --init
+    - name: Generate installer version
+      shell: powershell
+      run: |
+        # MSI Product/@Version must be x.x.x.x with each field 0-65534. Use SLIC3R_RC_VERSION_DOTS
+        # (resolved 4-part numeric, e.g. 2.7.63.0); SLIC3R_VERSION_FULL is a CMake template + -beta tag.
+        $env:InstallerVersion = (Get-Content version.inc | Select-String -Pattern 'set\(SLIC3R_RC_VERSION_DOTS \"(.*?)\"\)' | ForEach-Object { $_.Matches.Groups[1].Value })
+        echo "InstallerVersion=$env:InstallerVersion" >> $env:GITHUB_ENV
+        $env:ReleaseSuffix = ""
+        echo "ReleaseSuffix=$env:ReleaseSuffix" >> $env:GITHUB_ENV
+    - name: Check version number is not empty
+      shell: powershell
+      run: |
+        if ([string]::IsNullOrWhiteSpace($env:InstallerVersion)) {
+          Write-Warning "InstallerVersion is empty or null. Setting default version to 0.0.0.0"
+          $env:InstallerVersion = "0.0.0.0"
+          echo "InstallerVersion=$env:InstallerVersion" >> $env:GITHUB_ENV
+        }
+        Write-Host "Version validation passed: $env:InstallerVersion"
     - name: change date in version
       shell: powershell
       run: |
@@ -129,7 +147,7 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: rc_win64
+        name: rc_${{ github.event.repository.name }}-${{ env.InstallerVersion }}-win64
         path: build/package/
 
 # MSI CREATION (need files from the slic3r build, can't be its own step)
@@ -171,24 +189,6 @@ jobs:
       working-directory: ./build
       run: |
         heat.exe dir package -dr INSTALLFOLDER -cg Package -gg -sreg -srd -var var.SourceDir -out files.wxs -sfrag
-    - name: Generate installer version
-      shell: powershell
-      run: |
-        # MSI Product/@Version must be x.x.x.x with each field 0-65534. Use SLIC3R_RC_VERSION_DOTS
-        # (resolved 4-part numeric, e.g. 2.7.63.0); SLIC3R_VERSION_FULL is a CMake template + -beta tag.
-        $env:InstallerVersion = (Get-Content version.inc | Select-String -Pattern 'set\(SLIC3R_RC_VERSION_DOTS \"(.*?)\"\)' | ForEach-Object { $_.Matches.Groups[1].Value })
-        echo "InstallerVersion=$env:InstallerVersion" >> $env:GITHUB_ENV
-        $env:ReleaseSuffix = ""
-        echo "ReleaseSuffix=$env:ReleaseSuffix" >> $env:GITHUB_ENV
-    - name: Check version number is not empty
-      shell: powershell
-      run: |
-        if ([string]::IsNullOrWhiteSpace($env:InstallerVersion)) {
-          Write-Warning "InstallerVersion is empty or null. Setting default version to 0.0.0.0"
-          $env:InstallerVersion = "0.0.0.0"
-          echo "InstallerVersion=$env:InstallerVersion" >> $env:GITHUB_ENV
-        }
-        Write-Host "Version validation passed: $env:InstallerVersion"
     - name: Build MSI installer
       shell: cmd
       working-directory: ./build
@@ -200,6 +200,6 @@ jobs:
     - name: Upload MSI artifact
       uses: actions/upload-artifact@v4
       with:
-        name: rc_${{ github.event.repository.name }}-win64.msi
+        name: rc_${{ github.event.repository.name }}-${{ env.InstallerVersion }}-win64.msi
         path: build/${{ github.event.repository.name }}_${{ env.InstallerVersion }}.msi
 
