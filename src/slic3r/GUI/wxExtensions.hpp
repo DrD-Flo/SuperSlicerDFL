@@ -81,6 +81,9 @@ std::vector<wxBitmapBundle*> get_extruder_color_icons(bool thin_icon = false);
 // Same as get_extruder_color_icons(), but colors each extruder by its nozzle_diameter (E3D Revo-style
 // diameter color coding) instead of by assigned filament color.
 std::vector<wxBitmapBundle*> get_nozzle_diameter_color_icons(bool thin_icon = false);
+// Maps a nozzle diameter (mm) to its E3D Revo silicone sock color (grey fallback for diameters
+// E3D doesn't color-code). Exposed so preset comboboxes can swatch by nozzle diameter.
+std::string nozzle_diameter_color(double diameter_mm);
 
 namespace Slic3r {
 namespace GUI {

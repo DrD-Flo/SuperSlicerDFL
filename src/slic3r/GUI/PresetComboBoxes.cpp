@@ -518,10 +518,15 @@ wxBitmapBundle* PresetComboBox::get_bmp(  std::string bitmap_key, bool wide_icon
             // Paint a red flag for incompatible presets.
             bmps.emplace_back(is_compatible ? get_empty_bmp_bundle(norm_icon_width, icon_height) : m_bitmapIncompatible);
 
-        // Filament presets show the plain spool icon (like every other preset type) rather than a
-        // filament color bar - the color is now conveyed by the nozzle/extruder selector instead.
-        {
-            // Paint the color bars.
+        if (m_type == Preset::TYPE_FFF_FILAMENT && !filament_rgb.empty()) {
+            // Paint the color bar (sourced from the extruder's nozzle-diameter color, see
+            // PlaterPresetComboBox::update()).
+            bmps.emplace_back(get_solid_bmp_bundle(is_single_bar ? wide_icon_width : norm_icon_width, icon_height, filament_rgb));
+            if (!is_single_bar)
+                bmps.emplace_back(get_solid_bmp_bundle(thin_icon_width, icon_height, extruder_rgb));
+            bmps.emplace_back(get_empty_bmp_bundle(space_icon_width, icon_height));
+        }
+        else {
             bmps.emplace_back(get_empty_bmp_bundle(thin_space_icon_width, icon_height));
             if (m_type == Preset::TYPE_SLA_MATERIAL) {
                 Slic3r::ColorReplaces replaces;
@@ -880,12 +885,14 @@ void PlaterPresetComboBox::update()
     const ExtruderFilaments& extruder_filaments  = m_preset_bundle->extruders_filaments[m_extruder_idx >= 0 ? m_extruder_idx : 0];
 
     const Preset* selected_filament_preset = nullptr;
-    std::string extruder_color;
+    std::string nozzle_rgb;
     if (m_type == Preset::TYPE_FFF_FILAMENT) {
-        extruder_color = m_preset_bundle->printers.get_edited_preset().config.opt_string("extruder_colour", size_t(m_extruder_idx));
-        if (!can_decode_color(extruder_color))
-            // Extruder color is not defined.
-            extruder_color.clear();
+        // Swatch reflects this extruder's nozzle diameter (E3D Revo sock color coding) rather than
+        // the filament's own color, so the combobox can be matched at a glance to the physical nozzle.
+        const DynamicPrintConfig& printer_config = m_preset_bundle->printers.get_edited_preset().config;
+        const int nozzle_idx = m_extruder_idx >= 0 ? m_extruder_idx : 0;
+        double diameter = printer_config.has("nozzle_diameter") ? printer_config.opt_float("nozzle_diameter", nozzle_idx) : 0.;
+        nozzle_rgb = nozzle_diameter_color(diameter);
         selected_filament_preset = extruder_filaments.get_selected_preset();
         if (selected_filament_preset->is_dirty)
             selected_filament_preset = &m_preset_bundle->filaments.get_edited_preset();
@@ -938,13 +945,11 @@ void PlaterPresetComboBox::update()
         bool single_bar = false;
         if (m_type == Preset::TYPE_FFF_FILAMENT)
         {
-            // Assign an extruder color to the selected item if the extruder color is defined.
-            filament_rgb = is_selected ? selected_filament_preset->config.opt_string("filament_colour", 0) : 
-                                         preset.config.opt_string("filament_colour", 0);
-            extruder_rgb = (is_selected && !extruder_color.empty()) ? extruder_color : filament_rgb;
-            single_bar = filament_rgb == extruder_rgb;
+            filament_rgb = nozzle_rgb;
+            extruder_rgb = nozzle_rgb;
+            single_bar = true;
 
-            bitmap_key += single_bar ? filament_rgb : filament_rgb + extruder_rgb;
+            bitmap_key += filament_rgb;
         }
         else if (m_type == Preset::TYPE_SLA_MATERIAL) {
             material_rgb = is_selected ? m_preset_bundle->sla_materials.get_edited_preset().config.opt_string("material_colour") : preset.config.opt_string("material_colour");

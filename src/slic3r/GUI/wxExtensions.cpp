@@ -557,7 +557,7 @@ std::vector<wxBitmapBundle*> get_extruder_color_icons(bool thin_icon/* = false*/
 // coding (https://e3d-online.com/blogs/news/revo-nozzle-features): "Nozzle sizes are colour
 // coded pink (0.15), yellow (0.25), red (0.4), blue (0.6) and green (0.8)". Diameters E3D does
 // not color-code (0.2, 0.3, 0.35, 0.5, 0.75, 1.0+, High Flow sizes, etc.) fall back to grey.
-static std::string nozzle_diameter_color(double diameter_mm)
+std::string nozzle_diameter_color(double diameter_mm)
 {
     static const std::vector<std::pair<double, std::string>> diameter_colors = {
         { 0.15, "#FF69B4" }, // pink
