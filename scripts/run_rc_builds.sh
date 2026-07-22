@@ -20,11 +20,4 @@ for wf in "${WORKFLOWS[@]}"; do
   gh workflow run "$wf" --ref "$BRANCH"
 done
 
-echo
-echo "Triggered. Recent runs:"
-sleep 5
-for wf in "${WORKFLOWS[@]}"; do
-  gh run list --workflow "$wf" --branch "$BRANCH" --limit 1 \
-    --json workflowName,status,url \
-    --template '{{range .}}{{.workflowName}}: {{.status}} {{.url}}{{"\n"}}{{end}}'
-done
+echo "Triggered. Check progress at: gh run list --branch $BRANCH"
