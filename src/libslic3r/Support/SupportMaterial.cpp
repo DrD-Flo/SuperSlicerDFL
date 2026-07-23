@@ -1422,6 +1422,16 @@ static inline std::tuple<Polygons, Polygons, Polygons, float> detect_overhangs(
                 ensure_valid(diff_polygons, resolution);
             }
 
+            if (object_config.dont_support_wave_overhangs) {
+                Polygons wave_filled_areas;
+                for (const auto &island : layer.islands())
+                    append(wave_filled_areas, island->get_wave_overhang_filled_area());
+                if (! wave_filled_areas.empty()) {
+                    diff_polygons = diff_ex(diff_polygons, wave_filled_areas);
+                    ensure_valid(diff_polygons, resolution);
+                }
+            }
+
             if (diff_polygons.empty())
                 continue;
 

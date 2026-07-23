@@ -386,6 +386,7 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig* config)
     bool have_perimeters = config->opt_int("perimeters") > 0;
     for (auto el : {
         "extra_perimeters", "extra_perimeters_below_area", "extra_perimeters_count", "extra_perimeters_odd_layers", "extra_perimeters_on_overhangs",
+        "wave_overhangs",
         "external_perimeters_first", "external_perimeter_extrusion_width", "external_perimeter_extrusion_spacing","external_perimeter_extrusion_change_odd_layers",
         "overhangs",
         "seam_position","staggered_inner_seams",
@@ -479,6 +480,14 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig* config)
 
     for (auto el : { "fuzzy_skin_thickness", "fuzzy_skin_point_dist" })
         toggle_field(el, config->option<ConfigOptionEnum<FuzzySkinType>>("fuzzy_skin")->value != FuzzySkinType::None);
+
+    {
+        const bool have_wave_overhangs = have_perimeters && config->opt_bool("wave_overhangs");
+        for (auto el : { "wave_overhangs_instead_of_bridges", "wave_overhang_outer_perimeters", "wave_overhang_perimeter_overlap",
+                         "wave_overhang_minimum_width", "wave_overhang_pattern", "wave_overhang_line_spacing", "wave_overhang_line_width",
+                         "wave_overhang_flow_ratio", "wave_overhang_print_speed", "wave_overhang_travel_speed" })
+            toggle_field(el, have_wave_overhangs);
+    }
 
     bool have_infill = config->option<ConfigOptionPercent>("fill_density")->value > 0;
     // infill_extruder uses the same logic as in Print::extruders()

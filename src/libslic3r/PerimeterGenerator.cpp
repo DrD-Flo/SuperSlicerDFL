@@ -17,6 +17,7 @@
 
 #include "AABBTreeIndirect.hpp"
 #include "AABBTreeLines.hpp"
+#include "Algorithm/RegionExpansion.hpp"
 #include "BoundingBox.hpp"
 #include "BridgeDetector.hpp"
 #include "ExPolygon.hpp"
@@ -3349,6 +3350,194 @@ std::tuple<std::vector<ExtrusionPaths>, ExPolygons, ExPolygons> generate_extra_p
                 union_ex(inset_anchors, inset_overhang_area_left_unfilled) /*, coord_t(scaled_resolution)*/)};
 }
 
+// Wave-overhang toolpath generation (Andersons wavefront-propagation technique, see waveoverhangs.com):
+// fills unsupported overhang regions with expanding rings of toolpath anchored to the supported edge,
+// instead of bridging or the plain offset-loop fill of generate_extra_perimeters_over_overhangs() above.
+// Shares that function's signature (and most of its anchoring / bridge-detection setup) so it can be
+// plugged into the exact same call site and downstream merge/infill-subtraction code.
+std::tuple<std::vector<ExtrusionPaths>, ExPolygons, ExPolygons> generate_wave_overhangs(const ExPolygon         &island,
+                                                                                        const ExPolygons        &infill_area,
+                                                                                        const Parameters        &params,
+                                                                                        const int                perimeter_count,
+                                                                                        coordf_t                 scaled_resolution)
+{
+    coord_t perimeter_depth = 0;
+    if (perimeter_count > 0)
+        perimeter_depth = params.ext_perimeter_flow.scaled_width() / 2 + params.ext_perimeter_flow.scaled_width() / 2 + params.perimeter_flow.scaled_spacing() * (perimeter_count - 1);
+    const coord_t bridged_infill_margin = scale_t(params.config.bridged_infill_margin.get_abs_value(params.ext_perimeter_flow.width()));
+    const coord_t anchors_size = std::min(bridged_infill_margin, perimeter_depth);
+    const coord_t overhang_scaled_spacing = params.get_overhang_spacing() > 0 ? params.get_overhang_spacing() : params.overhang_flow.scaled_spacing();
+
+    const BoundingBox infill_area_bb = get_extents(infill_area).inflated(SCALED_EPSILON + anchors_size);
+    const Polygons    optimized_lower_slices = ClipperUtils::clip_clipper_polygons_with_subject_bbox(params.lower_slices_bridge_for_extra_overhangs, infill_area_bb);
+    const ExPolygons  overhangs = diff_ex(infill_area, optimized_lower_slices);
+    if (overhangs.empty())
+        return {};
+
+    const Polygons   anchors             = intersection({island}, optimized_lower_slices);
+    const ExPolygons anchors_no_overhangs = diff_ex(anchors, overhangs);
+    const ExPolygons inset_anchors        = diff_ex(anchors, offset_ex(overhangs, anchors_size, EXTRA_PERIMETER_OFFSET_PARAMETERS));
+    const ExPolygons inset_overhang_area  = diff_ex(infill_area, inset_anchors);
+
+    const Flow    wave_flow = params.config.wave_overhang_line_width.value > 0. ?
+        params.overhang_flow.with_width(float(params.config.wave_overhang_line_width.value)) : params.overhang_flow;
+    const coord_t wave_spacing = params.config.wave_overhang_line_spacing.value > 0. ?
+        std::max<coord_t>(1, scale_t(params.config.wave_overhang_line_spacing.value)) : overhang_scaled_spacing;
+    const coord_t  perimeter_overlap  = std::max<coord_t>(0, scale_t(std::max(0., params.config.wave_overhang_perimeter_overlap.value)));
+    const coordf_t min_wave_length    = scale_(std::max(0., params.config.wave_overhang_minimum_width.value));
+    const WaveOverhangPattern pattern = params.config.wave_overhang_pattern.value;
+    const bool     instead_of_bridges = params.config.wave_overhangs_instead_of_bridges.value;
+
+    ExPolygons                  inset_overhang_area_left_unfilled;
+    std::vector<ExtrusionPaths> wave_paths;
+
+    for (const ExPolygon &overhang : union_ex(inset_overhang_area)) {
+        const ExPolygons overhang_to_cover = {overhang};
+        const Polygons   real_overhang     = intersection(overhang_to_cover, overhangs);
+        if (real_overhang.empty()) {
+            append(inset_overhang_area_left_unfilled, overhang_to_cover);
+            continue;
+        }
+
+        const ExPolygons expanded_overhang_to_cover = offset_ex(overhang_to_cover, 1.1 * overhang_scaled_spacing);
+        const ExPolygons anchoring = intersection_ex(expanded_overhang_to_cover, inset_anchors);
+
+        if (!instead_of_bridges) {
+            // Same simple bridge-vs-fill heuristic as generate_extra_perimeters_over_overhangs():
+            // leave well-anchored, bridge-friendly spans to the normal bridge path.
+            const Polygon anchoring_convex_hull = Geometry::convex_hull(intersection_ex(expanded_overhang_to_cover, anchors_no_overhangs));
+            const double  unbridgeable_area      = area(diff(real_overhang, {anchoring_convex_hull}));
+            const double  unsupp_dist            = std::get<1>(detect_bridging_direction(real_overhang, anchors));
+            if (unbridgeable_area < 0.2 * area(real_overhang) && unsupp_dist < total_length(real_overhang) * 0.2) {
+                append(inset_overhang_area_left_unfilled, overhang_to_cover);
+                continue;
+            }
+        }
+
+        ExtrusionPaths &overhang_region = wave_paths.emplace_back();
+
+        ExPolygons wave_cover = intersection_ex(offset_ex(overhang_to_cover, perimeter_overlap), expanded_overhang_to_cover);
+        const Polygons wave_cover_polygons = to_polygons(wave_cover);
+        if (wave_cover_polygons.empty()) {
+            append(inset_overhang_area_left_unfilled, overhang_to_cover);
+            wave_paths.pop_back();
+            continue;
+        }
+
+        Polygons trim_boundary = offset(wave_cover_polygons, -double(wave_flow.scaled_width()) / 2., jtRound, 0.);
+        if (trim_boundary.empty())
+            trim_boundary = wave_cover_polygons;
+
+        // Seed the wavefront along the boundary between the anchored (already-supported) area and
+        // the region to be waved, then propagate outward one ring of `wave_spacing` at a time.
+        const coord_t seed_expansion = std::max<coord_t>(1, overhang_scaled_spacing / 10);
+        Polylines     seeds;
+        for (const Algorithm::WaveSeed &seed : Algorithm::wave_seeds(anchoring, wave_cover, float(seed_expansion), true))
+            if (seed.boundary == 0 && seed.path.size() >= 2)
+                seeds.emplace_back(seed.path);
+        if (seeds.empty())
+            seeds = intersection_pl(to_polylines(wave_cover), offset(to_polygons(anchoring), double(seed_expansion), jtRound, 0.));
+
+        Polygons accumulated_region = intersection(offset(seeds, double(seed_expansion)), wave_cover_polygons);
+
+        std::vector<Polylines> front_levels;
+        if (!accumulated_region.empty()) {
+            double       accumulated_area  = area(accumulated_region);
+            const double min_area_growth   = 0.05 * double(wave_spacing) * double(wave_spacing);
+            for (;;) {
+                Polygons next_region = intersection(offset(accumulated_region, double(wave_spacing), jtRound, 0.), wave_cover_polygons);
+                if (next_region.empty())
+                    break;
+                const double next_area = area(next_region);
+                if (next_area <= accumulated_area + min_area_growth)
+                    break;
+
+                Polylines fronts = intersection_pl(to_polylines(next_region), trim_boundary);
+                for (Polyline &front : fronts)
+                    front.simplify(std::min(0.05 * wave_spacing, scaled_resolution));
+                fronts.erase(std::remove_if(fronts.begin(), fronts.end(), [min_wave_length](const Polyline &front) {
+                    return front.points.size() < 2 || front.length() < min_wave_length;
+                }), fronts.end());
+                fronts = reconnect_polylines(fronts, wave_spacing, scaled_resolution);
+
+                if (!fronts.empty())
+                    front_levels.emplace_back(std::move(fronts));
+
+                accumulated_region = std::move(next_region);
+                accumulated_area   = next_area;
+            }
+        }
+
+        Polylines ordered_fronts;
+        for (Polylines &level : front_levels)
+            for (Polyline &front : level)
+                ordered_fronts.emplace_back(std::move(front));
+
+        // Order/orient the wave rings according to wave_overhang_pattern.
+        Polylines placed_fronts;
+        if (pattern == WaveOverhangPattern::ZigZag) {
+            const double max_connector_distance_sq = double(wave_spacing + perimeter_overlap) * double(wave_spacing + perimeter_overlap);
+            for (Polyline &front : ordered_fronts) {
+                if (front.points.size() < 2)
+                    continue;
+                if (placed_fronts.empty()) {
+                    placed_fronts.emplace_back(std::move(front));
+                    continue;
+                }
+                Polyline    &current = placed_fronts.back();
+                const double d_keep  = (current.last_point() - front.first_point()).cast<double>().squaredNorm();
+                const double d_flip  = (current.last_point() - front.last_point()).cast<double>().squaredNorm();
+                if (std::min(d_keep, d_flip) > max_connector_distance_sq) {
+                    placed_fronts.emplace_back(std::move(front));
+                    continue;
+                }
+                if (d_flip < d_keep)
+                    front.reverse();
+                current.points.insert(current.points.end(), front.points.begin() + 1, front.points.end());
+            }
+        } else if (pattern == WaveOverhangPattern::Smart) {
+            for (Polyline &front : ordered_fronts) {
+                if (front.points.size() < 2)
+                    continue;
+                if (!placed_fronts.empty()) {
+                    const Point &anchor = placed_fronts.back().last_point();
+                    const double d_keep = (anchor - front.first_point()).cast<double>().squaredNorm();
+                    const double d_flip = (anchor - front.last_point()).cast<double>().squaredNorm();
+                    if (d_flip < d_keep)
+                        front.reverse();
+                }
+                placed_fronts.emplace_back(std::move(front));
+            }
+        } else {
+            for (Polyline &front : ordered_fronts)
+                if (front.points.size() >= 2)
+                    placed_fronts.emplace_back(std::move(front));
+        }
+
+        extrusion_paths_append(overhang_region, placed_fronts,
+                               ExtrusionAttributes{ExtrusionRole::OverhangPerimeter, wave_flow},
+                               ExtrusionPropertyOverhang(1, 2, 0, true, true, false, false, true),
+                               false);
+
+        overhang_region.erase(std::remove_if(overhang_region.begin(), overhang_region.end(),
+                                             [](const ExtrusionPath &p) { return p.empty(); }),
+                              overhang_region.end());
+
+        const ExPolygons waved_area = accumulated_region.empty() ? ExPolygons{} : union_ex(accumulated_region);
+        const ExPolygons unreached  = diff_ex(wave_cover, waved_area);
+        append(inset_overhang_area_left_unfilled, union_ex(unreached, anchoring));
+
+        if (overhang_region.empty())
+            wave_paths.pop_back();
+    }
+
+    inset_overhang_area_left_unfilled = union_ex(inset_overhang_area_left_unfilled);
+
+    return {wave_paths,
+            ensure_valid(diff_ex(inset_overhang_area, inset_overhang_area_left_unfilled)),
+            ensure_valid(union_ex(inset_anchors, inset_overhang_area_left_unfilled))};
+}
+
 #ifdef ARACHNE_DEBUG
 static void export_perimeters_to_svg(const std::string &path, const Polygons &contours, const std::vector<Arachne::VariableWidthLines> &perimeters, const ExPolygons &infill_area)
 {
@@ -4165,10 +4354,12 @@ void PerimeterGenerator::process(// Input:
         params.region_setting.get_solo_config(&params.config.overhangs).get_bool();
     const bool overhang_extra_enabled = params.region_setting.has_many_config(&params.config.extra_perimeters_on_overhangs) ||
         params.region_setting.get_solo_config(&params.config.extra_perimeters_on_overhangs).get_bool();
+    const bool wave_overhangs_enabled = params.region_setting.has_many_config(&params.config.wave_overhangs) ||
+        params.region_setting.get_solo_config(&params.config.wave_overhangs).get_bool();
     const bool has_no_gapfill_overhang = (params.region_setting.has_many_config(&params.config.gap_fill_no_overhang) ||
                 params.region_setting.get_solo_config(&params.config.gap_fill_no_overhang).get_bool());
 
-    if (this->lower_slices != NULL && (overhang_extra_enabled || overhang_enabled || params.get_overhang_spacing() > 0 || has_no_gapfill_overhang)) {
+    if (this->lower_slices != NULL && (overhang_extra_enabled || wave_overhangs_enabled || overhang_enabled || params.get_overhang_spacing() > 0 || has_no_gapfill_overhang)) {
         // We consider overhang any part where the entire nozzle diameter is not supported by the
         // lower layer, so we take lower slices and offset them by overhangs_width of the nozzle diameter used 
         // in the current layer
@@ -4202,7 +4393,7 @@ void PerimeterGenerator::process(// Input:
         }
 
         params.lower_slices_bridge_for_extra_overhangs.clear();
-        if (overhang_extra_enabled || params.get_overhang_spacing() > 0) {
+        if (overhang_extra_enabled || wave_overhangs_enabled || params.get_overhang_spacing() > 0) {
             if (params.region_setting.has_many_config(&params.config.extra_perimeters_on_overhangs)) {
                 // offset to ensure it avoid detecting fake overhangs.
                 ExPolygons expolys = offset_ex(*simplified, min_feature + SCALED_EPSILON);
@@ -4603,7 +4794,7 @@ void PerimeterGenerator::process(// Input:
         }
         
         if (lower_slices != nullptr &&
-            overhang_extra_enabled &&
+            (overhang_extra_enabled || wave_overhangs_enabled) &&
             params.config.perimeters > 0 && params.layer->id() > params.object_config.raft_layers) {
 
             const ExPolygons *infill_area = polyWithoutOverlap.empty() ? &infill_exp : &polyWithoutOverlap;
@@ -4618,12 +4809,21 @@ void PerimeterGenerator::process(// Input:
                 infill_area = &infill_areas_without_no_extra_overhangs;
             }
 
-            // Generate extra perimeters on overhang areas, and cut them to these parts only, to save print time and material
-            auto [extra_perimeters, filled_area, unfilled_area] = generate_extra_perimeters_over_overhangs(surface_expolygon,
-                                                                                            *infill_area,
-                                                                                            params,
-                                                                                            std::min(nb_loop_holes, nb_loop_contour) + 1,
-                                                                                            scaled_resolution_infill);
+            // Wave overhangs replace the plain offset-loop fill with wavefront-propagated toolpaths
+            // over the same detected overhang region; both feed the same downstream merge/infill code.
+            auto [extra_perimeters, filled_area, unfilled_area] = wave_overhangs_enabled ?
+                generate_wave_overhangs(surface_expolygon,
+                                        *infill_area,
+                                        params,
+                                        std::min(nb_loop_holes, nb_loop_contour) + 1,
+                                        scaled_resolution_infill) :
+                generate_extra_perimeters_over_overhangs(surface_expolygon,
+                                                          *infill_area,
+                                                          params,
+                                                          std::min(nb_loop_holes, nb_loop_contour) + 1,
+                                                          scaled_resolution_infill);
+            if (wave_overhangs_enabled && !filled_area.empty())
+                append(this->wave_overhang_filled_area, to_polygons(filled_area));
             if (!extra_perimeters.empty()) {
 
                 if (params.region_setting.has_many_config(&params.config.extra_perimeters_on_overhangs)) {
@@ -7372,6 +7572,7 @@ const std::vector<t_config_option_keys> Parameters::perimeter_keys({
     {"extra_perimeters_count"},
     {"extra_perimeters_odd_layers"},
     {"extra_perimeters_on_overhangs"},
+    {"wave_overhangs"},
     {"only_one_perimeter_top", "min_width_top_surface", "only_one_perimeter_top_other_algo"},
     {"thin_walls", "thin_walls_min_width", "thin_walls_overlap"},
     {"overhangs_speed_enforce"},

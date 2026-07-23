@@ -839,6 +839,14 @@ bool config_compatible_for_perimeter(const PrintRegionConfig &config, const Prin
         //&& config.extra_perimeters_below_area == other_config.extra_perimeters_below_area // can be used in modifiers
         //&& config.extra_perimeters_odd_layers == other_config.extra_perimeters_odd_layers // can be used in modifiers
         //&& config.extra_perimeters_on_overhangs == other_config.extra_perimeters_on_overhangs // can be used in modifiers
+        //&& config.wave_overhangs == other_config.wave_overhangs // can be used in modifiers
+        //&& config.wave_overhangs_instead_of_bridges == other_config.wave_overhangs_instead_of_bridges // can be used in modifiers
+        //&& config.wave_overhang_outer_perimeters == other_config.wave_overhang_outer_perimeters // can be used in modifiers
+        //&& config.wave_overhang_perimeter_overlap == other_config.wave_overhang_perimeter_overlap // can be used in modifiers
+        //&& config.wave_overhang_minimum_width == other_config.wave_overhang_minimum_width // can be used in modifiers
+        //&& config.wave_overhang_pattern == other_config.wave_overhang_pattern // can be used in modifiers
+        //&& config.wave_overhang_line_spacing == other_config.wave_overhang_line_spacing // can be used in modifiers
+        //&& config.wave_overhang_line_width == other_config.wave_overhang_line_width // can be used in modifiers
         //&& config.gap_fill_enabled          == other_config.gap_fill_enabled
         && ((config.gap_fill_speed          == other_config.gap_fill_speed) || (!config.gap_fill_enabled && !other_config.gap_fill_enabled))
         && config.gap_fill_acceleration     == other_config.gap_fill_acceleration
@@ -1117,8 +1125,10 @@ void LayerSliceIsland::make_perimeters(LayerRegionIsland &region_island) {
         region_island.remove_empty_extrusions();
 
         append(m_perimeter_slices, g.perimeter_boundary);
+        append(m_wave_overhang_filled_area, g.wave_overhang_filled_area);
     }
     m_perimeter_slices = union_ex(m_perimeter_slices);
+    m_wave_overhang_filled_area = union_(m_wave_overhang_filled_area);
 }
 
 bool config_compatible_for_milling(const PrintConfig &print_config, coord_t bottom_z, const PrintRegionConfig &config, const PrintRegionConfig &other_config) {
