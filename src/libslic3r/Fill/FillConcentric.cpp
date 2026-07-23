@@ -474,6 +474,118 @@ FillConcentric::fill_surface_extrusion(
     out.insert(out.end(), out_to_check.begin(), out_to_check.end());
 }
 
+void
+FillSupportConcentric::_fill_surface_single(
+    const FillParams                &params,
+    unsigned int                     thickness_layers,
+    const std::pair<float, Point>   &direction,
+    ExPolygon                        expolygon,
+    Polylines                       &polylines_out) const
+{
+    // Support toolpaths are always generated without gap-fill (see fill_expolygons_generate_paths
+    // in SupportCommon.cpp), so FillConcentric::fill_surface_extrusion's gap-fill branch (which
+    // calls this method's sibling ThickPolylines overload / its own bunch-of-shells logic) is never
+    // reached here. If that ever changes, this override needs its own gap-fill-aware stitching.
+    assert(!params.add_gap_fill);
+
+    coord_t distance = _line_spacing_for_density(params);
+    if (params.density > 0.9999f && !params.dont_adjust) {
+        distance = scale_t(this->get_spacing());
+    }
+
+    // Generate the same nested offset rings as FillConcentric.
+    Polygons   loops = to_polygons(expolygon);
+    ExPolygons last { std::move(expolygon) };
+    while (! last.empty()) {
+        last = offset_ex(offset2_ex(last, -double(distance + scale_(this->get_spacing()) / 2),
+                                    +double(scale_(this->get_spacing()) / 2) + params.fill_resolution / 2),
+                         -params.fill_resolution / 2);
+        append(loops, to_polygons(last));
+    }
+
+    // Order outside-in, and capture the parent (containing) ring of every ring so adjacent
+    // rings can be stitched together instead of left as fully independent loops.
+    std::vector<int> parent_of;
+    loops = union_pt_chained_outside_in(loops, &parent_of);
+    ensure_valid(loops);
+    assert(loops.size() == parent_of.size());
+
+    // Never bridge two rings whose nearest points are farther apart than this: guards against
+    // emitting a long connector across a topologically-adjacent-but-geometrically-distant pair
+    // of rings (e.g. degenerate offset corners), which would risk crossing outside the annulus
+    // that's already going to be extruded.
+    const coordf_t max_connector_len = 2.5 * double(distance);
+
+    std::vector<char> visited(loops.size(), 0);
+    Point last_pos(0, 0);
+    size_t iPathFirst = polylines_out.size();
+
+    for (size_t i = 0; i < loops.size(); ++i) {
+        if (visited[i])
+            continue;
+
+        Polyline stitched;
+        size_t   cur = i;
+        Point    pos = loops[cur].points[nearest_point_index(loops[cur].points, last_pos)];
+        for (;;) {
+            visited[cur] = 1;
+            Polyline ring = loops[cur].split_at_index(nearest_point_index(loops[cur].points, pos));
+            // ring starts and ends at the same vertex (a full, non-overlapping traversal of the
+            // ring) -- so appending it never leaves material doubled-up at the cut point.
+            if (! stitched.empty())
+                stitched.points.pop_back(); // drop the duplicated join point before appending
+            append(stitched.points, ring.points);
+            pos = stitched.points.back();
+
+            // Find the nearest unvisited child of 'cur' (child rings are the next shell inward,
+            // i.e. exactly one ring-spacing away, per Clipper's own containment tree).
+            size_t   best_child = size_t(-1);
+            Point    best_pt;
+            coordf_t best_d2 = std::numeric_limits<coordf_t>::max();
+            for (size_t j = 0; j < loops.size(); ++j) {
+                if (visited[j] || parent_of[j] != int(cur))
+                    continue;
+                size_t   idx = nearest_point_index(loops[j].points, pos);
+                coordf_t d2  = (loops[j].points[idx] - pos).cast<double>().squaredNorm();
+                if (d2 < best_d2) {
+                    best_d2     = d2;
+                    best_child  = j;
+                    best_pt     = loops[j].points[idx];
+                }
+            }
+            if (best_child == size_t(-1) || std::sqrt(best_d2) > max_connector_len)
+                break; // innermost ring of this chain, or no safely-close child: stop here.
+
+            cur = best_child;
+            pos = best_pt;
+            // Loop continues: the next iteration appends this child's ring starting at 'pos'.
+            // The short segment stitched.back() -> pos is the connector; it is implicit in the
+            // append above and is always confined to the annular gap between parent and child
+            // ring (~one ring-spacing), space that's already going to be covered by both rings'
+            // extrusion width.
+        }
+        stitched.clip_end(coordf_t(this->loop_clipping));
+        if (stitched.is_valid()) {
+            polylines_out.push_back(std::move(stitched));
+            last_pos = polylines_out.back().last_point();
+        }
+    }
+
+    // Clip already applied per-chain above; keep only valid paths (mirrors FillConcentric's
+    // trailing cleanup, but per stitched chain rather than per ring).
+    size_t j = iPathFirst;
+    for (size_t k = iPathFirst; k < polylines_out.size(); ++k) {
+        if (polylines_out[k].is_valid()) {
+            if (j < k)
+                polylines_out[j] = std::move(polylines_out[k]);
+            ++j;
+        }
+    }
+    if (j < polylines_out.size())
+        polylines_out.erase(polylines_out.begin() + int(j), polylines_out.end());
+    assert_valid(polylines_out);
+}
+
 void FillConcentric::_fill_surface_single(const FillParams              &params,
                                           unsigned int                   thickness_layers,
                                           const std::pair<float, Point> &direction,

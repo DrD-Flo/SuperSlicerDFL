@@ -139,7 +139,7 @@ SupportParameters::SupportParameters(const PrintObject &object)
     this->with_sheath            = object_config.support_material_with_sheath;
     this->base_fill_pattern      =
         support_pattern == smpHoneycomb ? ipHoneycomb :
-        support_pattern == smpConcentric ? ipConcentric :
+        support_pattern == smpConcentric ? ipSupportConcentric :
         this->support_density > 0.95 || this->with_sheath ? ipRectilinear : ipSupportBase;
     this->interface_fill_pattern = (this->interface_density > 0.95 ? ipRectilinear : ipSupportBase);
     this->raft_interface_fill_pattern = this->raft_interface_density > 0.95 ? ipRectilinear : ipSupportBase;

@@ -192,9 +192,41 @@ TEST_CASE("Fill: Pattern Path Length", "[Fill]") {
             Point::new_scale(0,0),Point::new_scale(98,0),Point::new_scale(98,10), Point::new_scale(0,10)
         };
         Slic3r::ExPolygon expolygon(points);
-         
+
         REQUIRE(test_if_solid_surface_filled(expolygon, 0.5, 45.0, 0.99) == true);
     }
+}
+
+TEST_CASE("Fill: Support Concentric stitches rings without leaving the region", "[Fill][SupportMaterial]") {
+    // A plain square big enough that FillConcentric generates several nested rings.
+    std::vector<Vec2d> points { {0,0}, {60,0}, {60,60}, {0,60} };
+    Slic3r::Points test_set;
+    std::transform(points.cbegin(), points.cend(), std::back_inserter(test_set),
+        [] (const Vec2d& a) -> Point { return Point::new_scale(a.x(), a.y()); });
+    Slic3r::ExPolygon expolygon(test_set);
+    Slic3r::Surface surface(SurfaceType::stPosInternal | SurfaceType::stDensSparse, expolygon);
+
+    FillParams fill_params;
+    fill_params.dont_adjust = true;
+    fill_params.density = 0.3f;
+
+    std::unique_ptr<Slic3r::Fill> filler_plain(Slic3r::Fill::new_from_type(ipConcentric));
+    filler_plain->set_bounding_box(expolygon.contour.bounding_box());
+    filler_plain->init_spacing(0.5, fill_params);
+    Slic3r::Polylines rings = filler_plain->fill_surface(&surface, fill_params);
+
+    std::unique_ptr<Slic3r::Fill> filler_support(Slic3r::Fill::new_from_type(ipSupportConcentric));
+    filler_support->set_bounding_box(expolygon.contour.bounding_box());
+    filler_support->init_spacing(0.5, fill_params);
+    Slic3r::Polylines chains = filler_support->fill_surface(&surface, fill_params);
+
+    REQUIRE(rings.size() > 3); // sanity: the shape actually produces multiple independent rings
+    // The stitching pass must have merged rings into meaningfully fewer connected chains.
+    REQUIRE(chains.size() >= 1);
+    REQUIRE(chains.size() < rings.size());
+    // Stitching may only add short connectors inside the already-filled region -- no chain may
+    // ever leave the original area (the direct check against self-crossing / escaping collisions).
+    REQUIRE(diff_pl(chains, offset(expolygon, float(SCALED_EPSILON * 10))).empty());
 }
 
 SCENARIO("Infill does not exceed perimeters", "[Fill]") 

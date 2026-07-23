@@ -68,6 +68,7 @@ Fill* Fill::new_from_type(const InfillPattern type)
     case ipAdaptiveCubic:       return new FillAdaptive::Filler();
     case ipSupportCubic:        return new FillAdaptive::Filler();
     case ipSupportBase:         return new FillSupportBase();
+    case ipSupportConcentric:   return new FillSupportConcentric();
     case ipLightning:           return new FillLightning::Filler();
     case ipEnsuring:            return new FillEnsuring();
     default: throw Slic3r::InvalidArgument("unknown type");

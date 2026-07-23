@@ -2075,7 +2075,8 @@ static void traverse_pt_noholes(const ClipperLib::PolyNodes &nodes, Polygons *ou
     });
 }
 
-static void traverse_pt_outside_in(ClipperLib::PolyNodes &&nodes, Polygons *retval)
+static void traverse_pt_outside_in(ClipperLib::PolyNodes &&nodes, Polygons *retval,
+                                    int parent_idx, std::vector<int> *parents_out)
 {
     // collect ordering points
     Points ordering_points;
@@ -2087,19 +2088,29 @@ static void traverse_pt_outside_in(ClipperLib::PolyNodes &&nodes, Polygons *retv
     //FIXME pass the last point to chain_clipper_polynodes?
     for (ClipperLib::PolyNode *node : chain_clipper_polynodes(ordering_points, nodes)) {
         retval->emplace_back(std::move(node->Contour));
-        if (node->IsHole()) 
+        if (node->IsHole())
             // Orient a hole, which is clockwise oriented, to CCW.
             retval->back().reverse();
+        int my_idx = int(retval->size()) - 1;
+        if (parents_out)
+            parents_out->push_back(parent_idx);
         // traverse the next depth
-        traverse_pt_outside_in(std::move(node->Childs), retval);
+        traverse_pt_outside_in(std::move(node->Childs), retval, my_idx, parents_out);
     }
+}
+
+Polygons union_pt_chained_outside_in(const Polygons &subject, std::vector<int> *parents_out)
+{
+    Polygons retval;
+    if (parents_out)
+        parents_out->clear();
+    traverse_pt_outside_in(union_pt(subject).Childs, &retval, -1, parents_out);
+    return retval;
 }
 
 Polygons union_pt_chained_outside_in(const Polygons &subject)
 {
-    Polygons retval;
-    traverse_pt_outside_in(union_pt(subject).Childs, &retval);
-    return retval;
+    return union_pt_chained_outside_in(subject, nullptr);
 }
 
 Polygons simplify_polygons(const Polygons &subject)

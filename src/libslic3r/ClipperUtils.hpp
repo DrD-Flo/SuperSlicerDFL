@@ -544,6 +544,10 @@ ClipperLib::PolyTree union_pt(const Slic3r::Polygons &subject);
 ClipperLib::PolyTree union_pt(const Slic3r::ExPolygons &subject);
 
 Slic3r::Polygons union_pt_chained_outside_in(const Slic3r::Polygons &subject);
+// Same as above, but also returns, for each polygon in the returned vector, the index
+// (into that same vector) of its immediate containing polygon, or -1 if it is a top-level
+// (outermost) contour. Used to stitch nested rings together (see FillSupportConcentric).
+Slic3r::Polygons union_pt_chained_outside_in(const Slic3r::Polygons &subject, std::vector<int> *parents_out);
 
 ClipperLib::PolyNodes order_nodes(const ClipperLib::PolyNodes &nodes);
 

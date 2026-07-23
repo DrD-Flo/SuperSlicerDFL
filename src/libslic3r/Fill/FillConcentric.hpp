@@ -42,6 +42,26 @@ protected:
     bool no_sort() const override { return true; }
 };
 
+// Support-only variant of FillConcentric: rings are stitched into a small number
+// of continuous chains (parent ring -> nearest unvisited child ring) instead of
+// being emitted as fully independent loops, so a support layer gets in-plane
+// cross-bracing between rings and doesn't rely on travel-only connections.
+class FillSupportConcentric : public FillConcentric
+{
+public:
+    FillSupportConcentric() : FillConcentric() {}
+    ~FillSupportConcentric() override = default;
+
+protected:
+    Fill* clone() const override { return new FillSupportConcentric(*this); };
+    void _fill_surface_single(
+        const FillParams                &params,
+        unsigned int                     thickness_layers,
+        const std::pair<float, Point>   &direction,
+        ExPolygon                        expolygon,
+        Polylines                       &polylines_out) const override;
+};
+
 } // namespace Slic3r
 
 #endif // slic3r_FillConcentric_hpp_
