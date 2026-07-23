@@ -58,6 +58,17 @@ group:Quality
 		setting:sidetext_width$2:overhangs_reverse
 		setting:label_width$12:width$5:overhangs_reverse_threshold
 	end_line
+group:sidetext_width$5:Wave overhangs (experimental)
+	line:Wave overhangs
+		setting:sidetext_width$1:label$_:wave_overhangs
+		setting:wave_overhangs_instead_of_bridges
+	end_line
+	line:Wave shell
+		setting:label$Perimeters:width$4:wave_overhang_outer_perimeters
+		setting:width$6:sidetext_width$6:wave_overhang_perimeter_overlap
+		setting:width$6:sidetext_width$6:wave_overhang_minimum_width
+	end_line
+	setting:width$18:wave_overhang_pattern
 group:Avoid crossing perimeters
 	line:Activate
 		setting:label$_:avoid_crossing_perimeters
@@ -340,6 +351,7 @@ group:Options for support material and raft
 	setting:tags$Advanced$Expert$Prusa:support_material_buildplate_only
 	setting:sidetext_width$7:support_material_xy_spacing
 	setting:dont_support_bridges
+	setting:dont_support_wave_overhangs
 	setting:support_material_synchronize_layers
 	setting:support_max_slope
 group:Options for support material interface
@@ -398,6 +410,9 @@ group:label_width$8:sidetext_width$7:Speed for print moves
 		setting:label$Threshold:width$4:overhangs_width_speed
 		setting:label$Dynamic:overhangs_dynamic_speed
 		setting:label$Enforce:overhangs_speed_enforce
+	line:Wave overhangs speed
+		setting:label$Print:width$4:wave_overhang_print_speed
+		setting:label$Travel:width$4:wave_overhang_travel_speed
 	line:Gap fill speed
 		setting:width$4:label$Maximum:gap_fill_speed
 		setting:width$4:label$Cap with:sidetext$% of perimeter flow:sidetext_width$20:gap_fill_flow_match_perimeter
@@ -502,6 +517,10 @@ group:Extrusion width
 	line:Overhang
 		setting:sidetext_width$10:label_width$41:label$spacing:overhangs_extrusion_spacing
 	end_line
+	line:Wave overhang
+		setting:sidetext_width$10:label$width:wave_overhang_line_width
+		setting:sidetext_width$10:label_width$15:label$spacing:wave_overhang_line_spacing
+	end_line
 	line:first layer
 		setting:sidetext_width$10:label$width:first_layer_extrusion_width
 		setting:sidetext_width$10:label_width$13:label$spacing:first_layer_extrusion_spacing
@@ -542,6 +561,9 @@ group:sidetext_width$2:Flow
 		setting:overhangs_type
 		setting:sidetext_width$10:label_width$12:label$Threshold:width$5:overhangs_width
 		setting:label$Dynamic:overhangs_dynamic_flow
+	end_line
+	line:Wave overhangs
+		setting:label$Flow ratio:wave_overhang_flow_ratio
 	end_line
 group:sidetext_width$2:Advanced
 	setting:external_perimeter_cut_corners

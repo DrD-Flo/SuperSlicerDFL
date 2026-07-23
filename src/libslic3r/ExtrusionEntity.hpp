@@ -290,6 +290,10 @@ public:
     bool has_full_overhangs_speed = false;
     bool has_dynamic_overhangs_flow = false;
     bool has_dynamic_overhangs_speed = false;
+    // Set only for wave-overhang paths, so gcode export can apply the dedicated
+    // wave_overhang_print_speed / wave_overhang_travel_speed / wave_overhang_fan_speed /
+    // wave_overhang_flow_ratio overrides instead of the generic overhang ones.
+    bool is_wave = false;
     ExtrusionPropertyOverhang() {}
     ExtrusionPropertyOverhang(float start_dist, float end_dist)
         : start_distance_from_prev_layer(start_dist), end_distance_from_prev_layer(end_dist) {}
@@ -297,14 +301,15 @@ public:
         : start_distance_from_prev_layer(start_dist)
         , end_distance_from_prev_layer(end_dist)
         , proximity_to_curled_lines(curled_ratio) {}
-    ExtrusionPropertyOverhang(float start_dist, float end_dist, float curled_ratio, bool full_flow, bool full_speed, bool dynamic_flow, bool dynamic_speed)
+    ExtrusionPropertyOverhang(float start_dist, float end_dist, float curled_ratio, bool full_flow, bool full_speed, bool dynamic_flow, bool dynamic_speed, bool wave = false)
         : start_distance_from_prev_layer(start_dist)
         , end_distance_from_prev_layer(end_dist)
         , proximity_to_curled_lines(curled_ratio)
         , has_full_overhangs_flow(full_flow)
         , has_full_overhangs_speed(full_speed)
         , has_dynamic_overhangs_flow(dynamic_flow)
-        , has_dynamic_overhangs_speed(dynamic_speed) {}
+        , has_dynamic_overhangs_speed(dynamic_speed)
+        , is_wave(wave) {}
     std::unique_ptr<ExtrusionProperty> clone() const override { return std::make_unique<ExtrusionPropertyOverhang>(*this); }
     void visit(ExtrusionPropertyVisitor &visitor) override { visitor.use(*this); }
     void visit(ExtrusionPropertyVisitorConst &visitor) const override { visitor.use(*this);}

@@ -167,6 +167,13 @@ static const t_config_enum_values s_keys_map_FuzzySkinType {
 };
 CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(FuzzySkinType)
 
+static const t_config_enum_values s_keys_map_WaveOverhangPattern {
+    { "monotonic",      int(WaveOverhangPattern::Monotonic) },
+    { "zigzag",         int(WaveOverhangPattern::ZigZag) },
+    { "smart",          int(WaveOverhangPattern::Smart) }
+};
+CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(WaveOverhangPattern)
+
 static const t_config_enum_values s_keys_map_InfillPattern {
     {"rectilinear",         ipRectilinear},
     {"alignedrectilinear",  ipAlignedRectilinear},
@@ -915,6 +922,17 @@ void PrintConfigDef::init_fff_params()
     def->can_be_disabled = true;
     def->set_default_value(enable_default_option(new ConfigOptionInts{ 100 }));
 
+    def = this->add("wave_overhang_fan_speed", coInts);
+    def->label = L("Wave overhang fan speed");
+    def->category = OptionCategory::cooling;
+    def->tooltip = L("This fan speed is enforced while printing wave-overhang paths. It won't slow down the fan if it's currently running at a higher speed.");
+    def->sidetext = L("%");
+    def->min = 0;
+    def->max = 100;
+    def->mode = comAdvancedE | comSuSi;
+    def->is_vector_extruder = true;
+    def->set_default_value(new ConfigOptionInts{ 100 });
+
     def = this->add("bridge_fill_pattern", coEnum);
     def->label = L("Bridging fill pattern");
     def->category = OptionCategory::infill;
@@ -1414,6 +1432,14 @@ void PrintConfigDef::init_fff_params()
     def->tooltip = L("Experimental option for preventing support material from being generated "
                    "under bridged areas.");
     def->mode = comAdvancedE | comPrusa;
+    def->set_default_value(new ConfigOptionBool(true));
+
+    def = this->add("dont_support_wave_overhangs", coBool);
+    def->label = L("Don't support wave overhangs");
+    def->category = OptionCategory::support;
+    def->tooltip = L("Prevent support material from being generated under areas that were "
+                   "already filled in by wave overhangs.");
+    def->mode = comAdvancedE | comSuSi;
     def->set_default_value(new ConfigOptionBool(true));
 
     def = this->add("draft_shield", coEnum);
@@ -4882,6 +4908,120 @@ void PrintConfigDef::init_fff_params()
     def->max_literal = { 20, false };
     def->mode = comAdvancedE | comSuSi;
     def->set_default_value(new ConfigOptionFloatOrPercent(250, true));
+
+    def = this->add("wave_overhangs", coBool);
+    def->label = L("Use wave overhangs (Experimental)");
+    def->category = OptionCategory::perimeter;
+    def->tooltip = L("Detect the same unsupported overhang regions as extra perimeters on overhangs, "
+                   "but fill them with wave-propagation toolpaths (expanding rings anchored to the "
+                   "supported edge) instead of bridging or plain extra-perimeter offsets, while still "
+                   "keeping the requested number of normal perimeter passes around the region.");
+    def->mode = comAdvancedE | comSuSi;
+    def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("wave_overhangs_instead_of_bridges", coBool);
+    def->label = L("Use wave overhangs instead of bridges");
+    def->category = OptionCategory::perimeter;
+    def->tooltip = L("When enabled, wave overhangs always take priority over normal bridge generation "
+                   "for overhanging bottom surfaces. When disabled, simple bridge-friendly regions may "
+                   "still be printed as ordinary bridges instead of wave paths.");
+    def->mode = comAdvancedE | comSuSi;
+    def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("wave_overhang_outer_perimeters", coInt);
+    def->label = L("Wave overhang perimeters");
+    def->category = OptionCategory::perimeter;
+    def->tooltip = L("Number of normal perimeter passes to keep over a wave-overhang region before "
+                   "the wave fill starts. Values above the region's actual perimeter count are capped.");
+    def->min = 1;
+    def->mode = comAdvancedE | comSuSi;
+    def->set_default_value(new ConfigOptionInt(1));
+
+    def = this->add("wave_overhang_perimeter_overlap", coFloat);
+    def->label = L("Wave overhang perimeter overlap");
+    def->category = OptionCategory::perimeter;
+    def->tooltip = L("Extends the wave propagation boundary toward the nearby kept perimeter so the "
+                   "outermost wave ring sits closer to it, reducing the visible gap between them.");
+    def->sidetext = L("mm");
+    def->min = 0;
+    def->mode = comAdvancedE | comSuSi;
+    def->set_default_value(new ConfigOptionFloat(0.1));
+
+    def = this->add("wave_overhang_minimum_width", coFloat);
+    def->label = L("Minimum wave width");
+    def->category = OptionCategory::perimeter;
+    def->tooltip = L("If a narrow neck in the wave region is smaller than this width, a thin split is "
+                   "inserted there before propagation so fragile branches don't get waved. Larger "
+                   "values split more aggressively.");
+    def->sidetext = L("mm");
+    def->min = 0;
+    def->mode = comAdvancedE | comSuSi;
+    def->set_default_value(new ConfigOptionFloat(0.7));
+
+    def = this->add("wave_overhang_pattern", coEnum);
+    def->label = L("Wave overhang pattern");
+    def->category = OptionCategory::perimeter;
+    def->tooltip = L("Controls whether wave-overhang lines are printed one direction at a time "
+                   "(Monotonic), connected into a back-and-forth meander (Zig Zag), or each started "
+                   "from whichever end is currently better supported (Smart).");
+    def->set_enum<WaveOverhangPattern>({
+        { "monotonic", L("Monotonic") },
+        { "zigzag",    L("Zig Zag") },
+        { "smart",     L("Smart") }
+    });
+    def->mode = comAdvancedE | comSuSi;
+    def->set_default_value(new ConfigOptionEnum<WaveOverhangPattern>(WaveOverhangPattern::Smart));
+
+    def = this->add("wave_overhang_line_spacing", coFloat);
+    def->label = L("Wave overhang line spacing");
+    def->category = OptionCategory::width;
+    def->tooltip = L("Centerline spacing between adjacent wave-overhang lines. Set to 0 to use the "
+                   "region's overhang extrusion spacing instead.");
+    def->sidetext = L("mm");
+    def->min = 0;
+    def->mode = comAdvancedE | comSuSi;
+    def->set_default_value(new ConfigOptionFloat(0.35));
+
+    def = this->add("wave_overhang_line_width", coFloat);
+    def->label = L("Wave overhang line width");
+    def->category = OptionCategory::width;
+    def->tooltip = L("Extrusion width used for wave-overhang lines. Larger than the line spacing "
+                   "creates intentional overlap between adjacent waves. Set to 0 to use the region's "
+                   "overhang extrusion width instead.");
+    def->sidetext = L("mm");
+    def->min = 0;
+    def->mode = comAdvancedE | comSuSi;
+    def->set_default_value(new ConfigOptionFloat(0.4));
+
+    def = this->add("wave_overhang_flow_ratio", coFloat);
+    def->label = L("Wave overhang flow ratio");
+    def->category = OptionCategory::width;
+    def->tooltip = L("Flow multiplier applied only to the unsupported wave-overhang material lines, "
+                   "to compensate for the teardrop-like bead shape these lines form when unsupported.");
+    def->min = 0;
+    def->max = 2;
+    def->mode = comAdvancedE | comSuSi;
+    def->set_default_value(new ConfigOptionFloat(1));
+
+    def = this->add("wave_overhang_print_speed", coFloat);
+    def->label = L("Wave overhang print speed");
+    def->category = OptionCategory::speed;
+    def->tooltip = L("Print speed used for wave-overhang extrusion paths. Set zero to keep the normal "
+                   "overhang speed.");
+    def->sidetext = L("mm/s");
+    def->min = 0;
+    def->mode = comAdvancedE | comSuSi;
+    def->set_default_value(new ConfigOptionFloat(2));
+
+    def = this->add("wave_overhang_travel_speed", coFloat);
+    def->label = L("Wave overhang travel speed");
+    def->category = OptionCategory::speed;
+    def->tooltip = L("Travel speed used for moves between wave-overhang lines. Set zero to keep the "
+                   "normal travel speed.");
+    def->sidetext = L("mm/s");
+    def->min = 0;
+    def->mode = comAdvancedE | comSuSi;
+    def->set_default_value(new ConfigOptionFloat(40));
 
     def = this->add("no_perimeter_unsupported_algo", coEnum);
     def->label = L("No perimeters on bridge areas");

@@ -8119,6 +8119,11 @@ double GCodeGenerator::_compute_e_per_mm(const ExtrusionPath &path) {
     if (path.role() == ExtrusionRole::TopSolidInfill) {
         e_per_mm *= EXTRUDER_CONFIG_WITH_DEFAULT(filament_fill_top_flow_ratio, 100) * 0.01;
     }
+    // wave_overhang_flow_ratio: correction applied only to the unsupported wave-overhang material lines.
+    if (const ExtrusionPropertyOverhang *overhang_attributes = GetEEAttribute<ExtrusionPropertyOverhang>().get(path);
+        overhang_attributes && overhang_attributes->is_wave) {
+        e_per_mm *= this->config().wave_overhang_flow_ratio.value;
+    }
     // first layer mult
     if (this->m_layer->scaled_bottom_z() <= 0) {
         e_per_mm *= this->config().first_layer_flow_ratio.get_abs_value(1);
@@ -8607,6 +8612,17 @@ double_t GCodeGenerator::_compute_speed_mm_per_sec(const ExtrusionPath& path, co
 
     if (!m_speed_override.empty() && m_speed_override.back().second->fan_speed_percent > 0) {
         fan_speed = (double)m_speed_override.back().second->fan_speed_percent;
+    }
+
+    // Wave-overhang paths use their own dedicated speed/fan settings, overriding everything above.
+    if (overhang_attributes && overhang_attributes->is_wave) {
+        if (m_config.wave_overhang_print_speed.value > 0) {
+            speed = m_config.wave_overhang_print_speed.value;
+            if (comment) *comment = "wave_overhang_print_speed";
+        }
+        int wave_fan_speed = EXTRUDER_CONFIG_WITH_DEFAULT(wave_overhang_fan_speed, -1);
+        if (wave_fan_speed >= 0)
+            fan_speed = double(wave_fan_speed);
     }
 
     return speed;

@@ -237,6 +237,7 @@ public:
     std::vector<Link> overlaps_below;
 
     const ExPolygons &get_perimeter_slices() { return m_perimeter_slices; }
+    const Polygons &get_wave_overhang_filled_area() const { return m_wave_overhang_filled_area; }
 
 protected:
     ExPolygon m_slice;
@@ -255,6 +256,8 @@ protected:
     BoundingBoxes               m_fill_expolygons_bboxes;
     // to get the boundary in avoid_crossing_perimeters. Filled by make_perimeters()
     ExPolygons                  m_perimeter_slices;
+    // Areas covered by wave-overhang toolpaths on this island. Filled by make_perimeters()
+    Polygons                    m_wave_overhang_filled_area;
 
 public:
 

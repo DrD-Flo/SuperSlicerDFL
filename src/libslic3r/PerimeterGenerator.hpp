@@ -213,7 +213,10 @@ public:
     // Outputs:
     // mask for "inside" perimeter (to remove un-periemter-able areas)
     ExPolygons perimeter_boundary;
-    
+    // Areas actually covered by wave-overhang toolpaths (wave_overhangs enabled), used to skip
+    // support generation under them when dont_support_wave_overhangs is set.
+    Polygons wave_overhang_filled_area;
+
     PerimeterGenerator(const Parameters &params) : params(params) {}
 
     void process( // Input:

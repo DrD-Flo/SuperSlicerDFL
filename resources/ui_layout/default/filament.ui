@@ -82,6 +82,8 @@ group:Fan speed - default
 	line:Overhang Perimeter fan speed
 		setting:id$0:label_width$12:label$Overhangs:overhangs_fan_speed
         setting:id$0:overhangs_dynamic_fan_speed
+	line:Wave overhang fan speed
+		setting:id$0:label_width$12:label$Wave overhangs:wave_overhang_fan_speed
 	line:Gap fill fan speed
 		setting:id$0:label_width$12:label$Gap fill:gap_fill_fan_speed
 	line:Disable fan for the first

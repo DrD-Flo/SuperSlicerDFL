@@ -310,6 +310,13 @@ ExPolygons to_expolys(Polygons polys) {
                                                      layerm->flow(frExternalPerimeter).scaled_width(),
                                                      overhangs);
                 }
+                if (config.dont_support_wave_overhangs) {
+                    Polygons wave_filled_areas;
+                    for (const auto &island : current_layer.islands())
+                        append(wave_filled_areas, island->get_wave_overhang_filled_area());
+                    if (! wave_filled_areas.empty())
+                        overhangs = diff_ex(overhangs, wave_filled_areas);
+                }
             }
 #ifdef TREESUPPORT_DEBUG_SVG
             if (!overhangs.empty()) {

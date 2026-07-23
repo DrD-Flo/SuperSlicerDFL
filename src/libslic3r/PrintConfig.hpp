@@ -124,6 +124,12 @@ enum class FuzzySkinType {
     All,
 };
 
+enum class WaveOverhangPattern {
+    Monotonic,
+    ZigZag,
+    Smart,
+};
+
 enum InfillPattern : uint8_t{
     ipRectilinear,
     ipMonotonic,
@@ -761,6 +767,7 @@ PRINT_CONFIG_CLASS_DEFINE(
     //((ConfigOptionEnum<BrimType>,       brim_type))
     ((ConfigOptionString,               object_gcode))
     ((ConfigOptionBool,                 dont_support_bridges))
+    ((ConfigOptionBool,                 dont_support_wave_overhangs))
     ((ConfigOptionPercent,              external_perimeter_cut_corners))
     //((ConfigOptionBool,                 exact_last_layer_height))
     ((ConfigOptionFloatOrPercent,       extrusion_width))
@@ -1014,6 +1021,17 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionEnum<BridgeType>,     overhangs_type))
     ((ConfigOptionFloatOrPercent,       overhangs_width))
     ((ConfigOptionFloatOrPercent,       overhangs_width_speed))
+    ((ConfigOptionBool,                 wave_overhangs))
+    ((ConfigOptionBool,                 wave_overhangs_instead_of_bridges))
+    ((ConfigOptionInt,                  wave_overhang_outer_perimeters))
+    ((ConfigOptionFloat,                wave_overhang_perimeter_overlap))
+    ((ConfigOptionFloat,                wave_overhang_minimum_width))
+    ((ConfigOptionEnum<WaveOverhangPattern>, wave_overhang_pattern))
+    ((ConfigOptionFloat,                wave_overhang_line_spacing))
+    ((ConfigOptionFloat,                wave_overhang_line_width))
+    ((ConfigOptionFloat,                wave_overhang_flow_ratio))
+    ((ConfigOptionFloat,                wave_overhang_print_speed))
+    ((ConfigOptionFloat,                wave_overhang_travel_speed))
     ((ConfigOptionEnum<NoPerimeterUnsupportedAlgo>,  no_perimeter_unsupported_algo))
     ((ConfigOptionFloatOrPercent,       perimeter_acceleration))
     ((ConfigOptionEnum<PerimeterDirection>, perimeter_direction))
@@ -1309,6 +1327,7 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionPoints,               bed_shape))
     ((ConfigOptionInts,                 bed_temperature))
     ((ConfigOptionInts,                 bridge_fan_speed))
+    ((ConfigOptionInts,                 wave_overhang_fan_speed))
     ((ConfigOptionFloatOrPercent,       bridge_precision))
     ((ConfigOptionInts,                 chamber_temperature))
     ((ConfigOptionBool,                 complete_objects))
