@@ -1699,6 +1699,9 @@ bool Sidebar::show_reslice(bool show)          const { return p->btn_reslice->Sh
 bool Sidebar::show_export(bool show)           const { return p->btn_export_gcode->Show(show); }
 bool Sidebar::show_send(bool show)             const { return p->btn_send_gcode->Show(show); }
 bool Sidebar::show_export_removable(bool show) const { return p->btn_export_gcode_removable->Show(show); }
+bool Sidebar::enable_export(bool enable)          const { return p->btn_export_gcode->Enable(enable); }
+bool Sidebar::enable_send(bool enable)            const { return p->btn_send_gcode->Enable(enable); }
+bool Sidebar::enable_export_removable(bool enable) const { return p->btn_export_gcode_removable->Enable(enable); }
 //bool Sidebar::show_eject(bool show)            const { return p->btn_eject_device->Show(show); }
 //bool Sidebar::get_eject_shown()                const { return p->btn_eject_device->IsShown(); }
 
@@ -2168,6 +2171,8 @@ struct Plater::priv
     void on_3dcanvas_mouse_dragging_finished(SimpleEvent&);
 
     void show_action_buttons(const bool is_ready_to_slice) const;
+    // Invalidates the current slice result, forcing the user to slice again before export.
+    void invalidate_current_slice();
 
     // Set the bed shape to a single closed 2D polygon(array of two element arrays),
     // triangulate the bed and store the triangles into m_bed.m_triangles,
@@ -4398,6 +4403,9 @@ void Plater::priv::set_current_panel(wxTitledPanel* panel)
             } else
                 view3D->reload_scene(true);
         }
+        // Switching to the editor view invalidates the current slice: the user must slice again
+        // before they can export g-code.
+        invalidate_current_slice();
     }
     else if (current_panel == preview) {
         if (wxGetApp().is_editor()) {
@@ -5361,30 +5369,35 @@ void Plater::priv::show_action_buttons(const bool ready_to_slice_) const
     DynamicPrintConfig* selected_printer_config = wxGetApp().preset_bundle->physical_printers.get_selected_printer_config();
     const auto print_host_opt = selected_printer_config ? selected_printer_config->option<ConfigOptionString>("print_host") : nullptr;
     const bool send_gcode_shown = print_host_opt != nullptr && !print_host_opt->value.empty();
-    
-    // when a background processing is ON, export_btn and/or send_btn are showing
-    if (get_config_bool("background_processing"))
-    {
-	    RemovableDriveManager::RemovableDrivesStatus removable_media_status = wxGetApp().removable_drive_manager()->status();
-		if (sidebar->show_reslice(false) |
-			sidebar->show_export(true) |
-			sidebar->show_send(send_gcode_shown) |
-			sidebar->show_export_removable(removable_media_status.has_removable_drives))
-//			sidebar->show_eject(removable_media_status.has_eject))
-            sidebar->Layout();
-    }
-    else
-    {
-	    RemovableDriveManager::RemovableDrivesStatus removable_media_status;
-	    if (! ready_to_slice) 
-	    	removable_media_status = wxGetApp().removable_drive_manager()->status();
-        if (sidebar->show_reslice(ready_to_slice) |
-            sidebar->show_export(!ready_to_slice) |
-            sidebar->show_send(send_gcode_shown && !ready_to_slice) |
-			sidebar->show_export_removable(!ready_to_slice && removable_media_status.has_removable_drives))
-//            sidebar->show_eject(!ready_to_slice && removable_media_status.has_eject))
-            sidebar->Layout();
-    }
+
+    // The "Slice now" button is always shown next to "Export G-code". "Export G-code" (and "Send to printer")
+    // stay visible too, but are only enabled once a valid, up to date slice is available.
+    RemovableDriveManager::RemovableDrivesStatus removable_media_status;
+    if (! ready_to_slice)
+        removable_media_status = wxGetApp().removable_drive_manager()->status();
+
+    bool needs_layout = sidebar->show_reslice(true);
+    needs_layout |= sidebar->show_export(true);
+    needs_layout |= sidebar->enable_export(!ready_to_slice);
+    needs_layout |= sidebar->show_send(send_gcode_shown);
+    needs_layout |= sidebar->enable_send(!ready_to_slice);
+    needs_layout |= sidebar->show_export_removable(!ready_to_slice && removable_media_status.has_removable_drives);
+    needs_layout |= sidebar->enable_export_removable(!ready_to_slice);
+    if (needs_layout)
+        sidebar->Layout();
+}
+
+void Plater::priv::invalidate_current_slice()
+{
+    if (background_process.empty())
+        return;
+
+    bool invalidated = (printer_technology == ptSLA)
+        ? sla_print.invalidate_step(slapsRasterize)
+        : fff_print.invalidate_step(psGCodeExport);
+
+    if (invalidated)
+        show_action_buttons(true);
 }
 
 void Plater::priv::enter_gizmos_stack()

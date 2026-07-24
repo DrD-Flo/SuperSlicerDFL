@@ -552,11 +552,12 @@ public:
     void export_print(const std::string    &fname,
                       const ThumbnailsList &thumbnails,
                       const std::string    &projectname = "");
-    
-private:
-    
-    // Implement same logic as in SLAPrintObject
+
+    // Invalidates the step, and its depending steps in SLAPrint.
+    // In public to allow the GUI to force a re-slice (e.g. when the user switches back to the editor view).
     bool invalidate_step(SLAPrintStep st);
+
+private:
 
     // Invalidate steps based on a set of parameters changed.
     bool invalidate_state_by_config_options(const std::vector<t_config_option_key> &opt_keys, bool &invalidate_all_model_objects);

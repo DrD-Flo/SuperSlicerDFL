@@ -142,6 +142,9 @@ public:
     bool                    show_eject(bool show)const;
 	bool                    show_export_removable(bool show) const;
 	bool                    get_eject_shown() const;
+    bool                    enable_export(bool enable) const;
+    bool                    enable_send(bool enable) const;
+    bool                    enable_export_removable(bool enable) const;
     bool                    is_multifilament();
     void                    update_mode();
     bool                    is_collapsed();
