@@ -190,7 +190,7 @@ void KBShortcutsDialog::fill_shortcuts()
 #endif // _WIN32
         };
 
-        m_full_shortcuts.push_back({ { _L("Platter"), "" }, plater_shortcuts });
+        m_full_shortcuts.push_back({ { _L("Build Plate"), "" }, plater_shortcuts });
 
         Shortcuts gizmos_shortcuts = {
             { ctrl, L("All gizmos: Rotate - left mouse button; Pan - right mouse button") },

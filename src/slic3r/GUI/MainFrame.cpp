@@ -431,7 +431,7 @@ static void append_tab_menu_items_to_menubar(wxMenuBar* bar, PrinterTechnology p
         bar->Append(new wxMenu(), "          ");
         bar->EnableTop(MAINFRAME_MENU_ITEM_COUNT + 4, false);
     } else if (layout == MainFrame::ESettingsLayout::Old) {
-        bar->Append(new wxMenu(), pref() + _L("Platter") + suff());
+        bar->Append(new wxMenu(), pref() + _L("Build Plate") + suff());
         has_marker = true;
         // Add separator 
         bar->Append(new wxMenu(), "          ");
@@ -523,7 +523,7 @@ static void add_tabs_as_menu(wxMenuBar* bar, MainFrame* main_frame, wxWindow* ba
         // update tab selection
 
         const wxString& title = menu->GetTitle();
-        if (title == _L("Platter"))
+        if (title == _L("Build Plate"))
             main_frame->select_tab(MainFrame::ETabType::LastPlater);
         else if (title == _L("3D view"))
             main_frame->select_tab(MainFrame::ETabType::Plater3D);
@@ -700,10 +700,10 @@ void MainFrame::update_layout()
 #ifdef _USE_CUSTOM_NOTEBOOK
         m_plater->Layout();
         if (!wxGetApp().tabs_as_menu())
-            dynamic_cast<Notebook*>(m_tabpanel)->InsertBtPage(0, m_plater, _L("Platter"), std::string("plater"), icon_size, true);
+            dynamic_cast<Notebook*>(m_tabpanel)->InsertBtPage(0, m_plater, _L("Build Plate"), std::string("plater"), icon_size, true);
         else
 #endif
-        m_tabpanel->InsertPage(0, m_plater, _L("Platter"));
+        m_tabpanel->InsertPage(0, m_plater, _L("Build Plate"));
 #ifdef _USE_CUSTOM_NOTEBOOK
         if (!wxGetApp().tabs_as_menu())
             dynamic_cast<Notebook*>(m_tabpanel)->GetBtnsListCtrl()->InsertSpacer(1, 40);
@@ -762,7 +762,7 @@ void MainFrame::update_layout()
                 //this->select_tab(MainFrame::ETabType::PlaterGcode); // select Plater
                 });
         } else {
-            m_tabpanel->InsertPage(0, m_plater, _L("Platter")); // empty panel just for Platter tab */
+            m_tabpanel->InsertPage(0, m_plater, _L("Build Plate")); // empty panel just for Platter tab */
         }
         m_main_sizer->Add(m_tabpanel, 1, wxEXPAND | wxTOP, 1);
         update_icon();
@@ -805,10 +805,10 @@ void MainFrame::update_layout()
         m_plater_page = new wxPanel(m_tabpanel);
 #ifdef _USE_CUSTOM_NOTEBOOK
         if (!wxGetApp().tabs_as_menu())
-            dynamic_cast<Notebook*>(m_tabpanel)->InsertBtPage(0, m_plater_page, _L("Platter"), std::string("plater"), icon_size, true);
+            dynamic_cast<Notebook*>(m_tabpanel)->InsertBtPage(0, m_plater_page, _L("Build Plate"), std::string("plater"), icon_size, true);
         else
 #endif
-        m_tabpanel->InsertPage(0, m_plater_page, _L("Platter")); // empty panel just for Platter tab */
+        m_tabpanel->InsertPage(0, m_plater_page, _L("Build Plate")); // empty panel just for Platter tab */
 #ifdef _USE_CUSTOM_NOTEBOOK
         if (!wxGetApp().tabs_as_menu())
             dynamic_cast<Notebook*>(m_tabpanel)->GetBtnsListCtrl()->InsertSpacer(1, 40);
@@ -1990,7 +1990,7 @@ void MainFrame::init_menubar_as_editor()
     auto windowMenu = new wxMenu();
     {
         if (m_plater) {
-            append_menu_item(windowMenu, wxID_HIGHEST + 1, _L("3D &Platter Tab") + "\tCtrl+1", _L("Show the editor of the input models"),
+            append_menu_item(windowMenu, wxID_HIGHEST + 1, _L("3D &Build Plate Tab") + "\tCtrl+1", _L("Show the editor of the input models"),
                 [this](wxCommandEvent&) { select_tab(ETabType::Plater3D); }, "editor_menu", nullptr,
                 []() {return true; }, this);
             m_layerpreview_menu_item = append_menu_item(windowMenu, wxID_HIGHEST + 2, _L("Layer previe&w Tab") + "\tCtrl+2", _L("Show the layers from the slicing process"),
