@@ -19,7 +19,7 @@
 #   ./sync-dfl-seed.sh --no-commit                           # just copy the files for review
 #
 set -euo pipefail
-SUPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SUPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SUB="$SUPER_DIR/resources/profiles"
 FROM="$SUPER_DIR/../DFL-Printers-Profile"
 REPO=""
