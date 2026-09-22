@@ -674,6 +674,7 @@ struct ConfigWizard::priv
     void on_printer_pick(PagePrinters *page, const PrinterPickerEvent &evt);
     void select_default_materials_for_printer_model(const VendorProfile::PrinterModel &printer_model, Technology technology);
     void select_default_materials_for_printer_models(Technology technology, const std::set<const VendorProfile::PrinterModel*> &printer_models);
+    void select_default_materials_for_preselected_printers();
 #ifdef ALLOW_PRUSA_FIRST
     void on_3rdparty_install(const VendorProfile *vendor, bool install);
 #endif

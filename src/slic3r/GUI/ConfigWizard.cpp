@@ -2804,6 +2804,34 @@ void ConfigWizard::priv::select_default_materials_for_printer_model(const Vendor
         appconfig_new.set(page_materials->materials->appconfig_section(), material, "1");
 }
 
+// Printer models can be selected outside of the wizard: a fresh install auto-installs the
+// DFL-Printers bundle and writes the default printer variant straight into AppConfig. That path
+// never fires EVT_PRINTER_PICK, so on_printer_pick() - which silently installs the picked model's
+// default filaments - never runs and the wizard opens with a printer selected and no filament at
+// all. Install the defaults for those models here.
+void ConfigWizard::priv::select_default_materials_for_preselected_printers()
+{
+    if (!any_fff_selected || page_filaments == nullptr)
+        return;
+
+    // Only repair a configuration that has no filament selected at all, so that a user who
+    // deliberately narrowed down their filament selection doesn't get the defaults forced back.
+    const std::string &section = page_filaments->materials->appconfig_section();
+    if (appconfig_new.has_section(section) && !appconfig_new.get_section(section).empty())
+        return;
+
+    AppConfig::VendorMap enabled_vendors;
+    {
+        std::lock_guard<std::recursive_mutex> lk(appconfig_new.config_lock);
+        enabled_vendors = appconfig_new.vendors();
+    }
+    for (const auto &vendor : enabled_vendors)
+        for (const auto &model : vendor.second)
+            if (!model.second.empty())
+                // With a model id given, the defaults are installed silently.
+                check_and_install_missing_materials(T_FFF, model.first);
+}
+
 void ConfigWizard::priv::select_default_materials_for_printer_models(Technology technology, const std::set<const VendorProfile::PrinterModel*> &printer_models)
 {
     PageMaterials     *page_materials    = technology & T_FFF ? page_filaments : page_sla_materials;
@@ -3624,6 +3652,8 @@ ConfigWizard::ConfigWizard(wxWindow *parent)
     p->add_page(p->page_diams    = new PageDiameters(this));
     p->add_page(p->page_temps    = new PageTemperatures(this));
     
+    p->select_default_materials_for_preselected_printers();
+
     p->load_pages();
     p->index->go_to(size_t{0});
 
