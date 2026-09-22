@@ -2830,6 +2830,10 @@ void ConfigWizard::priv::select_default_materials_for_preselected_printers()
             if (!model.second.empty())
                 // With a model id given, the defaults are installed silently.
                 check_and_install_missing_materials(T_FFF, model.first);
+    // The filament page has already loaded its list (and with it the checkbox state) in its
+    // constructor, and on_activate() won't reload a page that is already loaded. Drop the loaded
+    // state so the page picks up the selection when it is shown.
+    page_filaments->clear();
 }
 
 void ConfigWizard::priv::select_default_materials_for_printer_models(Technology technology, const std::set<const VendorProfile::PrinterModel*> &printer_models)
