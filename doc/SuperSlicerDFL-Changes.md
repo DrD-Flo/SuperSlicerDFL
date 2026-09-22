@@ -68,6 +68,11 @@ work, not fork-specific changes, and are excluded below.
   the viewport; the assignment was dropped so panning no longer shows the Z axis indicator.
 - **Update dialog button visibility**: fixed a button that could render hidden/inactive in the
   profile/app update dialog (`UpdateDialogs.cpp`, `PresetUpdater.cpp`).
+- **Zoom to mouse position preference**: new `zoom_to_mouse` option in Preferences > Camera (default
+  off).
+  Mouse-wheel zoom previously anchored on the cursor only while `Shift` was held; with the option
+  enabled it anchors on the cursor always, and `Shift` keeps working as before when it is off
+  (`GLCanvas3D::on_mouse_wheel`).
 - **`boost::too_many_args` crash on unsupported OpenGL**: the "unsupported OpenGL version" message
   passed 5 arguments through `format_wxstr` but the format string only referenced 4 distinct
   placeholders (`%2%` was reused for both the required and detected version), so `boost::format` threw

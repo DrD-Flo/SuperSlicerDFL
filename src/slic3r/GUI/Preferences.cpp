@@ -825,6 +825,12 @@ void PreferencesDialog::build()
 		L("If enabled, reverses the direction of zoom with mouse wheel"),
 		app_config->get_bool("reverse_mouse_wheel_zoom"));
 
+	append_bool_option(m_tabid_2_optgroups.back().back(), "zoom_to_mouse",
+		L("Zoom to mouse position"),
+		L("If enabled, the mouse wheel zooms towards the point under the mouse cursor instead of the center of the view."
+          "\nIf disabled, zooming to the cursor still works while holding 'Shift'."),
+		app_config->get_bool("zoom_to_mouse"));
+
 
 #if defined(_WIN32) || defined(__APPLE__)
     // m_tabid_2_optgroups.back().back()->append_separator();

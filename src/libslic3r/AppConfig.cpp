@@ -381,6 +381,9 @@ void AppConfig::set_defaults()
     if (get("reverse_mouse_wheel_zoom").empty())
         set("reverse_mouse_wheel_zoom", "0");
 
+    if (get("zoom_to_mouse").empty())
+        set("zoom_to_mouse", "0");
+
     if (get("search_category").empty())
         set("search_category", "1");
     if (get("search_english").empty())

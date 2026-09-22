@@ -3623,7 +3623,7 @@ void GLCanvas3D::on_mouse_wheel(wxMouseEvent& evt)
     // Calculate the zoom delta and apply it to the current zoom factor
     const double direction_factor = wxGetApp().app_config->get_bool("reverse_mouse_wheel_zoom") ? -1.0 : 1.0;
     const double delta = direction_factor * (double)evt.GetWheelRotation() / (double)evt.GetWheelDelta();
-    if (wxGetKeyState(WXK_SHIFT)) {
+    if (wxGetApp().app_config->get_bool("zoom_to_mouse") || wxGetKeyState(WXK_SHIFT)) {
         const auto cnv_size = get_canvas_size();
         const Vec3d screen_center_3d_pos = _mouse_to_3d({ cnv_size.get_width() * 0.5, cnv_size.get_height() * 0.5 });
         const Vec3d mouse_3d_pos = _mouse_to_3d({ evt.GetX(), evt.GetY() });
